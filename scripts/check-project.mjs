@@ -56,6 +56,7 @@ const requiredChecks = [
       "tests/frontend-runtime-enhancements.test.mjs",
       "tests/admin-contract-parity.test.mjs",
       "tests/version-consistency.test.mjs",
+      "tests/tech-stack-pins.test.mjs",
     ],
     cwd: repositoryRoot,
   },

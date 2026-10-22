@@ -61,6 +61,9 @@ npm.cmd run --workspace frontend check:cdn
 # 管理端本地开发（默认 Vite 5173；预览 4173）
 npm.cmd run --workspace frontend dev
 npm.cmd run --workspace frontend preview
+
+# 管理端真实浏览器冒烟（Playwright + 本地 wrangler dev，见第 7 节）
+npm.cmd run test:e2e
 ```
 
 如果只需要运行 Node 测试，可使用：
@@ -77,6 +80,7 @@ node --test tests/*.test.mjs
 - `tests/frontend-runtime-enhancements.test.mjs`：管理端增强脚本、设置保存、仪表盘、DNS、备份、CDN 资源和开发服务器约束。
 - `tests/admin-contract-parity.test.mjs`：管理端跨层契约——前端调用的 action 必须能在 Worker registry 解析、boot 协议符号在壳层/loader/兜底壳三处一致、`frontend/src` 参考源仍只调用可解析的 action 并保持 5 个主视图与 8 个设置分区，以及真实 `frontend/dist/index.html` 能通过 Worker 的壳层校验（含 2 MiB 上限与资产策略）。
 - `tests/worker-bundle-smoke.test.mjs`：生成 Worker bundle 的入口和 Cloudflare handler 形状。
+- `tests/tech-stack-pins.test.mjs`：管理端 4 个 CDN 生产依赖的版本锁定，模板、组合产物与 `dist` 必须一致，且 `docs/tech-stack.md` 记录同步。
 - `tests/fixtures/worker-architecture/negative-cases.json`：架构检查器的反例夹具。
 
 改动路由/代理时至少跑 defensive boundaries 和 bundle；改动配置/KV/D1 时至少跑对应 safety/schema 测试；改动管理端组合链时至少跑 frontend runtime 与同步检查。
@@ -100,3 +104,41 @@ node --test tests/*.test.mjs
 - `frontend/.env.example` 是前端 Vite 变量模板，`.env.local` 等本地文件被忽略。
 - `wrangler.toml` 中的 KV/D1 ID 当前是占位值时，不应直接部署；先配置真实 namespace/database。
 - PowerShell 如果 `npm` 命中执行策略错误，使用 `npm.cmd`；不要为了绕过策略修改仓库文件。
+
+## 7. 浏览器端 e2e（Playwright）
+
+管理台以前只有对生成物做字符串/AST 断言的 Node 测试，没有真实浏览器验证。现在补上了最小一条冒烟：登录、渲染看板、在 5 个主视图之间切换、并断言没有未捕获的脚本异常。技术栈判定与依赖更新策略见 [`tech-stack.md`](./tech-stack.md)。
+
+```powershell
+npm.cmd run test:e2e
+```
+
+组成：
+
+- `playwright.config.js`：`webServer` 用 `wrangler dev` 起真 Worker（本地 KV/D1 走 miniflare），登录态用固定 `E2E_ADMIN_PASS`，每条命令开始前清空 `.wrangler/e2e` 状态分区，保证从空库开始。
+- `wrangler.e2e.toml`：与 `wrangler.toml` 的差别只有“没有 `[build]` 段”和占位 KV/D1 ID，避免起服务时重写根目录 `worker.js`，也保证永不连线上资源。
+- `tests/e2e/admin-smoke.spec.mjs`：只用生产 HTML 里真实存在的选择器（`#admin-login-password`、`#view-*`、`.nav-item[href="#*"]`），模板改名会直接失败。
+
+注意：
+
+- e2e **不进入** `npm.cmd run check`：它要下 Chromium、要起进程、要访问 jsdelivr 取那 4 个 CDN 脚本，放进快速门禁会把每次检查拖成分钟级。CI 需要时单独加一个 job，先跑 `npx playwright install chromium`。
+- 首次使用本机需要装浏览器：`npx playwright install chromium`。
+- e2e 用的是根目录已提交的 `worker.js`，怀疑过期先跑 `npm.cmd run check:worker-bundle`。
+- 空库时日志页会提示“请先初始化日志表”、DNS 页会提示“完善 Zone ID 和 API 令牌”，这些都是预期行为，冒烟只验证视图能渲染，不验证空库业务结果。
+- `test-results/`、`playwright-report/` 已加入 `.gitignore`；失败时 trace 在 `test-results/` 下，用 `npx playwright show-trace <trace.zip>` 看。
+
+### 7.1 视觉基线（截图对比）
+
+`tests/e2e/visual.spec.mjs` 对 5 个主视图 × 浅/深色做整页截图比对，基线放在 `tests/e2e/visual.spec.mjs-snapshots/`。它是 Tailwind v3 → v4 迁移时定位色差与间距漂移的工具，现在留作防退化工具。
+
+```powershell
+npm.cmd run test:visual                                          # 比对基线
+$env:VISUAL_MAX_DIFF="0"; npm.cmd run test:visual                # 阈值降到 0，打印每个视图的差异像素数
+npx playwright test tests/e2e/visual.spec.mjs --update-snapshots # 确认变化是想要的就重录
+```
+
+- 不进 `test:e2e`，也不进 `npm run check` 和 CI：基线文件名带平台后缀（`-win32`），换操作系统就没有可比基线，只会假失败。
+- 差异图在 `test-results/**/*-diff.png`，红块就是差异位置；一次会报出全部视图的差异，因为断言用的是 `expect.soft`。
+- 截图前会等 body 背景非透明、`document.fonts.ready`、冻结动画与过渡、关闭 Chart.js 动画，避免非确定性差异。
+- 深色主题通过 `addInitScript` 写 `localStorage["theme"]="dark"` 并断言 `html` 拿到 `dark` 类，不去点界面上本来没有的主题按钮。
+- 基线以迁移后的状态为准（现在跑是 0 差异）；迁移遗留的已知差异与 v4 的四个坑见 [`tech-stack.md` 第 5 节](./tech-stack.md)。

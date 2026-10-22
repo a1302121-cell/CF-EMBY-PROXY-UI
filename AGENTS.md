@@ -19,6 +19,7 @@
 | --- | --- | --- |
 | 了解目录、请求路由、Worker/前端/存储边界 | [`docs/architecture.md`](docs/architecture.md) | 新功能、调试路由、修改 KV/D1、修改管理端投递 |
 | 修改源码、构建、测试、发布或处理生成物 | [`docs/development.md`](docs/development.md) | 任何代码改动、运行检查、部署前验证 |
+| 判断技术栈归属、依赖要不要升级、加浏览器验证 | [`docs/tech-stack.md`](docs/tech-stack.md) | 不确定哪个版本该动、改 CDN 依赖、跑 Playwright e2e |
 | 查找文档入口与仓库地图 | [`docs/README.md`](docs/README.md) | 不确定该读哪份文档 |
 
 ## 必须遵守

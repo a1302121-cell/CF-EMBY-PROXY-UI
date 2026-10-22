@@ -29,7 +29,7 @@ function loadEnhancementTestHooks(documentOverrides = {}, windowOverrides = {}) 
   assert.notEqual(closureEnd, -1, "enhancement script must use the expected closure");
   const instrumentedScript =
     inlineScript.slice(0, closureEnd) +
-    "window.__enhancementTestHooks = { formatD1SchemaStatus, formatD1InitializationResult, formatD1RepairPlan, formatD1RepairError, patchSafetyContractMethods, patchTmdbNodeMethods, getDashboardMonthPeriodKey, isDashboardMonthlyTrafficCacheFresh, toggleDashboardTrafficPeriod, dashboardTrafficState, normalizeHeadProbeResult, formatHeadProbeResult, formatHeadProbeTitle, normalizeHeadProbePath, normalizeHostPrefixDnsHostname, isHostPrefixNodeLinkActive, runWithConcurrency, NODE_GET_PROBE_CONCURRENCY, readStoredUiSkin, readBootstrapUiSkin, normalizeUiSkin, applyUiSkin, resolveCurrentUiSkin, syncServerUiSkin, persistUiSkinPreference, syncDialogAccessibility, handleDialogEscapeKey, withUiRequestTimeout, installAdminBootstrapFetchDedupe, patchLogPageCache, dashboardLayerState, readFreshSettingsBootstrap, updateAdminBootstrapCache, buildCurrentLogPageSignature, fetch: window.fetch };\n" +
+    "window.__enhancementTestHooks = { formatD1SchemaStatus, formatD1InitializationResult, formatD1RepairPlan, formatD1RepairError, patchSafetyContractMethods, patchTmdbNodeMethods, getDashboardMonthPeriodKey, isDashboardMonthlyTrafficCacheFresh, toggleDashboardTrafficPeriod, dashboardTrafficState, normalizeHeadProbeResult, formatHeadProbeResult, formatHeadProbeTitle, normalizeHeadProbePath, normalizeHostPrefixDnsHostname, isHostPrefixNodeLinkActive, runWithConcurrency, NODE_GET_PROBE_CONCURRENCY, readStoredUiSkin, readBootstrapUiSkin, normalizeUiSkin, applyUiSkin, resolveInitialUiThemeMode, applyUiThemeMode, swapUiTheme, patchThemeTransitionMethods, resolveCurrentUiSkin, syncServerUiSkin, persistUiSkinPreference, syncDialogAccessibility, handleDialogEscapeKey, withUiRequestTimeout, installAdminBootstrapFetchDedupe, patchLogPageCache, dashboardLayerState, readFreshSettingsBootstrap, updateAdminBootstrapCache, buildCurrentLogPageSignature, fetch: window.fetch };\n" +
     inlineScript.slice(closureEnd);
   const window = {
     addEventListener() {},
@@ -317,6 +317,183 @@ test("ui skin runtime reads storage, persists the choice and marks the document"
   assert.equal(store.get("adminUiSkin"), "classic");
   assert.equal(resolveCurrentUiSkin({}), "classic");
   assert.equal(applyUiSkin("unknown"), "classic");
+});
+
+test("theme mode lands on the root element before the app boots", () => {
+  const classes = new Set(["light"]);
+  const document = {
+    readyState: "loading",
+    addEventListener() {},
+    getElementById() {
+      return null;
+    },
+    querySelector() {
+      return null;
+    },
+    documentElement: {
+      classList: {
+        add: (name) => classes.add(name),
+        remove: (...names) => names.forEach((name) => classes.delete(name)),
+      },
+    },
+  };
+  const storedThemeHooks = loadEnhancementTestHooks(document, {
+    localStorage: { getItem: (key) => (key === "theme" ? "dark" : null), setItem() {} },
+    matchMedia: () => ({ matches: false }),
+  });
+
+  // 脚本注入 head 时已经落过主题，不需要等 app 挂载。
+  assert.equal(classes.has("dark"), true);
+  assert.equal(classes.has("light"), false);
+  assert.equal(storedThemeHooks.resolveInitialUiThemeMode(), "dark");
+
+  // 没存过偏好才跟系统媒体查询走。
+  assert.equal(
+    loadEnhancementTestHooks(document, {
+      localStorage: { getItem: () => null, setItem() {} },
+      matchMedia: (query) => ({ matches: query.includes("prefers-color-scheme") }),
+    }).resolveInitialUiThemeMode(),
+    "dark",
+  );
+});
+
+test("theme switching kills per-element color transitions and cross-fades once", async () => {
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_STYLE,
+    /html\[data-theme-switching\][\s\S]{0,160}\{transition:none !important\}/,
+  );
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_STYLE,
+    /::view-transition-old\(root\)[\s\S]*?\{animation-duration:\.22s/,
+  );
+  assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /patchThemeTransitionMethods\(window\.App\)/);
+});
+
+test("theme swap settles the transition guard once the cross-fade ends", async () => {
+  const attributes = {};
+  const document = {
+    readyState: "loading",
+    addEventListener() {},
+    getElementById() {
+      return null;
+    },
+    querySelector() {
+      return null;
+    },
+    documentElement: {
+      setAttribute(name, value) {
+        attributes[name] = String(value);
+      },
+      getAttribute(name) {
+        return attributes[name] ?? null;
+      },
+      removeAttribute(name) {
+        delete attributes[name];
+      },
+    },
+    startViewTransition(callback) {
+      callback();
+      return { finished: Promise.resolve() };
+    },
+  };
+  const { swapUiTheme, patchThemeTransitionMethods } = loadEnhancementTestHooks(document, {
+    localStorage: { getItem: () => null, setItem() {} },
+    matchMedia: () => ({ matches: false }),
+  });
+
+  const seenGuards = [];
+  swapUiTheme(() => seenGuards.push(attributes["data-theme-switching"] ?? null));
+  // 落色那一刻过渡已经被关掉，颜色不会再逐元素插值。
+  assert.deepEqual(seenGuards, ["1"]);
+  await Promise.resolve();
+  assert.equal(attributes["data-theme-switching"], undefined);
+
+  // 工具栏按钮经 App.toggleTheme() 走同一条通道。
+  const toggles = [];
+  const app = {
+    isDarkTheme: false,
+    toggleTheme() {
+      // 换色那一刻守护已经就位，按钮路径也走这条通道。
+      toggles.push(attributes["data-theme-switching"] ?? null);
+    },
+  };
+  patchThemeTransitionMethods(app);
+  patchThemeTransitionMethods(app);
+  app.toggleTheme();
+  assert.deepEqual(toggles, ["1"]);
+  await Promise.resolve();
+  assert.equal(attributes["data-theme-switching"], undefined);
+});
+
+test("theme swap stays atomic when View Transitions or motion are unavailable", () => {
+  const attributes = {};
+  const document = {
+    readyState: "loading",
+    addEventListener() {},
+    getElementById() {
+      return null;
+    },
+    querySelector() {
+      return null;
+    },
+    documentElement: {
+      setAttribute(name, value) {
+        attributes[name] = String(value);
+      },
+      getAttribute(name) {
+        return attributes[name] ?? null;
+      },
+      removeAttribute(name) {
+        delete attributes[name];
+      },
+    },
+  };
+  const { swapUiTheme } = loadEnhancementTestHooks(document, {
+    localStorage: { getItem: () => null, setItem() {} },
+    matchMedia: () => ({ matches: false }),
+    requestAnimationFrame: (callback) => {
+      callback();
+      return 1;
+    },
+  });
+
+  const seenGuards = [];
+  swapUiTheme(() => seenGuards.push(attributes["data-theme-switching"] ?? null));
+  assert.deepEqual(seenGuards, ["1"]);
+  // 守住在换色那一帧之后才放开，放开时已没有属性变化可以过渡。
+  assert.equal(attributes["data-theme-switching"], undefined);
+
+  const reducedMotionAttributes = {};
+  const reducedMotionDocument = {
+    ...document,
+    documentElement: {
+      setAttribute(name, value) {
+        reducedMotionAttributes[name] = String(value);
+      },
+      getAttribute(name) {
+        return reducedMotionAttributes[name] ?? null;
+      },
+      removeAttribute(name) {
+        delete reducedMotionAttributes[name];
+      },
+    },
+    startViewTransition() {
+      throw new Error("prefers-reduced-motion must not start a view transition");
+    },
+  };
+  const reducedMotionHooks = loadEnhancementTestHooks(reducedMotionDocument, {
+    localStorage: { getItem: () => null, setItem() {} },
+    matchMedia: (query) => ({ matches: query.includes("prefers-reduced-motion") }),
+    requestAnimationFrame: (callback) => {
+      callback();
+      return 1;
+    },
+  });
+  const reducedSeenGuards = [];
+  reducedMotionHooks.swapUiTheme(() =>
+    reducedSeenGuards.push(reducedMotionAttributes["data-theme-switching"] ?? null),
+  );
+  assert.deepEqual(reducedSeenGuards, ["1"]);
 });
 
 test("ui skin honors the server bootstrap value and saves the choice back to config", async () => {

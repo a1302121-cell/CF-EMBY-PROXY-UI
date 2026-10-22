@@ -714,6 +714,15 @@ html[data-theme="claude"]{--d1-control-radius:8px}:where(html[data-theme="claude
 /* 主题B：日志表格单元格垂直居中（资源类别标签撑高行时，节点/IP/UA 等文字不再贴基线） */
 :where(html[data-theme="claude"]) #view-logs #logs-tbody td,
 :where(html[data-theme="claude"]) #view-logs thead th{vertical-align:middle}
+/* 亮暗切换：换色这一帧先统一关掉所有元素各自的过渡，让颜色一步落地，
+   再由 View Transition 做一次整页交叉淡入。否则上百个 transition 各按各的时长
+   在 sRGB 里插值，中途发灰、收尾错开，看起来就是闪烁。 */
+html[data-theme-switching],
+html[data-theme-switching] *,
+html[data-theme-switching] *::before,
+html[data-theme-switching] *::after{transition:none !important}
+::view-transition-old(root),
+::view-transition-new(root){animation-duration:.22s;animation-timing-function:cubic-bezier(.22,1,.36,1)}
 </style>`;
 // 这段脚本被注入到 </head> 前，早于 <body> 里定义 window.App 的编译 bundle。
 // 因此补丁不能同步应用：入口只装事件与观察器，真正打补丁的是 scheduleShellRefresh() 排的那一帧。
@@ -865,6 +874,37 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
       button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
       button.className = UI_SKIN_OPTION_BASE + ' ' + (isActive ? UI_SKIN_OPTION_ON : UI_SKIN_OPTION_OFF);
     });
+  }
+
+  // 主题模式存在 localStorage，但 dark 类原本只由 app 挂载时的 bundle 落。
+  // 放进 head 阶段后，首帧主题不再依赖 Vue 运行时是否成功起来。
+  // 'theme' 与 bundle 的 UI_STORAGE_KEYS.theme 同值。
+  function resolveInitialUiThemeMode() {
+    let stored = '';
+    try {
+      stored = localStorage.getItem('theme');
+    } catch {}
+    if (stored === 'dark' || stored === 'light') return stored;
+    try {
+      return window.matchMedia?.('(prefers-color-scheme: dark)')?.matches ? 'dark' : 'light';
+    } catch {
+      return 'light';
+    }
+  }
+
+  function applyUiThemeMode(mode) {
+    const isDark = mode === 'dark';
+    for (const target of [document?.documentElement, document?.body]) {
+      if (!target?.classList) continue;
+      target.classList.remove('dark', 'light');
+      if (isDark) target.classList.add('dark');
+    }
+  }
+
+  try {
+    applyUiThemeMode(resolveInitialUiThemeMode());
+  } catch (error) {
+    console.error('ui theme init failed', error);
   }
 
   try {
@@ -1040,6 +1080,7 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
       applyToolbarEnhancements();
       applyLayoutEnhancements();
       applySafetyContractEnhancements();
+      patchThemeTransitionMethods(window.App);
       mountSensitiveInputToggles(document);
       syncDashboardTrafficToggle(window.App);
     });
@@ -2866,6 +2907,56 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
     if (!app) return;
     patchSafetyContractMethods(app);
     syncPlaybackInfoModeCopy();
+  }
+
+  // 亮暗切换不能靠逐元素的颜色过渡：它们的时长和缓动是为 hover 定的，
+  // 一次换色会让上百个元素各跑各的，且 sRGB 插值中途过灰。这里先关掉全部过渡
+  // 让颜色一步落地，再用 View Transition 的一次全页交叉淡入代替逐元素插值。
+  let patchedThemeTransitionApp = null;
+
+  function swapUiTheme(applyThemeChange) {
+    const root = document?.documentElement;
+    if (!root?.setAttribute) {
+      applyThemeChange();
+      return;
+    }
+    root.setAttribute('data-theme-switching', '1');
+    let settled = false;
+    const settle = () => {
+      if (settled) return;
+      settled = true;
+      root.removeAttribute('data-theme-switching');
+    };
+    let reduceMotion = false;
+    try {
+      reduceMotion = !!window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+    } catch {}
+    let transition = null;
+    if (!reduceMotion) {
+      try {
+        transition = document.startViewTransition?.(applyThemeChange) || null;
+      } catch (error) {
+        console.error('theme view transition failed', error);
+      }
+    }
+    if (!transition) {
+      applyThemeChange();
+      // 过渡已经关掉，颜色这一帧就落完了；下一帧再放开，放开时已没有属性变化可过渡。
+      enqueue(() => enqueue(settle));
+      return;
+    }
+    transition.finished.then(settle, settle);
+  }
+
+  // 工具栏按钮走 App.toggleTheme()；替换成带过渡守护的版本，别处调用同一函数也一并生效。
+  function patchThemeTransitionMethods(app) {
+    if (!app || patchedThemeTransitionApp === app) return;
+    patchedThemeTransitionApp = app;
+    if (typeof app.toggleTheme !== 'function') return;
+    const originalToggleTheme = app.toggleTheme.bind(app);
+    app.toggleTheme = function toggleThemeWithoutColorFlicker() {
+      swapUiTheme(originalToggleTheme);
+    };
   }
 
   let dialogTitleSeq = 0;
