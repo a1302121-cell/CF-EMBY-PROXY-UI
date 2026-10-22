@@ -9,6 +9,9 @@ frontend/.env.*.local
 /.env.*
 !/.env.example
 .wrangler/
+# Playwright：失败时的 trace/截图与 HTML 报告都不进仓库
+test-results/
+playwright-report/
 npm-debug.log*
 .ace-tool/
 .venv/

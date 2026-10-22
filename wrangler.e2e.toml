@@ -1,0 +1,25 @@
+# Playwright 本地专用配置。与 wrangler.toml 的区别只有两处：
+#   1. 没有 [build] 段，起服务时不会重建并重写根目录 worker.js（Windows 上会带 EOL 抖动）。
+#   2. KV / D1 用占位 ID，本地 miniflare 只拿它当状态分区名，不会连线上。
+# 依赖根目录已提交且新鲜的 worker.js：怀疑过期时先跑 `npm run check:worker-bundle`。
+name = "cf-emby-proxy-ui-e2e"
+main = "worker.js"
+compatibility_date = "2026-03-13"
+compatibility_flags = ["enable_request_signal"]
+workers_dev = false
+preview_urls = false
+
+[assets]
+directory = "./frontend/dist"
+binding = "ASSETS"
+run_worker_first = true
+html_handling = "none"
+
+[[kv_namespaces]]
+binding = "ENI_KV"
+id = "000000000000000000000000000000e2"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "emby-proxy-logs-e2e"
+database_id = "00000000-0000-0000-0000-00000000e2e0"

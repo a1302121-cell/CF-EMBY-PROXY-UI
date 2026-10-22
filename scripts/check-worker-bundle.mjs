@@ -9,13 +9,19 @@ const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(scriptDirectory, "..");
 const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "cf-emby-worker-check-"));
 
+// Windows 检出（core.autocrlf=true）会让工作区 worker.js 变成 CRLF，而构建产物恒为 LF。
+// 产物只比较内容，比较前统一换行，避免把检出差异当成“产物过期”。
+function normalizeLineEndings(buffer) {
+  return buffer.toString("utf8").replace(/\r\n/g, "\n");
+}
+
 try {
   await buildWorkerBundle({ outDir: temporaryDirectory });
   const [expected, actual] = await Promise.all([
     fs.readFile(path.join(temporaryDirectory, "worker.js")),
     fs.readFile(path.join(repositoryRoot, "worker.js")),
   ]);
-  if (!expected.equals(actual)) {
+  if (normalizeLineEndings(expected) !== normalizeLineEndings(actual)) {
     throw new Error(
       "worker.js is stale; run npm run build:worker and commit the generated artifact",
     );
