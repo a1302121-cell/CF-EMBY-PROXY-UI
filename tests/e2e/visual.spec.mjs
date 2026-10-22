@@ -1,11 +1,11 @@
 import { expect, test } from "@playwright/test";
+import { loginAndWaitForAdminBoot } from "./support.mjs";
 
 // Tailwind 迁移/主题改动的视觉验证工具，不是回归门禁：
 // 截图基线跟字体渲染绑定，换机器或换系统就会变，所以不进 `npm run check`，也不进 CI。
 // 用法：
 //   npx playwright test tests/e2e/visual.spec.mjs --update-snapshots   # 重新生成基线
 //   npx playwright test tests/e2e/visual.spec.mjs                      # 与基线比对
-const adminPassword = process.env.E2E_ADMIN_PASS || "e2e-local-admin-pass";
 // 像素容差：默认 0.2%（抗字体抗锯齿抖动）；迁移排查时用 VISUAL_MAX_DIFF=0 看全量差异。
 const maxDiffPixelRatio = Number(process.env.VISUAL_MAX_DIFF ?? "0.002");
 
@@ -40,11 +40,7 @@ async function waitForStyles(page) {
 }
 
 async function login(page) {
-  await page.goto("/admin");
-  await expect(page.locator("#admin-login-password")).toBeVisible();
-  await page.fill("#admin-login-password", adminPassword);
-  await page.click("#admin-login-submit");
-  await expect(page.locator("#view-dashboard")).toBeVisible();
+  await loginAndWaitForAdminBoot(page);
   await waitForStyles(page);
 }
 

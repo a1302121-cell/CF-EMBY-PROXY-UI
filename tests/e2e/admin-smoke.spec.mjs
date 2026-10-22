@@ -1,8 +1,8 @@
 import { expect, test } from "@playwright/test";
+import { loginAndWaitForAdminBoot } from "./support.mjs";
 
 // 管理台是单文件交付：这里刻意只用生产 HTML 里真实存在的选择器，
 // 一旦模板改名，这条冒烟会失败，而不是悄悄测了个空壳。
-const adminPassword = process.env.E2E_ADMIN_PASS || "e2e-local-admin-pass";
 
 test("登录后能渲染看板并在视图之间切换", async ({ page }) => {
   // 只收未捕获的脚本异常：空库/未配账号时，管理台会用 console.error 报告
@@ -10,12 +10,7 @@ test("登录后能渲染看板并在视图之间切换", async ({ page }) => {
   const runtimeErrors = [];
   page.on("pageerror", (error) => runtimeErrors.push(String(error)));
 
-  await page.goto("/admin");
-  await expect(page.locator("#admin-login-password")).toBeVisible();
-  await page.fill("#admin-login-password", adminPassword);
-  await page.click("#admin-login-submit");
-
-  await expect(page).toHaveURL(/\/admin$/);
+  await loginAndWaitForAdminBoot(page);
   await expect(page.locator("#view-dashboard")).toBeVisible();
   await expect(page.locator('.nav-item[href="#nodes"]')).toBeVisible();
 
