@@ -115,14 +115,59 @@
 
 ### 5.4 怎么防止再退化
 
-`tests/e2e/visual.spec.mjs` 用 Playwright 对 5 个主视图 × 浅/深色截图比对基线（1440×900）。基线是**迁移后**的状态，也就是"现在正确"的样子：
+`tests/e2e/visual.spec.mjs` 用 Playwright 对 5 个主视图 × 4 个主题组合（经典/`claude` 两套皮肤，各含浅色与深色）截图比对基线（1440×900）。基线是**迁移后**的状态，也就是"现在正确"的样子：
 
 ```powershell
 npm.cmd run test:visual                                    # 比对基线
 $env:VISUAL_MAX_DIFF="0"; npm.cmd run test:visual           # 打印全部差异像素数
 ```
 
-差异图落在 `test-results/**/*-diff.png`。基线文件名带平台后缀（`-win32`），所以这项**不进 `npm run check`、不进 CI**：换个操作系统就没有可比基线，会假失败。改 Tailwind 配置或大范围调样式后手动跑一次；确实是想要的变化，用 `npx playwright test --update-snapshots` 重录。基线已经用迁移后的状态重录，所以现在跑出来是 0 差异；它防的是以后再动样式时的意外漂移，不是拿迁移前的图当真理。
+差异图落在 `test-results/**/*-diff.png`。基线文件名带平台后缀（`-win32`），所以这项**不进 `npm run check`、不进 CI**：换个操作系统就没有可比基线，会假失败。改 Tailwind 配置或大范围调样式后手动跑一次；确实是想要的变化，用 `npx playwright test --update-snapshots` 重录。基线已经用迁移后的状态重录；它防的是以后再动样式时的意外漂移，不是拿迁移前的图当真理。
+
+两点实测结论，决定这套工具怎么用：
+
+- **截图像素不是精确断言。** 同一份代码、同一台机器连跑两次，`VISUAL_MAX_DIFF=0` 也会报出 0.01% 量级的差异（187–122 像素，来自字体抗锯齿）。所以它是冒烟级防漂移，验"颜色没变"要靠计算样式逐条比对（`color/backgroundColor/border*/boxShadow/rect` 全量导出后 diff），本次重构就是以此为准：经典皮肤的 4 个视图 × 2 明暗组合，矩形尺寸与颜色声明 **0 处差异**。
+- **`claude` 皮肤的基线必须先把字体落地。** 它的中文字体是按 unicode-range 分片从 CDN 抽的，`document.fonts.ready` 在分片尚未请求时就返回，同一份代码两次截图会拿到不同字形，基线随机失败。`settleSkinFonts()` 按当前可见文本调 `document.fonts.load()` 预载后才截图，之后连跑三次全绿。
+
+### 5.5 颜色一律走 CSS 变量，不再写死 hex
+
+手写样式（模板里的 3 个 `<style>` 与增强脚本注入的 80 KB 样式）原来散着 483 处 hex/rgba 字面量，同一个色值在经典皮肤和 claude 皮肤各写一遍，改一处就漏一处。现在分两层：
+
+| 层 | 变量 | 定义位置 | 形态 |
+| --- | --- | --- | --- |
+| 调色板 | `--ui-c-{white,n-*,a-*}` | `:root`，claude 皮肤块覆盖 | `r g b` 三元组，用 `rgb(var(--ui-c-n-50))` |
+| 皮肤语义色 | `--d1-{paper,ink,ink-2,bean,sunk,rule-2,…}` | 只在 `html[data-theme="claude"]` | 完整颜色，用 `var(--d1-ink)` |
+| 运行时注入 | `--ui-heat-alpha`、`--ui-heatmap-columns`、`--ui-radius-px` | Vue 行内 style / 设置写入 `:root` | 带兜底值 |
+
+两条规则，写错都不会报错、只会静默丢样式，所以由 `tests/frontend-color-tokens.test.mjs` 在 `npm run check` 里守：
+
+1. **`var()` 引用的变量必须真的存在**（或自带兜底值）。自定义属性缺失时整条声明被丢弃——元素直接变透明或继承父色，控制台没有任何提示。这个检查在分层重构中三次抓到漏定义/拼错的令牌。
+2. **`--d1-*` 只能出现在带 `data-theme="claude"` 的规则里。** 它只在 claude 块定义，写进通用选择器后经典皮肤下同样会静默失效。
+3. **调色板变量只在 `:root` / `html[data-theme="claude"]` 定义**，不允许在组件规则里临时重定义，否则一次局部"补色"就会让该组件脱离皮肤。
+
+派生色只在"确实需要一个色族"时用 `oklch(from …)`，并且**必须成对**写。暖红按钮族的现状：
+
+```css
+/* 兜底：不支持的浏览器吃这几条，值是原来的手挑 hex */
+html[data-theme="claude"]{--d1-action:#8e3a22;--d1-action-hover:#7a301b;--d1-action-strong:#b3502f;
+  --d1-action-strong-hover:#9b4326;--d1-action-active:#83381f;--d1-action-dark:#a3452a}
+
+/* 支持相对颜色语法时，5 个变体都由 --d1-action 派生 */
+@supports (color:oklch(from red calc(l - 0.05) c h)){
+  html[data-theme="claude"]{
+    --d1-action-hover:oklch(from var(--d1-action) calc(l - 0.049) calc(c - 0.0115) calc(h - 0.103));
+    --d1-action-strong:oklch(from var(--d1-action) calc(l + 0.0926) calc(c + 0.0172) calc(h + 1.9883));
+    /* …其余三个同理，ΔL/ΔC/ΔH 见源码 */
+  }
+}
+```
+
+只写 `oklch()` 一条是不行的：自定义属性赋值阶段不校验值，不支持的浏览器会一路把非法值带到 `background-color`，整条声明失效、按钮变透明且不报错。所以兜底和 `@supports` 两条必须同时存在。
+
+Δ 值不是估的，是把原来手挑的 hex 反解出来的一组偏移，六个令牌用 canvas 逐个回读，派生值和原 hex **8bit 完全一致**（如 `#7a301b` 与派生值都是 `rgb(122, 48, 27)`）。收益是以后改 `--d1-action` 一处，整族的底/悬停/按下/深色四个变体跟着走。同样的手法可以用在 `#purge-cache-btn` 的砖红族（`#b23a2c`/`#9c3125`/`#8a2b20`/`#8f2b21`/`#a3342a`/`#b5453a`/`#c9554a`），那是另一套色相，留待需要时再做。
+
+
+仍然保留字面量的地方，都是有理由的：`@theme` 里钉死的 99 个 v3 调色板 token（见 5.2 第 1 条）、`<canvas>` 相关与 Chart.js 的 `rgba()` 数据点、极少数只在 claude 出现一次的高饱和强调色。迁移的验收方式是"计算样式逐条比对"（见 5.4），不是看代码里还剩几个 `#`。
 
 ## 6. 验证入口
 

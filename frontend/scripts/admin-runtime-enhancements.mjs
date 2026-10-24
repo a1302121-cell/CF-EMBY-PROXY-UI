@@ -1,5 +1,5 @@
 const ADMIN_RUNTIME_ENHANCEMENT_STYLE = `<style data-admin-runtime-enhancements="1">
-:root{--ui-control-radius-px:var(--ui-radius-px,10px);--admin-toolbar-hover-bg:rgba(148,163,184,.14);--admin-toolbar-hover-bg-dark:rgba(51,65,85,.68)}
+:root{--ui-control-radius-px:var(--ui-radius-px,10px);--admin-toolbar-hover-bg:rgb(var(--ui-c-n-400) / .14);--admin-toolbar-hover-bg-dark:rgb(var(--ui-c-n-700) / .68)}
 :root{--ui-c-white:255 255 255;--ui-c-n-50:248 250 252;--ui-c-n-100:241 245 249;--ui-c-n-200:226 232 240;--ui-c-n-300:203 213 225;--ui-c-n-400:148 163 184;--ui-c-n-500:100 116 139;--ui-c-n-600:71 85 105;--ui-c-n-700:51 65 85;--ui-c-n-800:30 41 59;--ui-c-n-900:15 23 42;--ui-c-n-950:2 6 23;--ui-c-a-50:239 246 255;--ui-c-a-100:219 234 254;--ui-c-a-200:191 219 254;--ui-c-a-300:147 197 253;--ui-c-a-400:96 165 250;--ui-c-a-500:59 130 246;--ui-c-a-600:37 99 235;--ui-c-a-700:29 78 216;--ui-c-a-800:30 64 175;--ui-c-a-900:30 58 138;--ui-c-a-950:23 37 84;--ui-surface-panel:255 255 255;--ui-surface-soft:248 250 252;--ui-surface-dark:15 23 42;--ui-border-soft:226 232 240;--ui-border-strong:203 213 225;--ui-border-dark:51 65 85;--ui-text-strong:15 23 42;--ui-text-dark:248 251 255;--ui-shadow-brand:0 10px 22px rgba(37,99,235,0.16);--ui-shadow-brand-hover:0 14px 28px rgba(37,99,235,0.18);--ui-shadow-brand-soft:0 6px 16px rgba(59,130,246,0.08);--ui-shadow-card-hover:0 18px 36px rgba(15,23,42,0.07);--ui-shadow-card-hover-dark:0 16px 32px rgba(2,6,23,0.34);--ui-shadow-surface:0 0 0 1px rgba(226,232,240,0.92),0 10px 22px rgba(15,23,42,0.05);--ui-shadow-surface-dark:0 0 0 1px rgba(51,65,85,0.88),0 10px 22px rgba(2,6,23,0.3);--ui-shadow-surface-hover:0 0 0 1px rgba(203,213,225,0.98),0 14px 28px rgba(15,23,42,0.08);--ui-shadow-surface-hover-dark:0 0 0 1px rgba(71,85,105,0.92),0 16px 30px rgba(2,6,23,0.38);--ui-chart-accent:59,130,246;--ui-chart-line:#3b82f6;--ui-chart-axis:#0f172a;--ui-chart-axis-dark:#e2e8f0;--ui-chart-tick:#64748b;--ui-chart-tick-dark:#94a3b8;--ui-chart-grid:rgba(148,163,184,0.22);--ui-chart-grid-dark:rgba(71,85,105,0.35);--ui-accent-shadow:rgba(59,130,246,0.08)}
 html[data-theme="claude"]{--ui-c-white:250 249 245;--ui-c-n-50:245 244 237;--ui-c-n-100:237 236 228;--ui-c-n-200:232 230 220;--ui-c-n-300:209 207 197;--ui-c-n-400:176 174 165;--ui-c-n-500:135 134 127;--ui-c-n-600:94 93 89;--ui-c-n-700:77 76 72;--ui-c-n-800:48 48 46;--ui-c-n-900:20 20 19;--ui-c-n-950:14 14 13;--ui-c-a-50:250 243 239;--ui-c-a-100:246 228 220;--ui-c-a-200:237 199 183;--ui-c-a-300:224 164 140;--ui-c-a-400:217 119 87;--ui-c-a-500:201 100 66;--ui-c-a-600:180 85 58;--ui-c-a-700:150 69 47;--ui-c-a-800:122 56 38;--ui-c-a-900:95 44 30;--ui-c-a-950:61 28 18;--ui-surface-panel:250 249 245;--ui-surface-soft:245 244 237;--ui-surface-dark:20 20 19;--ui-border-soft:232 230 220;--ui-border-strong:209 207 197;--ui-border-dark:48 48 46;--ui-text-strong:20 20 19;--ui-text-dark:250 249 245;--ui-shadow-brand:0 10px 22px rgba(201,100,66,0.18);--ui-shadow-brand-hover:0 14px 28px rgba(201,100,66,0.20);--ui-shadow-brand-soft:0 6px 16px rgba(217,119,87,0.10);--ui-shadow-card-hover:0 18px 36px rgba(20,20,19,0.07);--ui-shadow-card-hover-dark:0 16px 32px rgba(0,0,0,0.34);--ui-shadow-surface:0 0 0 1px rgba(232,230,220,0.92),0 10px 22px rgba(20,20,19,0.05);--ui-shadow-surface-dark:0 0 0 1px rgba(48,48,46,0.88),0 10px 22px rgba(0,0,0,0.3);--ui-shadow-surface-hover:0 0 0 1px rgba(209,207,197,0.98),0 14px 28px rgba(20,20,19,0.08);--ui-shadow-surface-hover-dark:0 0 0 1px rgba(77,76,72,0.92),0 16px 30px rgba(0,0,0,0.38);--ui-chart-accent:201,100,66;--ui-chart-line:#c96442;--ui-chart-axis:#141413;--ui-chart-axis-dark:#e8e6dc;--ui-chart-tick:#4a4944;--ui-chart-tick-dark:#c6c4b9;--ui-chart-grid:rgba(94,93,89,0.34);--ui-chart-grid-dark:rgba(170,167,154,0.32);--ui-accent-shadow:rgba(201,100,66,0.08)}
 #app-shell .rounded-control,
@@ -10,9 +10,9 @@ html[data-theme="claude"]{--ui-c-white:250 249 245;--ui-c-n-50:245 244 237;--ui-
 #app-shell [data-admin-toolbar-group="actions"]{display:flex;align-items:center;justify-content:flex-end;gap:.25rem;flex-shrink:0;position:relative;z-index:2;white-space:nowrap}
 #app-shell [data-admin-toolbar-group="actions"]>*{margin-left:0 !important;margin-right:0 !important}
 #app-shell [data-admin-brand-mark="1"]{position:relative;overflow:hidden}
-#app-shell [data-admin-brand-mark="1"] svg{display:block;width:1.1rem;height:1.1rem;color:currentColor;filter:drop-shadow(0 1px 2px rgba(15,23,42,.16))}
-#app-shell [data-admin-toolbar-action]{display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;width:2.5rem;height:2.5rem;padding:0;border:0 !important;background:transparent !important;color:#475569;box-shadow:none !important;border-radius:max(14px,var(--ui-control-radius-px));transition:background-color .18s ease,color .18s ease,transform .18s ease,opacity .18s ease}
-.dark #app-shell [data-admin-toolbar-action]{color:#cbd5e1}
+#app-shell [data-admin-brand-mark="1"] svg{display:block;width:1.1rem;height:1.1rem;color:currentColor;filter:drop-shadow(0 1px 2px rgb(var(--ui-c-n-900) / .16))}
+#app-shell [data-admin-toolbar-action]{display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;width:2.5rem;height:2.5rem;padding:0;border:0 !important;background:transparent !important;color:rgb(var(--ui-c-n-600));box-shadow:none !important;border-radius:max(14px,var(--ui-control-radius-px));transition:background-color .18s ease,color .18s ease,transform .18s ease,opacity .18s ease}
+.dark #app-shell [data-admin-toolbar-action]{color:rgb(var(--ui-c-n-300))}
 #app-shell [data-admin-toolbar-action]:hover{transform:translateY(-1px);background:var(--admin-toolbar-hover-bg) !important;color:#ea580c}
 .dark #app-shell [data-admin-toolbar-action]:hover{background:var(--admin-toolbar-hover-bg-dark) !important;color:#fb923c}
 #app-shell [data-admin-toolbar-action]:focus-visible{outline:none;background:var(--admin-toolbar-hover-bg) !important;box-shadow:0 0 0 2px rgba(249,115,22,.2) !important}
@@ -23,10 +23,10 @@ html[data-theme="claude"]{--ui-c-white:250 249 245;--ui-c-n-50:245 244 237;--ui-
 .dark #app-shell [data-admin-toolbar-action="theme"][data-theme-state="dark"]{color:#fb923c}
 #app-shell [data-admin-toolbar-action="theme"][data-theme-state="light"]{color:#0369a1}
 .dark #app-shell [data-admin-toolbar-action="theme"][data-theme-state="light"]{color:#7dd3fc}
-body.bg-slate-50,body.antialiased{background:#f8fafc !important;color:#0f172a !important}
-.dark body,.dark body.antialiased{background:#020617 !important;color:#e2e8f0 !important}
-#app-shell{min-width:0;background:#f8fafc;color:#0f172a}
-.dark #app-shell{background:#020617;color:#e2e8f0}
+body.bg-slate-50,body.antialiased{background:rgb(var(--ui-c-n-50)) !important;color:rgb(var(--ui-c-n-900)) !important}
+.dark body,.dark body.antialiased{background:rgb(var(--ui-c-n-950)) !important;color:rgb(var(--ui-c-n-200)) !important}
+#app-shell{min-width:0;background:rgb(var(--ui-c-n-50));color:rgb(var(--ui-c-n-900))}
+.dark #app-shell{background:rgb(var(--ui-c-n-950));color:rgb(var(--ui-c-n-200))}
 #view-nodes .node-toolbar-primary-btn,
 #view-nodes .node-tag-filter-trigger,
 #view-nodes .node-toolbar-search,
@@ -53,67 +53,94 @@ body.bg-slate-50,body.antialiased{background:#f8fafc !important;color:#0f172a !i
 #node-modal .node-modal-primary-btn,
 #node-modal .node-modal-secondary-btn{display:inline-flex;align-items:center;justify-content:center;isolation:isolate}
 #view-nodes .node-tag-filter-panel-shell{position:relative;z-index:4}
-#node-modal [data-admin-node-advanced="1"]{overflow:hidden;border:1px solid #e2e8f0;border-radius:max(16px,calc(var(--ui-control-radius-px) + 6px));background:rgba(248,250,252,.72)}
-.dark #node-modal [data-admin-node-advanced="1"]{border-color:#334155;background:rgba(2,6,23,.34)}
-#node-modal [data-admin-node-advanced="1"]>summary{display:flex;align-items:center;justify-content:space-between;gap:.75rem;padding:1rem;cursor:pointer;list-style:none;color:#334155;font-size:.875rem;font-weight:600;user-select:none}
-.dark #node-modal [data-admin-node-advanced="1"]>summary{color:#e2e8f0}
+#node-modal [data-admin-node-advanced="1"]{overflow:hidden;border:1px solid rgb(var(--ui-c-n-200));border-radius:max(16px,calc(var(--ui-control-radius-px) + 6px));background:rgb(var(--ui-c-n-50) / .72)}
+.dark #node-modal [data-admin-node-advanced="1"]{border-color:rgb(var(--ui-c-n-700));background:rgb(var(--ui-c-n-950) / .34)}
+#node-modal [data-admin-node-advanced="1"]>summary{display:flex;align-items:center;justify-content:space-between;gap:.75rem;padding:.75rem 1rem;cursor:pointer;list-style:none;color:rgb(var(--ui-c-n-700));font-size:.875rem;font-weight:600;user-select:none}
+.dark #node-modal [data-admin-node-advanced="1"]>summary{color:rgb(var(--ui-c-n-200))}
 #node-modal [data-admin-node-advanced="1"]>summary::-webkit-details-marker{display:none}
 #node-modal [data-admin-node-advanced="1"]>summary svg{width:1rem;height:1rem;transition:transform .18s ease}
 #node-modal [data-admin-node-advanced="1"][open]>summary svg{transform:rotate(180deg)}
-#node-modal [data-admin-node-advanced-content="1"]{display:grid;gap:1rem;padding:0 1rem 1rem;border-top:1px solid #e2e8f0}
-.dark #node-modal [data-admin-node-advanced-content="1"]{border-color:#334155}
+#node-modal [data-admin-node-advanced-content="1"]{display:grid;gap:1rem;padding:0 1rem 1rem;border-top:1px solid rgb(var(--ui-c-n-200))}
+.dark #node-modal [data-admin-node-advanced-content="1"]{border-color:rgb(var(--ui-c-n-700))}
 #node-modal [data-admin-node-advanced-content="1"],#node-modal [data-admin-node-advanced-fields="1"],#node-modal [data-admin-node-advanced-headers="1"]{min-width:0;max-width:100%}
 #node-modal [data-admin-node-advanced-fields="1"]{padding-top:1rem}
 #node-modal [data-admin-node-advanced-fields="1"]>*{min-width:0}
 #node-modal [data-admin-node-advanced-fields="1"] input,#node-modal [data-admin-node-advanced-fields="1"] select{min-width:0;max-width:100%;width:100%}
-#node-modal [data-admin-node-advanced-headers="1"]{margin:0;background:#fff;min-width:0}
+#node-modal [data-admin-node-advanced-headers="1"]{margin:0;background:rgb(var(--ui-c-white));min-width:0}
 #node-modal [data-admin-node-advanced-headers="1"] #headers-container>div{min-width:0}
-.dark #node-modal [data-admin-node-advanced-headers="1"]{background:rgba(15,23,42,.72)}
-#node-modal>div[data-ui-dialog-surface="1"]{padding:1rem !important}
-#node-modal #node-modal-title{margin-bottom:.75rem !important;font-size:1.125rem;line-height:1.5rem}
+.dark #node-modal [data-admin-node-advanced-headers="1"]{background:rgb(var(--ui-c-n-900) / .72)}
+#node-modal>div[data-ui-dialog-surface="1"]{padding:1.5rem !important}
+#node-modal #node-modal-title{margin-bottom:1.25rem !important;font-size:1.125rem;line-height:1.5rem}
 #node-modal form{max-height:calc(86vh - env(safe-area-inset-bottom) - env(safe-area-inset-top)) !important}
-#node-modal form>*+*{margin-top:.75rem !important}
-#node-modal form>[class*="grid"]{gap:.75rem !important}
-#node-modal form label{margin-bottom:.2rem}
-#node-modal form p[class*="text-xs"]{margin-top:.2rem;line-height:1.15rem}
+#node-modal form>*+*{margin-top:1.25rem !important}
+#node-modal form>[class*="grid"]{gap:1rem !important;align-items:start}
+#node-modal form label{margin-bottom:.375rem}
+#node-modal form p[class*="text-xs"]{margin-top:.375rem;line-height:1.15rem}
 #node-modal form input:not([type="checkbox"]):not([type="radio"]),
-#node-modal form select{min-height:2.25rem;padding-top:.4rem !important;padding-bottom:.4rem !important}
-#node-modal form .rounded-2xl.border{padding:.875rem !important}
-#node-modal #node-lines-container{gap:.5rem}
-#node-modal #node-lines-container>[data-node-line-row="1"]{padding:.625rem !important}
+#node-modal form select{min-height:2.75rem;padding-top:.5rem !important;padding-bottom:.5rem !important}
+#node-modal form .rounded-2xl.border{padding:1rem !important}
+#node-modal #node-lines-container{gap:.625rem}
+#node-modal #node-lines-container>[data-node-line-row="1"]{padding:.5rem .75rem !important}
 #node-modal [data-admin-node-lines-panel="1"]>div:first-child>div:first-child{min-width:0;flex:1 1 auto}
 #node-modal [data-admin-node-lines-panel="1"]>div:first-child>div:last-child{flex:0 0 auto;white-space:nowrap}
 #node-modal [data-admin-node-lines-panel="1"]>div:first-child>div:last-child button{flex-shrink:0;white-space:nowrap}
-#node-modal [data-admin-node-advanced="1"]>summary{padding:.75rem .875rem}
-#node-modal [data-admin-node-advanced-content="1"]{gap:.75rem;padding:0 .875rem .875rem}
-#node-modal [data-admin-node-advanced-fields="1"]{padding-top:.875rem}
-#node-modal form>div:last-child{margin-top:1rem !important;padding-top:.625rem !important;padding-bottom:.25rem !important}
-#node-modal [data-admin-node-basic-grid="1"]{grid-template-columns:minmax(0,.85fr) repeat(3,minmax(0,1fr)) !important}
+#node-modal [data-admin-node-lines-panel="1"]>div:first-child>div:first-child>label{display:inline-block;margin-bottom:0}
+#node-modal [data-admin-node-line-count="1"]{display:inline-block;margin-left:.5rem;font-size:.6875rem;line-height:1.15rem;color:rgb(var(--ui-c-n-400))}
+#node-modal form>div:last-child{margin-top:1.25rem !important;gap:1rem !important;padding:.75rem 0 !important;justify-content:flex-end}
+#node-modal form>div:last-child>button{flex:0 0 auto !important;min-width:7.5rem;min-height:3rem;padding-top:0 !important;padding-bottom:0 !important}
+#node-modal [data-admin-hint="1"]{display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden}
+#node-modal [data-admin-hint="1"]~[data-admin-hint="1"]{display:none}
+#node-modal [data-admin-hint-open="1"]>[data-admin-hint="1"]{display:block;overflow:visible;padding-right:0}
+#node-modal [data-admin-hint-field="1"]{position:relative}
+#node-modal [data-admin-hint-field="1"]>[data-admin-hint="1"]{padding-right:3rem}
+#node-modal [data-admin-hint-toggle="1"]{position:absolute;right:0;bottom:.1rem;padding:0;border:0;background:transparent;font-size:.6875rem;line-height:1.05rem;color:rgb(var(--ui-c-n-400));cursor:pointer}
+#node-modal [data-admin-hint-toggle="1"]:hover{color:rgb(var(--ui-c-n-600))}
+.dark #node-modal [data-admin-hint-toggle="1"]{color:rgb(var(--ui-c-n-500))}
+.dark #node-modal [data-admin-hint-toggle="1"]:hover{color:rgb(var(--ui-c-n-300))}
+#node-modal [data-admin-node-basic-grid="1"]{grid-template-columns:repeat(2,minmax(0,1fr)) !important}
 #node-modal [data-admin-node-meta-grid="1"]{grid-template-columns:minmax(0,1.35fr) minmax(0,1fr) minmax(15rem,1fr) !important}
 #node-modal [data-admin-node-entry-field="1"] p{margin-bottom:0}
 #node-modal [data-admin-node-stream-field="1"]{min-width:0}
+/* 标签颜色内嵌进标签输入框：颜色选择器贴在输入框右侧，只留一条分隔线。*/
+#node-modal [data-admin-node-tag-field="1"]{position:relative;display:block !important;min-width:0}
+#node-modal [data-admin-node-tag-field="1"]>#form-tag{width:100%;padding-right:6.25rem}
+/* 原生 select 的弹出菜单由系统绘制，选项颜色改不动（Windows 上是系统强调色），
+   所以把 select 留作唯一状态源并隐藏，另画一个按钮 + 面板按真实标签色显示。*/
+#node-modal [data-admin-node-tag-field="1"]>#form-tag-color{position:absolute;width:1px;height:1px;min-height:0;padding:0;margin:0;border:0;opacity:0;pointer-events:none}
+#node-modal [data-admin-node-tag-color-trigger="1"]{position:absolute;top:.3125rem;right:.3125rem;bottom:.3125rem;display:inline-flex;align-items:center;justify-content:space-between;gap:.25rem;width:5.5rem;padding:0 .375rem 0 .5rem;border:0;border-left:1px solid rgb(var(--ui-c-n-200));border-radius:0;background:transparent;font-size:.75rem;line-height:1.25rem;color:rgb(var(--ui-c-n-600));cursor:pointer;text-align:left}
+.dark #node-modal [data-admin-node-tag-color-trigger="1"]{border-left-color:rgb(var(--ui-c-n-700));color:rgb(var(--ui-c-n-300))}
+#node-modal [data-admin-node-tag-color-trigger="1"]:focus-visible{outline:2px solid rgb(var(--ui-c-a-500) / .45);outline-offset:-2px;border-radius:max(8px,var(--ui-control-radius-px))}
+[data-admin-node-tag-color-panel="1"]{position:fixed;z-index:2147483000;min-width:7rem;padding:.25rem;border:1px solid rgb(var(--ui-c-n-200));border-radius:12px;background:rgb(var(--ui-c-white));box-shadow:0 16px 32px rgb(var(--ui-c-n-900) / .16)}
+.dark [data-admin-node-tag-color-panel="1"]{border-color:rgb(var(--ui-c-n-700));background:rgb(var(--ui-c-n-900));box-shadow:0 16px 32px rgb(0 0 0 / .42)}
+[data-admin-node-tag-color-option="1"]{display:flex;align-items:center;gap:.5rem;width:100%;padding:.375rem .5rem;border:0;border-radius:8px;background:transparent;font-size:.8125rem;text-align:left;cursor:pointer}
+[data-admin-node-tag-color-option="1"]:hover{background:rgb(var(--ui-c-n-100))}
+.dark [data-admin-node-tag-color-option="1"]:hover{background:rgb(var(--ui-c-n-800))}
+[data-admin-node-tag-color-option="1"][aria-selected="true"]{background:rgb(var(--ui-c-n-100));font-weight:600}
+.dark [data-admin-node-tag-color-option="1"][aria-selected="true"]{background:rgb(var(--ui-c-n-800))}
+[data-admin-node-tag-color-swatch="1"]{display:inline-block;flex:0 0 auto;width:.75rem;height:.75rem;border-radius:4px;border:1px solid currentColor}
 @media (max-width:767px){#node-modal [data-admin-node-basic-grid="1"],#node-modal [data-admin-node-meta-grid="1"],#node-modal [data-admin-node-advanced-fields="1"]{grid-template-columns:minmax(0,1fr) !important}#node-modal [data-admin-node-advanced-headers="1"] #headers-container>div{flex-wrap:wrap}#node-modal [data-admin-node-advanced-headers="1"] #headers-container>div>input{flex:1 1 100%;width:100%}#node-modal [data-admin-node-advanced-headers="1"] #headers-container>div>button{margin-left:auto}}
 @media (max-width:767px){#node-modal [data-admin-node-lines-panel="1"]>div:first-child{align-items:stretch;flex-direction:column}#node-modal [data-admin-node-lines-panel="1"]>div:first-child>div:first-child,#node-modal [data-admin-node-lines-panel="1"]>div:first-child>div:last-child{width:100%}#node-modal [data-admin-node-lines-panel="1"]>div:first-child>div:last-child button{flex:1 1 0;min-width:0}}
-@media (min-width:768px){#node-modal{max-width:72rem}}
+@media (max-width:767px){#node-modal form>div:last-child>button{flex:1 1 0 !important;min-width:0}}
+@media (min-width:768px){#node-modal{max-width:72rem}#node-modal [data-admin-node-lines-head="1"],#node-modal [data-admin-node-line-grid="1"]{grid-template-columns:88px minmax(0,1fr) minmax(0,1.8fr) 104px 88px 176px !important}}
 #view-nodes [data-admin-node-toolbar="1"]{display:grid;grid-template-columns:minmax(0,1fr);gap:1rem;align-items:start}
 #view-nodes [data-admin-node-toolbar-main="1"]{width:100%;max-width:none;min-width:0}
 #view-nodes [data-admin-node-toolbar-row="1"]{display:grid;grid-template-columns:max-content max-content minmax(15rem,1fr);align-items:center;gap:.5rem;width:100%}
-#view-nodes [data-admin-node-toolbar-actions="1"]{display:grid;grid-template-columns:repeat(3,max-content);align-items:center;justify-content:start;gap:.5rem;width:auto}
+#view-nodes [data-admin-node-toolbar-actions="1"]{display:grid;grid-template-columns:repeat(4,max-content);align-items:center;justify-content:start;gap:.5rem;width:auto}
 #view-nodes [data-admin-node-toolbar-actions="1"]>*{width:auto;min-height:2.5rem;margin:0}
 .dark #view-nodes .node-toolbar-primary-btn,
-.dark #node-modal .node-modal-primary-btn{background:#2563eb !important;color:#fff !important;box-shadow:0 10px 24px rgba(37,99,235,.22) !important}
+.dark #node-modal .node-modal-primary-btn{background:rgb(var(--ui-c-a-600)) !important;color:rgb(var(--ui-c-white)) !important;box-shadow:0 10px 24px rgb(var(--ui-c-a-600) / .22) !important}
 .dark #view-nodes .node-toolbar-primary-btn:hover,
-.dark #node-modal .node-modal-primary-btn:hover{background:#1d4ed8 !important}
+.dark #node-modal .node-modal-primary-btn:hover{background:rgb(var(--ui-c-a-700)) !important}
 .dark #view-nodes .node-tag-filter-trigger,
 .dark #view-nodes .node-toolbar-search,
 .dark #view-nodes .node-tag-filter-chip,
 .dark #view-nodes .node-action-btn,
-.dark #node-modal .node-modal-secondary-btn{background:rgba(15,23,42,.88) !important;color:#e2e8f0 !important;border-color:rgba(71,85,105,.82) !important;box-shadow:none !important}
+.dark #node-modal .node-modal-secondary-btn{background:rgb(var(--ui-c-n-900) / .88) !important;color:rgb(var(--ui-c-n-200)) !important;border-color:rgb(var(--ui-c-n-600) / .82) !important;box-shadow:none !important}
 .dark #view-nodes .node-card-shell,
 .dark #view-nodes .node-tag-filter-panel-shell,
-.dark #node-modal>div{background:#0f172a !important;border-color:#1e293b !important}
-#view-settings{--settings-surface:#ffffff;--settings-soft:#f8fafc;--settings-border:#dbe3ee;--settings-border-strong:#cbd5e1;overflow-x:hidden}
-.dark #view-settings{--settings-surface:#0f172a;--settings-soft:#111827;--settings-border:#334155;--settings-border-strong:#475569}
+.dark #node-modal>div{background:rgb(var(--ui-c-n-900)) !important;border-color:rgb(var(--ui-c-n-800)) !important}
+#view-settings{--settings-surface:rgb(var(--ui-c-white));--settings-soft:rgb(var(--ui-c-n-50));--settings-border:#dbe3ee;--settings-border-strong:rgb(var(--ui-c-n-300));overflow-x:hidden}
+.dark #view-settings{--settings-surface:rgb(var(--ui-c-n-900));--settings-soft:#111827;--settings-border:rgb(var(--ui-c-n-700));--settings-border-strong:rgb(var(--ui-c-n-600))}
 #view-settings,#view-settings .settings-view-layout,#view-settings #settings-forms,#settings-forms>[id^="set-"]{min-width:0;min-height:0}
 #view-settings .settings-view-layout{align-items:flex-start;overflow-x:hidden}
 #view-settings #settings-forms{flex:1 1 auto;min-width:0}
@@ -130,6 +157,18 @@ body.bg-slate-50,body.antialiased{background:#f8fafc !important;color:#0f172a !i
 #view-settings .settings-worker-html-update-card [data-admin-worker-html-status="1"]{overflow-wrap:anywhere}
 #view-settings .settings-worker-html-update-card [data-admin-worker-html-actions="1"]{display:flex;align-items:center;justify-content:flex-end;gap:.5rem;padding-top:.25rem}
 #view-settings .settings-worker-html-update-card [data-admin-worker-html-actions="1"] button{min-height:2.5rem}
+/* 文件选择框：::file-selector-button 的完整样式原本只写在 claude 皮肤下，
+   经典皮肤拿到的是浏览器默认（透明背景 + 黑边），"Choose File" 看着像裸文字。*/
+#view-settings .settings-worker-html-update-card [data-admin-worker-file-input="1"],
+#view-settings .settings-worker-html-update-card [data-admin-index-file-input="1"]{display:block;width:100%;min-width:0;max-width:100%;padding:.375rem;border:1px solid var(--settings-border);border-radius:max(12px,var(--ui-control-radius-px));background:var(--settings-surface);color:rgb(var(--ui-c-n-700));font-size:.8125rem;line-height:1.25rem;cursor:pointer}
+.dark #view-settings .settings-worker-html-update-card [data-admin-worker-file-input="1"],
+.dark #view-settings .settings-worker-html-update-card [data-admin-index-file-input="1"]{color:rgb(var(--ui-c-n-200))}
+#view-settings .settings-worker-html-update-card [data-admin-worker-file-input="1"]::file-selector-button,
+#view-settings .settings-worker-html-update-card [data-admin-index-file-input="1"]::file-selector-button{margin-right:.625rem;padding:.375rem .875rem;border:1px solid var(--settings-border-strong);border-radius:max(10px,calc(var(--ui-control-radius-px) - 2px));background:rgb(var(--ui-c-a-600));color:rgb(var(--ui-c-white));font-size:.8125rem;font-weight:600;line-height:1.25rem;cursor:pointer;transition:background-color .18s ease,border-color .18s ease}
+#view-settings .settings-worker-html-update-card [data-admin-worker-file-input="1"]::file-selector-button:hover,
+#view-settings .settings-worker-html-update-card [data-admin-index-file-input="1"]::file-selector-button:hover{background:rgb(var(--ui-c-a-700))}
+#view-settings .settings-worker-html-update-card [data-admin-worker-file-input="1"]:focus-visible,
+#view-settings .settings-worker-html-update-card [data-admin-index-file-input="1"]:focus-visible{outline:2px solid rgb(var(--ui-c-a-500) / .45);outline-offset:2px}
 #view-settings .ui-block-head,
 #view-settings .settings-nav-shell .border-b,
 #view-settings #settings-forms>div>.ui-settings-panel+.ui-settings-panel{border-color:var(--settings-border) !important}
@@ -138,36 +177,36 @@ body.bg-slate-50,body.antialiased{background:#f8fafc !important;color:#0f172a !i
 #view-settings button[class*="border-slate-200"],
 #view-settings button[class*="border-slate-300"],
 #view-settings label[class*="border-slate-200"],
-#view-settings label[class*="bg-slate-200"]{display:inline-flex;align-items:center;justify-content:center;border-radius:max(14px,var(--ui-control-radius-px)) !important;background:var(--settings-soft) !important;border:1px solid var(--settings-border) !important;color:#334155 !important;box-shadow:none !important;background-image:none !important}
+#view-settings label[class*="bg-slate-200"]{display:inline-flex;align-items:center;justify-content:center;border-radius:max(14px,var(--ui-control-radius-px)) !important;background:var(--settings-soft) !important;border:1px solid var(--settings-border) !important;color:rgb(var(--ui-c-n-700)) !important;box-shadow:none !important;background-image:none !important}
 .dark #view-settings .settings-secondary-btn,
 .dark #view-settings .settings-secondary-label,
 .dark #view-settings button[class*="border-slate-200"],
 .dark #view-settings button[class*="border-slate-300"],
 .dark #view-settings label[class*="border-slate-200"],
-.dark #view-settings label[class*="bg-slate-200"]{background:var(--settings-soft) !important;border-color:var(--settings-border) !important;color:#e2e8f0 !important}
+.dark #view-settings label[class*="bg-slate-200"]{background:var(--settings-soft) !important;border-color:var(--settings-border) !important;color:rgb(var(--ui-c-n-200)) !important}
 #view-settings .settings-secondary-btn:hover,
 #view-settings .settings-secondary-label:hover,
 #view-settings button[class*="border-slate-200"]:hover,
 #view-settings button[class*="border-slate-300"]:hover,
 #view-settings label[class*="border-slate-200"]:hover,
-#view-settings label[class*="bg-slate-200"]:hover{background:var(--settings-surface) !important;border-color:var(--settings-border-strong) !important;color:#0f172a !important}
+#view-settings label[class*="bg-slate-200"]:hover{background:var(--settings-surface) !important;border-color:var(--settings-border-strong) !important;color:rgb(var(--ui-c-n-900)) !important}
 .dark #view-settings .settings-secondary-btn:hover,
 .dark #view-settings .settings-secondary-label:hover,
 .dark #view-settings button[class*="border-slate-200"]:hover,
 .dark #view-settings button[class*="border-slate-300"]:hover,
 .dark #view-settings label[class*="border-slate-200"]:hover,
-.dark #view-settings label[class*="bg-slate-200"]:hover{background:#162033 !important;border-color:var(--settings-border-strong) !important;color:#f8fafc !important}
-#view-settings .set-tab{background:var(--settings-surface) !important;border-color:var(--settings-border) !important;color:#475569 !important;box-shadow:none !important}
-#view-settings .set-tab:hover{background:var(--settings-surface) !important;border-color:var(--settings-border-strong) !important;color:#0f172a !important}
-.dark #view-settings .set-tab{background:var(--settings-surface) !important;color:#cbd5e1 !important}
-.dark #view-settings .set-tab:hover{background:#162033 !important;color:#fff !important}
-#view-settings .set-tab[aria-selected="true"]{background:var(--settings-surface) !important;border-color:#bfdbfe !important;color:#1d4ed8 !important;box-shadow:inset 0 0 0 1px rgba(191,219,254,.75) !important}
-.dark #view-settings .set-tab[aria-selected="true"]{background:var(--settings-surface) !important;border-color:#3b82f6 !important;color:#bfdbfe !important;box-shadow:inset 0 0 0 1px rgba(59,130,246,.3) !important}
+.dark #view-settings label[class*="bg-slate-200"]:hover{background:#162033 !important;border-color:var(--settings-border-strong) !important;color:rgb(var(--ui-c-n-50)) !important}
+#view-settings .set-tab{background:var(--settings-surface) !important;border-color:var(--settings-border) !important;color:rgb(var(--ui-c-n-600)) !important;box-shadow:none !important}
+#view-settings .set-tab:hover{background:var(--settings-surface) !important;border-color:var(--settings-border-strong) !important;color:rgb(var(--ui-c-n-900)) !important}
+.dark #view-settings .set-tab{background:var(--settings-surface) !important;color:rgb(var(--ui-c-n-300)) !important}
+.dark #view-settings .set-tab:hover{background:#162033 !important;color:rgb(var(--ui-c-white)) !important}
+#view-settings .set-tab[aria-selected="true"]{background:var(--settings-surface) !important;border-color:rgb(var(--ui-c-a-200)) !important;color:rgb(var(--ui-c-a-700)) !important;box-shadow:inset 0 0 0 1px rgb(var(--ui-c-a-200) / .75) !important}
+.dark #view-settings .set-tab[aria-selected="true"]{background:var(--settings-surface) !important;border-color:rgb(var(--ui-c-a-500)) !important;color:rgb(var(--ui-c-a-200)) !important;box-shadow:inset 0 0 0 1px rgb(var(--ui-c-a-500) / .3) !important}
 #view-settings button:disabled,
 #view-settings .settings-secondary-btn:disabled,
 #view-settings .set-tab:disabled{opacity:.65 !important;pointer-events:none}
 @media (max-width:767px){#view-nodes [data-admin-node-toolbar-row="1"],#view-nodes [data-admin-node-toolbar-actions="1"]{grid-template-columns:minmax(0,1fr)}#view-nodes [data-admin-node-toolbar-row="1"]>*{width:100%}#view-settings .settings-view-layout{display:flex;flex-direction:column}#view-settings .settings-worker-html-update-card [data-admin-worker-html-grid="1"]{grid-template-columns:minmax(0,1fr)}#view-settings .settings-worker-html-update-card [data-admin-worker-html-actions="1"]{align-items:stretch;flex-direction:column}#view-settings .settings-worker-html-update-card [data-admin-worker-html-actions="1"] button{width:100%}}
-@media (min-width:768px) and (max-width:1535px){#view-nodes [data-admin-node-toolbar-actions="1"]{grid-template-columns:repeat(3,minmax(0,1fr));width:100%}#view-nodes [data-admin-node-toolbar-actions="1"]>*{width:100%}}
+@media (min-width:768px) and (max-width:1535px){#view-nodes [data-admin-node-toolbar-actions="1"]{grid-template-columns:repeat(4,minmax(0,1fr));width:100%}#view-nodes [data-admin-node-toolbar-actions="1"]>*{width:100%}}
 @media (min-width:1536px){#view-nodes [data-admin-node-toolbar="1"]{grid-template-columns:minmax(0,1fr) max-content}#view-nodes [data-admin-node-toolbar-actions="1"]{justify-content:end}}
 @media (min-width:768px){#app-shell.settings-split-layout #content-area{overflow:hidden}#app-shell.settings-split-layout #view-settings{height:100%;min-height:0;overflow:hidden}#app-shell.settings-split-layout #view-settings .settings-view-layout{height:100%;min-height:0}#app-shell.settings-split-layout #view-settings .settings-nav-shell{position:sticky;top:0;max-height:100%;overflow-y:auto;flex:0 0 auto}#app-shell.settings-split-layout #view-settings #settings-forms{height:100%;min-height:0;overflow-y:auto;padding-right:.25rem;scrollbar-gutter:stable}}
 #app-shell.render-lite.settings-split-layout #view-settings .settings-nav-shell{position:static;top:auto;max-height:none;overflow:visible}
@@ -181,13 +220,13 @@ body.bg-slate-50,body.antialiased{background:#f8fafc !important;color:#0f172a !i
 #app-shell svg.lucide{display:block;flex-shrink:0;stroke:currentColor}
 #view-dashboard [data-dashboard-traffic-card="1"]{position:relative !important}
 #view-dashboard [data-dashboard-traffic-label="1"]{width:calc(100% - 2.75rem);padding-right:0;overflow:visible;text-overflow:clip;white-space:normal !important}
-#view-dashboard [data-dashboard-traffic-toggle="1"]{position:absolute;top:1rem;right:1rem;display:inline-flex;align-items:center;justify-content:center;width:2.25rem;height:2.25rem;padding:0;border:1px solid #dbe3ee;background:rgba(255,255,255,.9);color:#475569;border-radius:max(12px,var(--ui-control-radius-px));box-shadow:none;transition:background-color .18s ease,border-color .18s ease,color .18s ease,opacity .18s ease}
-#view-dashboard [data-dashboard-traffic-toggle="1"]:hover{background:#f8fafc;border-color:#94a3b8;color:#047857}
+#view-dashboard [data-dashboard-traffic-toggle="1"]{position:absolute;top:1rem;right:1rem;display:inline-flex;align-items:center;justify-content:center;width:2.25rem;height:2.25rem;padding:0;border:1px solid #dbe3ee;background:rgb(var(--ui-c-white) / .9);color:rgb(var(--ui-c-n-600));border-radius:max(12px,var(--ui-control-radius-px));box-shadow:none;transition:background-color .18s ease,border-color .18s ease,color .18s ease,opacity .18s ease}
+#view-dashboard [data-dashboard-traffic-toggle="1"]:hover{background:rgb(var(--ui-c-n-50));border-color:rgb(var(--ui-c-n-400));color:#047857}
 #view-dashboard [data-dashboard-traffic-toggle="1"]:focus-visible{outline:none;box-shadow:0 0 0 2px rgba(16,185,129,.22)}
 #view-dashboard [data-dashboard-traffic-toggle="1"]:disabled{cursor:wait;opacity:.6}
 #view-dashboard [data-dashboard-traffic-toggle="1"] i,#view-dashboard [data-dashboard-traffic-toggle="1"] svg{width:1rem;height:1rem}
-.dark #view-dashboard [data-dashboard-traffic-toggle="1"]{border-color:#334155;background:rgba(15,23,42,.92);color:#cbd5e1}
-.dark #view-dashboard [data-dashboard-traffic-toggle="1"]:hover{border-color:#64748b;background:#111827;color:#34d399}
+.dark #view-dashboard [data-dashboard-traffic-toggle="1"]{border-color:rgb(var(--ui-c-n-700));background:rgb(var(--ui-c-n-900) / .92);color:rgb(var(--ui-c-n-300))}
+.dark #view-dashboard [data-dashboard-traffic-toggle="1"]:hover{border-color:rgb(var(--ui-c-n-500));background:#111827;color:#34d399}
 
 /* ── Claude palette layer ────────────────────────────────────────────
    Warm parchment neutrals, terracotta accent, warm-toned dark mode.
@@ -195,36 +234,36 @@ body.bg-slate-50,body.antialiased{background:#f8fafc !important;color:#0f172a !i
   --admin-toolbar-hover-bg:rgba(201,100,66,.10);
   --admin-toolbar-hover-bg-dark:rgba(201,100,66,.18);
 }:where(html[data-theme="claude"]) body.bg-slate-50,
-:where(html[data-theme="claude"]) body.antialiased{background:#f5f4ed !important;color:#141413 !important}:where(html[data-theme="claude"]) #app-shell{background:#f5f4ed;color:#141413}html[data-theme="claude"].dark body,
-html[data-theme="claude"].dark body.antialiased{background:#141413 !important;color:#faf9f5 !important}:where(html[data-theme="claude"]) .dark #app-shell{background:#141413;color:#faf9f5}:where(html[data-theme="claude"]) .glass-card{background:#faf9f5;border:1px solid #e8e6dc;box-shadow:0 4px 24px rgba(20,20,19,.05)}:where(html[data-theme="claude"]) .dark .glass-card{background:#242420;border:1px solid #30302e;box-shadow:none}:where(html[data-theme="claude"]) #app-shell.no-backdrop-fx [data-ui-backdrop="1"]{background-color:rgba(20,20,19,.72) !important}:where(html[data-theme="claude"]) #app-shell.no-backdrop-fx [data-ui-surface-blur="1"]{background-color:rgba(250,249,245,.98) !important}:where(html[data-theme="claude"]) .dark #app-shell.no-backdrop-fx [data-ui-surface-blur="1"]{background-color:rgba(36,36,32,.98) !important}:where(html[data-theme="claude"]) .ui-section-title{color:#141413}:where(html[data-theme="claude"]) .dark .ui-section-title{color:#faf9f5}:where(html[data-theme="claude"]) .ui-section-kicker{color:#87867f}:where(html[data-theme="claude"]) .dark .ui-section-kicker{color:#87867f}:where(html[data-theme="claude"]) .ui-chip-muted{border-color:#e8e6dc;background:#faf9f5;color:#5e5d59}:where(html[data-theme="claude"]) .dark .ui-chip-muted{border-color:#30302e;background:#242420;color:#d1cfc5}:where(html[data-theme="claude"]) .ui-block-head{border-bottom-color:rgba(232,230,220,.9)}:where(html[data-theme="claude"]) .dark .ui-block-head{border-color:#30302e}:where(html[data-theme="claude"]) .ui-settings-panel{border-color:#e8e6dc;background:rgba(250,249,245,.7);box-shadow:0 1px 2px rgba(20,20,19,.05)}:where(html[data-theme="claude"]) .dark .ui-settings-panel{border-color:#30302e;background:rgba(36,36,32,.55)}:where(html[data-theme="claude"]) .ui-field-label{color:#3d3d3a}:where(html[data-theme="claude"]) .dark .ui-field-label{color:#e8e6dc}:where(html[data-theme="claude"]) #app-shell [data-admin-toolbar-action]{color:#5e5d59}:where(html[data-theme="claude"]) .dark #app-shell [data-admin-toolbar-action]{color:#b0aea5}:where(html[data-theme="claude"]) #app-shell [data-admin-toolbar-action]:hover{color:#c96442}:where(html[data-theme="claude"]) .dark #app-shell [data-admin-toolbar-action]:hover{color:#d97757}:where(html[data-theme="claude"]) #app-shell [data-admin-toolbar-action]:focus-visible{box-shadow:0 0 0 2px rgba(201,100,66,.28) !important}:where(html[data-theme="claude"]) .dark #app-shell [data-admin-toolbar-action]:focus-visible{box-shadow:0 0 0 2px rgba(217,119,87,.32) !important}:where(html[data-theme="claude"]) #app-shell [data-admin-toolbar-action="theme"][data-theme-state="dark"]{color:#c96442}:where(html[data-theme="claude"]) .dark #app-shell [data-admin-toolbar-action="theme"][data-theme-state="dark"]{color:#d97757}:where(html[data-theme="claude"]) #app-shell [data-admin-toolbar-action="theme"][data-theme-state="light"]{color:#b4553a}:where(html[data-theme="claude"]) .dark #app-shell [data-admin-toolbar-action="theme"][data-theme-state="light"]{color:#d97757}:where(html[data-theme="claude"]) #node-modal [data-admin-node-advanced="1"]{border-color:#e8e6dc;background:rgba(245,244,237,.72)}:where(html[data-theme="claude"]) .dark #node-modal [data-admin-node-advanced="1"]{border-color:#30302e;background:rgba(20,20,19,.4)}:where(html[data-theme="claude"]) #node-modal [data-admin-node-advanced="1"]>summary{color:#3d3d3a}:where(html[data-theme="claude"]) .dark #node-modal [data-admin-node-advanced="1"]>summary{color:#e8e6dc}:where(html[data-theme="claude"]) #node-modal [data-admin-node-advanced-content="1"]{border-top-color:#e8e6dc}:where(html[data-theme="claude"]) .dark #node-modal [data-admin-node-advanced-content="1"]{border-color:#30302e}:where(html[data-theme="claude"]) #node-modal [data-admin-node-advanced-headers="1"]{background:#faf9f5}:where(html[data-theme="claude"]) .dark #node-modal [data-admin-node-advanced-headers="1"]{background:rgba(36,36,32,.72)}:where(html[data-theme="claude"]) .dark #node-modal>div{background:#242420 !important;border-color:#30302e !important}:where(html[data-theme="claude"]) .dark #view-nodes .node-card-shell,
-:where(html[data-theme="claude"]) .dark #view-nodes .node-tag-filter-panel-shell{background:#242420 !important;border-color:#30302e !important}:where(html[data-theme="claude"]) .dark #view-nodes .node-toolbar-primary-btn,
-:where(html[data-theme="claude"]) .dark #node-modal .node-modal-primary-btn{background:#c96442 !important;color:#faf9f5 !important;box-shadow:0 10px 24px rgba(201,100,66,.22) !important}:where(html[data-theme="claude"]) .dark #view-nodes .node-toolbar-primary-btn:hover,
-:where(html[data-theme="claude"]) .dark #node-modal .node-modal-primary-btn:hover{background:#b4553a !important}:where(html[data-theme="claude"]) .dark #view-nodes .node-tag-filter-trigger,
+:where(html[data-theme="claude"]) body.antialiased{background:rgb(var(--ui-c-n-50)) !important;color:rgb(var(--ui-c-n-900)) !important}:where(html[data-theme="claude"]) #app-shell{background:rgb(var(--ui-c-n-50));color:rgb(var(--ui-c-n-900))}html[data-theme="claude"].dark body,
+html[data-theme="claude"].dark body.antialiased{background:rgb(var(--ui-c-n-900)) !important;color:rgb(var(--ui-c-white)) !important}:where(html[data-theme="claude"]) .dark #app-shell{background:rgb(var(--ui-c-n-900));color:rgb(var(--ui-c-white))}:where(html[data-theme="claude"]) .glass-card{background:rgb(var(--ui-c-white));border:1px solid rgb(var(--ui-c-n-200));box-shadow:0 4px 24px rgb(var(--ui-c-n-900) / .05)}:where(html[data-theme="claude"]) .dark .glass-card{background:var(--d1-raised-dark);border:1px solid rgb(var(--ui-c-n-800));box-shadow:none}:where(html[data-theme="claude"]) #app-shell.no-backdrop-fx [data-ui-backdrop="1"]{background-color:rgb(var(--ui-c-n-900) / .72) !important}:where(html[data-theme="claude"]) #app-shell.no-backdrop-fx [data-ui-surface-blur="1"]{background-color:rgb(var(--ui-c-white) / .98) !important}:where(html[data-theme="claude"]) .dark #app-shell.no-backdrop-fx [data-ui-surface-blur="1"]{background-color:rgba(36,36,32,.98) !important}:where(html[data-theme="claude"]) .ui-section-title{color:rgb(var(--ui-c-n-900))}:where(html[data-theme="claude"]) .dark .ui-section-title{color:rgb(var(--ui-c-white))}:where(html[data-theme="claude"]) .ui-section-kicker{color:rgb(var(--ui-c-n-500))}:where(html[data-theme="claude"]) .dark .ui-section-kicker{color:rgb(var(--ui-c-n-500))}:where(html[data-theme="claude"]) .ui-chip-muted{border-color:rgb(var(--ui-c-n-200));background:rgb(var(--ui-c-white));color:rgb(var(--ui-c-n-600))}:where(html[data-theme="claude"]) .dark .ui-chip-muted{border-color:rgb(var(--ui-c-n-800));background:var(--d1-raised-dark);color:rgb(var(--ui-c-n-300))}:where(html[data-theme="claude"]) .ui-block-head{border-bottom-color:rgb(var(--ui-c-n-200) / .9)}:where(html[data-theme="claude"]) .dark .ui-block-head{border-color:rgb(var(--ui-c-n-800))}:where(html[data-theme="claude"]) .ui-settings-panel{border-color:rgb(var(--ui-c-n-200));background:rgb(var(--ui-c-white) / .7);box-shadow:0 1px 2px rgb(var(--ui-c-n-900) / .05)}:where(html[data-theme="claude"]) .dark .ui-settings-panel{border-color:rgb(var(--ui-c-n-800));background:rgba(36,36,32,.55)}:where(html[data-theme="claude"]) .ui-field-label{color:var(--d1-ink-2)}:where(html[data-theme="claude"]) .dark .ui-field-label{color:rgb(var(--ui-c-n-200))}:where(html[data-theme="claude"]) #app-shell [data-admin-toolbar-action]{color:rgb(var(--ui-c-n-600))}:where(html[data-theme="claude"]) .dark #app-shell [data-admin-toolbar-action]{color:rgb(var(--ui-c-n-400))}:where(html[data-theme="claude"]) #app-shell [data-admin-toolbar-action]:hover{color:rgb(var(--ui-c-a-500))}:where(html[data-theme="claude"]) .dark #app-shell [data-admin-toolbar-action]:hover{color:rgb(var(--ui-c-a-400))}:where(html[data-theme="claude"]) #app-shell [data-admin-toolbar-action]:focus-visible{box-shadow:0 0 0 2px rgb(var(--ui-c-a-500) / .28) !important}:where(html[data-theme="claude"]) .dark #app-shell [data-admin-toolbar-action]:focus-visible{box-shadow:0 0 0 2px rgb(var(--ui-c-a-400) / .32) !important}:where(html[data-theme="claude"]) #app-shell [data-admin-toolbar-action="theme"][data-theme-state="dark"]{color:rgb(var(--ui-c-a-500))}:where(html[data-theme="claude"]) .dark #app-shell [data-admin-toolbar-action="theme"][data-theme-state="dark"]{color:rgb(var(--ui-c-a-400))}:where(html[data-theme="claude"]) #app-shell [data-admin-toolbar-action="theme"][data-theme-state="light"]{color:rgb(var(--ui-c-a-600))}:where(html[data-theme="claude"]) .dark #app-shell [data-admin-toolbar-action="theme"][data-theme-state="light"]{color:rgb(var(--ui-c-a-400))}:where(html[data-theme="claude"]) #node-modal [data-admin-node-advanced="1"]{border-color:rgb(var(--ui-c-n-200));background:rgb(var(--ui-c-n-50) / .72)}:where(html[data-theme="claude"]) .dark #node-modal [data-admin-node-advanced="1"]{border-color:rgb(var(--ui-c-n-800));background:rgb(var(--ui-c-n-900) / .4)}:where(html[data-theme="claude"]) #node-modal [data-admin-node-advanced="1"]>summary{color:var(--d1-ink-2)}:where(html[data-theme="claude"]) .dark #node-modal [data-admin-node-advanced="1"]>summary{color:rgb(var(--ui-c-n-200))}:where(html[data-theme="claude"]) #node-modal [data-admin-node-advanced-content="1"]{border-top-color:rgb(var(--ui-c-n-200))}:where(html[data-theme="claude"]) .dark #node-modal [data-admin-node-advanced-content="1"]{border-color:rgb(var(--ui-c-n-800))}:where(html[data-theme="claude"]) #node-modal [data-admin-node-advanced-headers="1"]{background:rgb(var(--ui-c-white))}:where(html[data-theme="claude"]) .dark #node-modal [data-admin-node-advanced-headers="1"]{background:rgba(36,36,32,.72)}:where(html[data-theme="claude"]) .dark #node-modal>div{background:var(--d1-raised-dark) !important;border-color:rgb(var(--ui-c-n-800)) !important}:where(html[data-theme="claude"]) .dark #view-nodes .node-card-shell,
+:where(html[data-theme="claude"]) .dark #view-nodes .node-tag-filter-panel-shell{background:var(--d1-raised-dark) !important;border-color:rgb(var(--ui-c-n-800)) !important}:where(html[data-theme="claude"]) .dark #view-nodes .node-toolbar-primary-btn,
+:where(html[data-theme="claude"]) .dark #node-modal .node-modal-primary-btn{background:rgb(var(--ui-c-a-500)) !important;color:rgb(var(--ui-c-white)) !important;box-shadow:0 10px 24px rgb(var(--ui-c-a-500) / .22) !important}:where(html[data-theme="claude"]) .dark #view-nodes .node-toolbar-primary-btn:hover,
+:where(html[data-theme="claude"]) .dark #node-modal .node-modal-primary-btn:hover{background:rgb(var(--ui-c-a-600)) !important}:where(html[data-theme="claude"]) .dark #view-nodes .node-tag-filter-trigger,
 :where(html[data-theme="claude"]) .dark #view-nodes .node-toolbar-search,
 :where(html[data-theme="claude"]) .dark #view-nodes .node-tag-filter-chip,
 :where(html[data-theme="claude"]) .dark #view-nodes .node-action-btn,
-:where(html[data-theme="claude"]) .dark #node-modal .node-modal-secondary-btn{background:rgba(36,36,32,.9) !important;color:#e8e6dc !important;border-color:rgba(77,76,72,.85) !important}:where(html[data-theme="claude"]) #view-settings{--settings-surface:#faf9f5;--settings-soft:#f5f4ed;--settings-border:#e8e6dc;--settings-border-strong:#d1cfc5}:where(html[data-theme="claude"]) .dark #view-settings{--settings-surface:#242420;--settings-soft:#30302e;--settings-border:#30302e;--settings-border-strong:#4d4c48}:where(html[data-theme="claude"]) #view-settings .settings-secondary-btn,
+:where(html[data-theme="claude"]) .dark #node-modal .node-modal-secondary-btn{background:rgba(36,36,32,.9) !important;color:rgb(var(--ui-c-n-200)) !important;border-color:rgb(var(--ui-c-n-700) / .85) !important}:where(html[data-theme="claude"]) #view-settings{--settings-surface:rgb(var(--ui-c-white));--settings-soft:rgb(var(--ui-c-n-50));--settings-border:rgb(var(--ui-c-n-200));--settings-border-strong:rgb(var(--ui-c-n-300))}:where(html[data-theme="claude"]) .dark #view-settings{--settings-surface:var(--d1-raised-dark);--settings-soft:rgb(var(--ui-c-n-800));--settings-border:rgb(var(--ui-c-n-800));--settings-border-strong:rgb(var(--ui-c-n-700))}:where(html[data-theme="claude"]) #view-settings .settings-secondary-btn,
 :where(html[data-theme="claude"]) #view-settings .settings-secondary-label,
 :where(html[data-theme="claude"]) #view-settings button[class*="border-slate-200"],
 :where(html[data-theme="claude"]) #view-settings button[class*="border-slate-300"],
 :where(html[data-theme="claude"]) #view-settings label[class*="border-slate-200"],
-:where(html[data-theme="claude"]) #view-settings label[class*="bg-slate-200"]{color:#3d3d3a !important}:where(html[data-theme="claude"]) .dark #view-settings .settings-secondary-btn,
+:where(html[data-theme="claude"]) #view-settings label[class*="bg-slate-200"]{color:var(--d1-ink-2) !important}:where(html[data-theme="claude"]) .dark #view-settings .settings-secondary-btn,
 :where(html[data-theme="claude"]) .dark #view-settings .settings-secondary-label,
 :where(html[data-theme="claude"]) .dark #view-settings button[class*="border-slate-200"],
 :where(html[data-theme="claude"]) .dark #view-settings button[class*="border-slate-300"],
 :where(html[data-theme="claude"]) .dark #view-settings label[class*="border-slate-200"],
-:where(html[data-theme="claude"]) .dark #view-settings label[class*="bg-slate-200"]{color:#e8e6dc !important}:where(html[data-theme="claude"]) .dark #view-settings .settings-secondary-btn:hover,
+:where(html[data-theme="claude"]) .dark #view-settings label[class*="bg-slate-200"]{color:rgb(var(--ui-c-n-200)) !important}:where(html[data-theme="claude"]) .dark #view-settings .settings-secondary-btn:hover,
 :where(html[data-theme="claude"]) .dark #view-settings .settings-secondary-label:hover,
 :where(html[data-theme="claude"]) .dark #view-settings button[class*="border-slate-200"]:hover,
 :where(html[data-theme="claude"]) .dark #view-settings button[class*="border-slate-300"]:hover,
 :where(html[data-theme="claude"]) .dark #view-settings label[class*="border-slate-200"]:hover,
-:where(html[data-theme="claude"]) .dark #view-settings label[class*="bg-slate-200"]:hover{background:#30302e !important;color:#faf9f5 !important}:where(html[data-theme="claude"]) #view-settings .set-tab{color:#5e5d59 !important}:where(html[data-theme="claude"]) #view-settings .set-tab:hover{color:#141413 !important}:where(html[data-theme="claude"]) .dark #view-settings .set-tab{color:#d1cfc5 !important}:where(html[data-theme="claude"]) .dark #view-settings .set-tab:hover{background:#30302e !important;color:#faf9f5 !important}:where(html[data-theme="claude"]) #view-settings .set-tab[aria-selected="true"]{background:#f5f4ed !important;border-color:#e0a48c !important;color:#b4553a !important;box-shadow:inset 0 0 0 1px rgba(201,100,66,.28) !important}:where(html[data-theme="claude"]) .dark #view-settings .set-tab[aria-selected="true"]{background:#30302e !important;border-color:#c96442 !important;color:#e0a48c !important;box-shadow:inset 0 0 0 1px rgba(201,100,66,.35) !important}:where(html[data-theme="claude"]) #view-dashboard [data-dashboard-traffic-toggle="1"]{border-color:#e8e6dc;background:rgba(250,249,245,.9);color:#5e5d59}:where(html[data-theme="claude"]) #view-dashboard [data-dashboard-traffic-toggle="1"]:hover{background:#f5f4ed;border-color:#b0aea5;color:#c96442}:where(html[data-theme="claude"]) #view-dashboard [data-dashboard-traffic-toggle="1"]:focus-visible{box-shadow:0 0 0 2px rgba(201,100,66,.24)}:where(html[data-theme="claude"]) .dark #view-dashboard [data-dashboard-traffic-toggle="1"]{border-color:#30302e;background:rgba(36,36,32,.92);color:#d1cfc5}:where(html[data-theme="claude"]) .dark #view-dashboard [data-dashboard-traffic-toggle="1"]:hover{border-color:#4d4c48;background:#30302e;color:#d97757}:where(html[data-theme="claude"]) .d1-heatmap-col-label{color:#87867f}:where(html[data-theme="claude"]) .dark .d1-heatmap-col-label{color:#87867f}:where(html[data-theme="claude"]) .d1-heatmap-row-label{color:#5e5d59}:where(html[data-theme="claude"]) .dark .d1-heatmap-row-label{color:#d1cfc5}:where(html[data-theme="claude"]) .d1-heat-cell{border-color:rgba(201,100,66,.18);background:rgba(201,100,66,var(--d1-heat-alpha,.08))}:where(html[data-theme="claude"]) .d1-heat-cell.is-active:hover{border-color:rgba(201,100,66,.4);box-shadow:0 10px 22px rgba(201,100,66,.12)}:where(html[data-theme="claude"]) .d1-heat-cell.is-empty{border-color:#e8e6dc;background:#f5f4ed}:where(html[data-theme="claude"]) .dark .d1-heat-cell{border-color:rgba(217,119,87,.18);background:rgba(217,119,87,var(--d1-heat-alpha,.12))}:where(html[data-theme="claude"]) .dark .d1-heat-cell.is-active:hover{border-color:rgba(224,164,140,.42);box-shadow:0 12px 26px rgba(201,100,66,.16)}:where(html[data-theme="claude"]) .dark .d1-heat-cell.is-empty{border-color:#30302e;background:rgba(20,20,19,.74)}:where(html[data-theme="claude"]) .dark [class*="text-slate-500"],
+:where(html[data-theme="claude"]) .dark #view-settings label[class*="bg-slate-200"]:hover{background:rgb(var(--ui-c-n-800)) !important;color:rgb(var(--ui-c-white)) !important}:where(html[data-theme="claude"]) #view-settings .set-tab{color:rgb(var(--ui-c-n-600)) !important}:where(html[data-theme="claude"]) #view-settings .set-tab:hover{color:rgb(var(--ui-c-n-900)) !important}:where(html[data-theme="claude"]) .dark #view-settings .set-tab{color:rgb(var(--ui-c-n-300)) !important}:where(html[data-theme="claude"]) .dark #view-settings .set-tab:hover{background:rgb(var(--ui-c-n-800)) !important;color:rgb(var(--ui-c-white)) !important}:where(html[data-theme="claude"]) #view-settings .set-tab[aria-selected="true"]{background:rgb(var(--ui-c-n-50)) !important;border-color:rgb(var(--ui-c-a-300)) !important;color:rgb(var(--ui-c-a-600)) !important;box-shadow:inset 0 0 0 1px rgb(var(--ui-c-a-500) / .28) !important}:where(html[data-theme="claude"]) .dark #view-settings .set-tab[aria-selected="true"]{background:rgb(var(--ui-c-n-800)) !important;border-color:rgb(var(--ui-c-a-500)) !important;color:rgb(var(--ui-c-a-300)) !important;box-shadow:inset 0 0 0 1px rgb(var(--ui-c-a-500) / .35) !important}:where(html[data-theme="claude"]) #view-dashboard [data-dashboard-traffic-toggle="1"]{border-color:rgb(var(--ui-c-n-200));background:rgb(var(--ui-c-white) / .9);color:rgb(var(--ui-c-n-600))}:where(html[data-theme="claude"]) #view-dashboard [data-dashboard-traffic-toggle="1"]:hover{background:rgb(var(--ui-c-n-50));border-color:rgb(var(--ui-c-n-400));color:rgb(var(--ui-c-a-500))}:where(html[data-theme="claude"]) #view-dashboard [data-dashboard-traffic-toggle="1"]:focus-visible{box-shadow:0 0 0 2px rgb(var(--ui-c-a-500) / .24)}:where(html[data-theme="claude"]) .dark #view-dashboard [data-dashboard-traffic-toggle="1"]{border-color:rgb(var(--ui-c-n-800));background:rgba(36,36,32,.92);color:rgb(var(--ui-c-n-300))}:where(html[data-theme="claude"]) .dark #view-dashboard [data-dashboard-traffic-toggle="1"]:hover{border-color:rgb(var(--ui-c-n-700));background:rgb(var(--ui-c-n-800));color:rgb(var(--ui-c-a-400))}:where(html[data-theme="claude"]) .d1-heatmap-col-label{color:rgb(var(--ui-c-n-500))}:where(html[data-theme="claude"]) .dark .d1-heatmap-col-label{color:rgb(var(--ui-c-n-500))}:where(html[data-theme="claude"]) .d1-heatmap-row-label{color:rgb(var(--ui-c-n-600))}:where(html[data-theme="claude"]) .dark .d1-heatmap-row-label{color:rgb(var(--ui-c-n-300))}:where(html[data-theme="claude"]) .d1-heat-cell{border-color:rgb(var(--ui-c-a-500) / .18);background:rgba(201,100,66,var(--ui-heat-alpha,.08))}:where(html[data-theme="claude"]) .d1-heat-cell.is-active:hover{border-color:rgb(var(--ui-c-a-500) / .4);box-shadow:0 10px 22px rgb(var(--ui-c-a-500) / .12)}:where(html[data-theme="claude"]) .d1-heat-cell.is-empty{border-color:rgb(var(--ui-c-n-200));background:rgb(var(--ui-c-n-50))}:where(html[data-theme="claude"]) .dark .d1-heat-cell{border-color:rgb(var(--ui-c-a-400) / .18);background:rgba(217,119,87,var(--ui-heat-alpha,.12))}:where(html[data-theme="claude"]) .dark .d1-heat-cell.is-active:hover{border-color:rgb(var(--ui-c-a-300) / .42);box-shadow:0 12px 26px rgb(var(--ui-c-a-500) / .16)}:where(html[data-theme="claude"]) .dark .d1-heat-cell.is-empty{border-color:rgb(var(--ui-c-n-800));background:rgb(var(--ui-c-n-900) / .74)}:where(html[data-theme="claude"]) .dark [class*="text-slate-500"],
 :where(html[data-theme="claude"]) .dark [class*="text-slate-400"],
 :where(html[data-theme="claude"]) .dark [data-admin-node-tmdb-aggregation="1"] .text-slate-500,
-:where(html[data-theme="claude"]) .dark [data-admin-node-tmdb-aggregation="1"] .text-slate-400{color:#b0aea5 !important}:where(html[data-theme="claude"]) .dark #view-settings label.text-slate-500,
+:where(html[data-theme="claude"]) .dark [data-admin-node-tmdb-aggregation="1"] .text-slate-400{color:rgb(var(--ui-c-n-400)) !important}:where(html[data-theme="claude"]) .dark #view-settings label.text-slate-500,
 :where(html[data-theme="claude"]) .dark #cfg-source-direct-nodes-summary,
-:where(html[data-theme="claude"]) .dark #view-logs p.text-slate-500{color:#b0aea5 !important}/* ===== Direction A · 暖纸编辑器（排版层）===== */
-html[data-theme="claude"]{--font-display:"Noto Serif SC","Source Serif 4",Georgia,"Songti SC","SimSun",serif;--font-body:system-ui,-apple-system,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;--font-mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;--d1-paper:#f5f4ed;--d1-raised:#faf9f5;--d1-sunk:#efeee6;--d1-ink:#141413;--d1-ink-2:#3d3d3a;--d1-muted:#87867f;--d1-rule:#e8e6dc;--d1-rule-2:#d8d5c9;--d1-clay:#c96442;--d1-clay-deep:#b4553a;--d1-clay-soft:#e0a48c;--d1-radius:14px}html[data-theme="claude"],
+:where(html[data-theme="claude"]) .dark #view-logs p.text-slate-500{color:rgb(var(--ui-c-n-400)) !important}/* ===== Direction A · 暖纸编辑器（排版层）===== */
+html[data-theme="claude"]{--font-display:"Noto Serif SC","Source Serif 4",Georgia,"Songti SC","SimSun",serif;--font-body:system-ui,-apple-system,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;--font-mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;--d1-paper:#f5f4ed;--d1-raised:#faf9f5;--d1-sunk:#efeee6;--d1-ink:#141413;--d1-ink-2:#3d3d3a;--d1-muted:#87867f;--d1-rule:#e8e6dc;--d1-rule-2:#d8d5c9;--d1-clay:#c96442;--d1-clay-deep:#b4553a;--d1-clay-soft:#e0a48c;--d1-radius:14px;--d1-on-accent:#ffffff;--d1-bean:#964742;--d1-bean-deep:#7f3b37;--d1-action:#8e3a22;--d1-action-hover:#7a301b;--d1-action-strong:#b3502f;--d1-action-strong-hover:#9b4326;--d1-action-active:#83381f;--d1-action-dark:#a3452a;--d1-raised-dark:#242420;--d1-muted-dark:#8f8d84;--d1-rule-2-dark:#4a4a45}/* 支持相对颜色语法时整族由 --d1-action 派生；上面的 literal 是兜底，不能只留 oklch() 一条，那样不支持的浏览器会拿到非法值、整条声明失效。 */@supports (color:oklch(from red calc(l - 0.05) calc(c - 0.01) h)){html[data-theme="claude"]{--d1-action-hover:oklch(from var(--d1-action) calc(l - 0.049) calc(c - 0.0115) calc(h - 0.103));--d1-action-strong:oklch(from var(--d1-action) calc(l + 0.0926) calc(c + 0.0172) calc(h + 1.9883));--d1-action-strong-hover:oklch(from var(--d1-action) calc(l + 0.0348) calc(c + 0.0051) calc(h + 1.7799));--d1-action-active:oklch(from var(--d1-action) calc(l - 0.0213) calc(c - 0.01) calc(h + 1.9515));--d1-action-dark:oklch(from var(--d1-action) calc(l + 0.0509) calc(c + 0.0111) calc(h + 0.0947))}}html[data-theme="claude"],
 :where(html[data-theme="claude"]) body,
 :where(html[data-theme="claude"]) #app-shell{font-family:var(--font-body);-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}:where(html[data-theme="claude"]) #app-shell{font-variant-numeric:tabular-nums}:where(html[data-theme="claude"]) h1,
 :where(html[data-theme="claude"]) h2,
@@ -233,18 +272,18 @@ html[data-theme="claude"]{--font-display:"Noto Serif SC","Source Serif 4",Georgi
 :where(html[data-theme="claude"]) .ui-section-title{font-family:var(--font-display);font-weight:600;letter-spacing:-.01em;text-wrap:balance}:where(html[data-theme="claude"]) h1{letter-spacing:-.022em}:where(html[data-theme="claude"]) #app-shell h1,
 :where(html[data-theme="claude"]) #app-shell h2,
 :where(html[data-theme="claude"]) #app-shell [class*="text-2xl"][class*="font-bold"],
-:where(html[data-theme="claude"]) #app-shell [class*="text-3xl"][class*="font-bold"]{font-family:var(--font-display);letter-spacing:-.012em}:where(html[data-theme="claude"]) .ui-section-title{font-size:1.0625rem;line-height:1.5rem;color:var(--d1-ink)}:where(html[data-theme="claude"]) .dark .ui-section-title{color:#f4f2ea}:where(html[data-theme="claude"]) .ui-section-kicker{font-family:var(--font-body);font-size:.6875rem;line-height:1rem;font-weight:600;letter-spacing:.12em;color:var(--d1-muted)}:where(html[data-theme="claude"]) .dark .ui-section-kicker{color:#8f8d84}:where(html[data-theme="claude"]) pre,
+:where(html[data-theme="claude"]) #app-shell [class*="text-3xl"][class*="font-bold"]{font-family:var(--font-display);letter-spacing:-.012em}:where(html[data-theme="claude"]) .ui-section-title{font-size:1.0625rem;line-height:1.5rem;color:var(--d1-ink)}:where(html[data-theme="claude"]) .dark .ui-section-title{color:#f4f2ea}:where(html[data-theme="claude"]) .ui-section-kicker{font-family:var(--font-body);font-size:.6875rem;line-height:1rem;font-weight:600;letter-spacing:.12em;color:var(--d1-muted)}:where(html[data-theme="claude"]) .dark .ui-section-kicker{color:var(--d1-muted-dark)}:where(html[data-theme="claude"]) pre,
 :where(html[data-theme="claude"]) code,
 :where(html[data-theme="claude"]) kbd,
 :where(html[data-theme="claude"]) samp,
-:where(html[data-theme="claude"]) .font-mono{font-family:var(--font-mono)}:where(html[data-theme="claude"]) thead th{font-family:var(--font-body);font-size:.6875rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--d1-muted)}:where(html[data-theme="claude"]) .dark thead th{color:#8f8d84}:where(html[data-theme="claude"]) ::selection{background:rgba(201,100,66,.16);color:var(--d1-ink)}/* 纸张层级：只用 1px 暖灰描边，不用彩色阴影 */
-:where(html[data-theme="claude"]) .glass-card{border-radius:var(--d1-radius) !important;border:1px solid var(--d1-rule) !important;background:var(--d1-raised) !important;box-shadow:none !important;transition:border-color .18s ease,background-color .18s ease}:where(html[data-theme="claude"]) .glass-card:hover{border-color:var(--d1-rule-2) !important}:where(html[data-theme="claude"]) .dark .glass-card{background:#242420 !important;border-color:#30302e !important;box-shadow:none !important}:where(html[data-theme="claude"]) .dark .glass-card:hover{border-color:#4a4a45 !important}:where(html[data-theme="claude"]) .ui-settings-panel,
-:where(html[data-theme="claude"]) .ui-chip-muted{border-radius:10px;box-shadow:none}:where(html[data-theme="claude"]) #sidebar{background:var(--d1-raised);border-right:1px solid var(--d1-rule);box-shadow:none}:where(html[data-theme="claude"]) .dark #sidebar{background:#1b1b18;border-color:#2b2b28}@media (max-width:767px){:where(html[data-theme="claude"]) #sidebar{box-shadow:0 24px 60px -28px rgba(20,20,19,.42)}}:where(html[data-theme="claude"]) #app-shell button,
+:where(html[data-theme="claude"]) .font-mono{font-family:var(--font-mono)}:where(html[data-theme="claude"]) thead th{font-family:var(--font-body);font-size:.6875rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--d1-muted)}:where(html[data-theme="claude"]) .dark thead th{color:var(--d1-muted-dark)}:where(html[data-theme="claude"]) ::selection{background:rgb(var(--ui-c-a-500) / .16);color:var(--d1-ink)}/* 纸张层级：只用 1px 暖灰描边，不用彩色阴影 */
+:where(html[data-theme="claude"]) .glass-card{border-radius:var(--d1-radius) !important;border:1px solid var(--d1-rule) !important;background:var(--d1-raised) !important;box-shadow:none !important;transition:border-color .18s ease,background-color .18s ease}:where(html[data-theme="claude"]) .glass-card:hover{border-color:var(--d1-rule-2) !important}:where(html[data-theme="claude"]) .dark .glass-card{background:var(--d1-raised-dark) !important;border-color:rgb(var(--ui-c-n-800)) !important;box-shadow:none !important}:where(html[data-theme="claude"]) .dark .glass-card:hover{border-color:var(--d1-rule-2-dark) !important}:where(html[data-theme="claude"]) .ui-settings-panel,
+:where(html[data-theme="claude"]) .ui-chip-muted{border-radius:10px;box-shadow:none}:where(html[data-theme="claude"]) #sidebar{background:var(--d1-raised);border-right:1px solid var(--d1-rule);box-shadow:none}:where(html[data-theme="claude"]) .dark #sidebar{background:#1b1b18;border-color:#2b2b28}@media (max-width:767px){:where(html[data-theme="claude"]) #sidebar{box-shadow:0 24px 60px -28px rgb(var(--ui-c-n-900) / .42)}}:where(html[data-theme="claude"]) #app-shell button,
 :where(html[data-theme="claude"]) #app-shell a,
-:where(html[data-theme="claude"]) #app-shell [role="tab"]{transition:background-color .16s ease,border-color .16s ease,color .16s ease}:where(html[data-theme="claude"]) #app-shell :focus-visible{outline:2px solid rgba(201,100,66,.55);outline-offset:2px}:where(html[data-theme="claude"]) .dark #app-shell :focus-visible{outline-color:rgba(217,119,87,.65)}:where(html[data-theme="claude"]) #app-shell [data-admin-toolbar-action]:focus-visible{box-shadow:none !important}:where(html[data-theme="claude"]) .dark #view-nodes .node-toolbar-primary-btn,
+:where(html[data-theme="claude"]) #app-shell [role="tab"]{transition:background-color .16s ease,border-color .16s ease,color .16s ease}:where(html[data-theme="claude"]) #app-shell :focus-visible{outline:2px solid rgb(var(--ui-c-a-500) / .55);outline-offset:2px}:where(html[data-theme="claude"]) .dark #app-shell :focus-visible{outline-color:rgb(var(--ui-c-a-400) / .65)}:where(html[data-theme="claude"]) #app-shell [data-admin-toolbar-action]:focus-visible{box-shadow:none !important}:where(html[data-theme="claude"]) .dark #view-nodes .node-toolbar-primary-btn,
 :where(html[data-theme="claude"]) .dark #node-modal .node-modal-primary-btn{box-shadow:none !important;background:var(--d1-clay) !important}:where(html[data-theme="claude"]) #view-nodes .node-toolbar-primary-btn,
 :where(html[data-theme="claude"]) #node-modal .node-modal-primary-btn{border-radius:10px}:where(html[data-theme="claude"]) [data-ui-dialog-surface="1"],
-:where(html[data-theme="claude"]) [data-ui-toast="1"]{box-shadow:0 24px 60px -28px rgba(20,20,19,.45) !important}@media (prefers-reduced-motion:reduce){:where(html[data-theme="claude"]) .glass-card{transition:none}}/* ===== Direction A · 排版微调（行高 / 断行 / 数字 / 微标签）===== */
+:where(html[data-theme="claude"]) [data-ui-toast="1"]{box-shadow:0 24px 60px -28px rgb(var(--ui-c-n-900) / .45) !important}@media (prefers-reduced-motion:reduce){:where(html[data-theme="claude"]) .glass-card{transition:none}}/* ===== Direction A · 排版微调（行高 / 断行 / 数字 / 微标签）===== */
 /* 1. 中文行高与断行：正文 1.7，标题逐级收紧；避免末行孤字 */
 :where(html[data-theme="claude"]) #app-shell p,
 :where(html[data-theme="claude"]) #app-shell li,
@@ -256,12 +295,12 @@ html[data-theme="claude"]{--font-display:"Noto Serif SC","Source Serif 4",Georgi
 :where(html[data-theme="claude"]) .ui-section-kicker{letter-spacing:.1em;margin-bottom:4px}:where(html[data-theme="claude"]) .ui-section-title{margin-top:0;line-height:1.45}:where(html[data-theme="claude"]) .ui-block-head .ui-section-title{line-height:1.4}/* 4. 大字号数字：等宽且收紧，行高不撑开卡片 */
 :where(html[data-theme="claude"]) #app-shell [class*="text-2xl"][class*="font-bold"],
 :where(html[data-theme="claude"]) #app-shell [class*="text-3xl"][class*="font-bold"]{font-variant-numeric:tabular-nums lining-nums;letter-spacing:-.028em;line-height:1.15}/* 5. 表单：正文体、正字距，占位符不低于 AA */
-:where(html[data-theme="claude"]) #app-shell label{line-height:1.5;letter-spacing:.005em}:where(html[data-theme="claude"]) #app-shell :is(input,select,textarea){font-family:var(--font-body);letter-spacing:.005em}:where(html[data-theme="claude"]) #app-shell :is(input,select,textarea)::placeholder{color:var(--d1-muted)}:where(html[data-theme="claude"]) .dark #app-shell :is(input,select,textarea)::placeholder{color:#8f8d84}/* 6. 表格：行距略松于默认、表头字距微收 */
+:where(html[data-theme="claude"]) #app-shell label{line-height:1.5;letter-spacing:.005em}:where(html[data-theme="claude"]) #app-shell :is(input,select,textarea){font-family:var(--font-body);letter-spacing:.005em}:where(html[data-theme="claude"]) #app-shell :is(input,select,textarea)::placeholder{color:var(--d1-muted)}:where(html[data-theme="claude"]) .dark #app-shell :is(input,select,textarea)::placeholder{color:var(--d1-muted-dark)}/* 6. 表格：行距略松于默认、表头字距微收 */
 :where(html[data-theme="claude"]) #app-shell tbody td{line-height:1.55}:where(html[data-theme="claude"]) #app-shell thead th{letter-spacing:.06em}/* 7. 微标签与链接：可读性优先 */
 :where(html[data-theme="claude"]) .ui-chip-muted{font-size:.6875rem;line-height:1.35;letter-spacing:.02em}:where(html[data-theme="claude"]) #app-shell a{text-underline-offset:.2em;text-decoration-thickness:1px}/* ===== Direction A · 组件排版（统计卡 / 分节头 / 表格 / 表单 / 微标签）===== */
 
 /* 1. 统计卡：左侧色条改为顶部 2px 分节规则，标签→数字→注释按 8/10/6 的节奏收紧 */
-:where(html[data-theme="claude"]) #app-shell [class*="border-l-4"]{border-left-width:0 !important;border-top-width:2px !important;border-top-color:var(--d1-rule-2) !important}:where(html[data-theme="claude"]) .dark #app-shell [class*="border-l-4"]{border-top-color:#4a4a45 !important}:where(html[data-theme="claude"]) #app-shell [class*="border-l-4"]>p:first-child{font-size:.75rem;line-height:1.35;font-weight:500;letter-spacing:.08em;color:var(--d1-muted)}:where(html[data-theme="claude"]) .dark #app-shell [class*="border-l-4"]>p:first-child{color:#8f8d84}:where(html[data-theme="claude"]) #app-shell [class*="border-l-4"]>h3{margin-top:.5rem !important;font-size:clamp(1.5rem,1.7vw,1.875rem);line-height:1.12;word-break:break-word;overflow-wrap:anywhere}:where(html[data-theme="claude"]) #app-shell [class*="border-l-4"]>p:last-child{margin-top:.625rem !important;font-size:.75rem;line-height:1.6;letter-spacing:.01em}/* 2. 分节头：标题块左对齐顶部，徽标不再拉高整行高度 */
+:where(html[data-theme="claude"]) #app-shell [class*="border-l-4"]{border-left-width:0 !important;border-top-width:2px !important;border-top-color:var(--d1-rule-2) !important}:where(html[data-theme="claude"]) .dark #app-shell [class*="border-l-4"]{border-top-color:var(--d1-rule-2-dark) !important}:where(html[data-theme="claude"]) #app-shell [class*="border-l-4"]>p:first-child{font-size:.75rem;line-height:1.35;font-weight:500;letter-spacing:.08em;color:var(--d1-muted)}:where(html[data-theme="claude"]) .dark #app-shell [class*="border-l-4"]>p:first-child{color:var(--d1-muted-dark)}:where(html[data-theme="claude"]) #app-shell [class*="border-l-4"]>h3{margin-top:.5rem !important;font-size:clamp(1.5rem,1.7vw,1.875rem);line-height:1.12;word-break:break-word;overflow-wrap:anywhere}:where(html[data-theme="claude"]) #app-shell [class*="border-l-4"]>p:last-child{margin-top:.625rem !important;font-size:.75rem;line-height:1.6;letter-spacing:.01em}/* 2. 分节头：标题块左对齐顶部，徽标不再拉高整行高度 */
 :where(html[data-theme="claude"]) .ui-block-head{align-items:flex-start !important;margin-bottom:1rem;padding-bottom:.625rem}:where(html[data-theme="claude"]) .ui-block-head>div:first-child{min-width:0}:where(html[data-theme="claude"]) .ui-block-head .ui-chip-muted{margin-top:2px;flex:0 0 auto}/* 3. 表格：等宽数据 + 略松的行距，行分隔线降一级 */
 :where(html[data-theme="claude"]) #app-shell table{font-variant-numeric:tabular-nums}:where(html[data-theme="claude"]) #app-shell thead th{padding-top:.625rem;padding-bottom:.625rem}:where(html[data-theme="claude"]) #app-shell tbody td{padding-top:.5625rem;padding-bottom:.5625rem}:where(html[data-theme="claude"]) #app-shell tbody td .break-all{word-break:break-word}/* 4. 表单：字段标签与控件之间的间距按 6px 收紧，面板内边距统一 */
 :where(html[data-theme="claude"]) #app-shell .ui-settings-panel{padding:1.375rem}:where(html[data-theme="claude"]) .ui-field-label{margin-bottom:.375rem;font-size:.8125rem;line-height:1.35;letter-spacing:.015em}:where(html[data-theme="claude"]) #app-shell .ui-settings-panel .ui-block-head{margin-bottom:.875rem}:where(html[data-theme="claude"]) #app-shell :is(input,select,textarea){line-height:1.5}/* 5. 微标签：内边距收一档，与相邻标题基线对齐 */
@@ -271,16 +310,16 @@ html[data-theme="claude"]{--font-display:"Noto Serif SC","Source Serif 4",Georgi
 /* 表头：一条 1px 暖灰规则收口，底色只降一档；列名提高对比度到 AA */
 :where(html[data-theme="claude"]) #view-logs thead tr,
 :where(html[data-theme="claude"]) #view-dns thead tr{border-bottom-width:0}:where(html[data-theme="claude"]) #view-logs thead th,
-:where(html[data-theme="claude"]) #view-dns thead th{color:#5e5d57;font-weight:600;padding-top:.5rem;padding-bottom:.5rem;border-bottom:1px solid var(--d1-rule-2);background:rgba(20,20,19,.028)}:where(html[data-theme="claude"]) .dark #view-logs thead th,
-:where(html[data-theme="claude"]) .dark #view-dns thead th{color:#a9a79e;border-bottom-color:#3a3a36;background:rgba(250,249,245,.04)}/* 行：等距发丝线，悬停只抬背景、不动前景色 */
+:where(html[data-theme="claude"]) #view-dns thead th{color:#5e5d57;font-weight:600;padding-top:.5rem;padding-bottom:.5rem;border-bottom:1px solid var(--d1-rule-2);background:rgb(var(--ui-c-n-900) / .028)}:where(html[data-theme="claude"]) .dark #view-logs thead th,
+:where(html[data-theme="claude"]) .dark #view-dns thead th{color:#a9a79e;border-bottom-color:#3a3a36;background:rgb(var(--ui-c-white) / .04)}/* 行：等距发丝线，悬停只抬背景、不动前景色 */
 :where(html[data-theme="claude"]) #view-logs tbody tr,
-:where(html[data-theme="claude"]) #view-dns tbody tr{border-bottom:1px solid rgba(20,20,19,.075);transition:background-color .14s ease}:where(html[data-theme="claude"]) .dark #view-logs tbody tr,
-:where(html[data-theme="claude"]) .dark #view-dns tbody tr{border-bottom-color:rgba(250,249,245,.085)}:where(html[data-theme="claude"]) #view-logs tbody tr:hover,
-:where(html[data-theme="claude"]) #view-dns tbody tr:hover{background:rgba(20,20,19,.032)}:where(html[data-theme="claude"]) .dark #view-logs tbody tr:hover,
-:where(html[data-theme="claude"]) .dark #view-dns tbody tr:hover{background:rgba(250,249,245,.05)}:where(html[data-theme="claude"]) #view-logs tbody tr:last-child,
+:where(html[data-theme="claude"]) #view-dns tbody tr{border-bottom:1px solid rgb(var(--ui-c-n-900) / .075);transition:background-color .14s ease}:where(html[data-theme="claude"]) .dark #view-logs tbody tr,
+:where(html[data-theme="claude"]) .dark #view-dns tbody tr{border-bottom-color:rgb(var(--ui-c-white) / .085)}:where(html[data-theme="claude"]) #view-logs tbody tr:hover,
+:where(html[data-theme="claude"]) #view-dns tbody tr:hover{background:rgb(var(--ui-c-n-900) / .032)}:where(html[data-theme="claude"]) .dark #view-logs tbody tr:hover,
+:where(html[data-theme="claude"]) .dark #view-dns tbody tr:hover{background:rgb(var(--ui-c-white) / .05)}:where(html[data-theme="claude"]) #view-logs tbody tr:last-child,
 :where(html[data-theme="claude"]) #view-dns tbody tr:last-child{border-bottom-width:0}/* 单元格：日志顶部对齐，DNS 居中；长串只在必要时断 */
 :where(html[data-theme="claude"]) #view-logs tbody td{vertical-align:top;padding-top:.5rem;padding-bottom:.5rem;overflow-wrap:anywhere}:where(html[data-theme="claude"]) #view-dns tbody td{vertical-align:middle}:where(html[data-theme="claude"]) #view-dns tbody td :is(input,select){max-width:100%}/* 空态：跨列占位行改为居中说明 */
-:where(html[data-theme="claude"]) #app-shell tbody td[colspan]{padding:2rem 1rem;text-align:center;font-family:var(--font-body);font-size:.8125rem;line-height:1.6;letter-spacing:0;color:var(--d1-muted)}:where(html[data-theme="claude"]) .dark #app-shell tbody td[colspan]{color:#8f8d84}@media (prefers-reduced-motion:reduce){:where(html[data-theme="claude"]) #view-logs tbody tr,
+:where(html[data-theme="claude"]) #app-shell tbody td[colspan]{padding:2rem 1rem;text-align:center;font-family:var(--font-body);font-size:.8125rem;line-height:1.6;letter-spacing:0;color:var(--d1-muted)}:where(html[data-theme="claude"]) .dark #app-shell tbody td[colspan]{color:var(--d1-muted-dark)}@media (prefers-reduced-motion:reduce){:where(html[data-theme="claude"]) #view-logs tbody tr,
 :where(html[data-theme="claude"]) #view-dns tbody tr{transition:none}}/* ===== Direction A · 表格圆润化（字形 / 字距 / 行节奏）===== */
 html[data-theme="claude"]{
   --font-table:"Nunito","MiSans","HarmonyOS Sans SC","PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;
@@ -328,15 +367,15 @@ html[data-theme="claude"]{
 :where(html[data-theme="claude"]) #view-dashboard .glass-card{
   background:#fffdf8 !important;
   border-color:#e3dfd1 !important;
-  box-shadow:0 1px 2px rgba(20,20,19,.05),0 14px 30px -24px rgba(20,20,19,.42) !important;
+  box-shadow:0 1px 2px rgb(var(--ui-c-n-900) / .05),0 14px 30px -24px rgb(var(--ui-c-n-900) / .42) !important;
 }:where(html[data-theme="claude"]) #view-dashboard .glass-card:hover{
   border-color:#d5d0bd !important;
-  box-shadow:0 1px 2px rgba(20,20,19,.06),0 18px 36px -24px rgba(20,20,19,.46) !important;
+  box-shadow:0 1px 2px rgb(var(--ui-c-n-900) / .06),0 18px 36px -24px rgb(var(--ui-c-n-900) / .46) !important;
 }:where(html[data-theme="claude"]) .dark #view-dashboard .glass-card{
   background:#272723 !important;
   border-color:#3d3d38 !important;
   box-shadow:inset 0 1px 0 rgba(255,253,248,.03),0 16px 32px -24px rgba(0,0,0,.7) !important;
-}:where(html[data-theme="claude"]) .dark #view-dashboard .glass-card:hover{border-color:#4a4a45 !important}/* 2. 图表底板：趋势图原来直接画在卡面上，网格与面积填充都贴着同色底，视觉上糊成一片。
+}:where(html[data-theme="claude"]) .dark #view-dashboard .glass-card:hover{border-color:var(--d1-rule-2-dark) !important}/* 2. 图表底板：趋势图原来直接画在卡面上，网格与面积填充都贴着同色底，视觉上糊成一片。
       给 canvas 的父级做一张更亮的细边底板，折线与网格立刻有依托 */
 :where(html[data-theme="claude"]) #view-dashboard div:has(>#trafficChart){
   background:#fffefb;
@@ -348,58 +387,58 @@ html[data-theme="claude"]{
       圆角从 10px 收到 7px，边界更利落；空格改成斜纹，明确区分「无数据」与「低值」 */
 :where(html[data-theme="claude"]) #view-dashboard .d1-heat-cell{
   border-radius:7px;
-  border-color:rgba(180,85,58,.3);
-  background:rgba(201,100,66,min(1,calc(var(--d1-heat-alpha,.08) * 1.8)));
+  border-color:rgb(var(--ui-c-a-600) / .3);
+  background:rgba(201,100,66,min(1,calc(var(--ui-heat-alpha,.08) * 1.8)));
   box-shadow:inset 0 1px 0 rgba(255,255,255,.45);
 }:where(html[data-theme="claude"]) #view-dashboard .d1-heat-cell.is-active:hover{
   transform:translateY(-1px);
-  border-color:rgba(180,85,58,.62);
-  box-shadow:0 8px 18px -8px rgba(180,85,58,.42);
+  border-color:rgb(var(--ui-c-a-600) / .62);
+  box-shadow:0 8px 18px -8px rgb(var(--ui-c-a-600) / .42);
 }:where(html[data-theme="claude"]) #view-dashboard .d1-heat-cell.is-empty{
   border-style:dashed;
   border-color:#e0ddd0;
-  background:repeating-linear-gradient(135deg,rgba(20,20,19,.055) 0 2px,transparent 2px 5px);
+  background:repeating-linear-gradient(135deg,rgb(var(--ui-c-n-900) / .055) 0 2px,transparent 2px 5px);
   box-shadow:none;
 }:where(html[data-theme="claude"]) .dark #view-dashboard .d1-heat-cell{
-  border-color:rgba(217,119,87,.32);
-  background:rgba(217,119,87,min(1,calc(var(--d1-heat-alpha,.12) * 1.7)));
+  border-color:rgb(var(--ui-c-a-400) / .32);
+  background:rgba(217,119,87,min(1,calc(var(--ui-heat-alpha,.12) * 1.7)));
   box-shadow:inset 0 1px 0 rgba(255,253,248,.05);
-}:where(html[data-theme="claude"]) .dark #view-dashboard .d1-heat-cell.is-active:hover{border-color:rgba(224,164,140,.66)}:where(html[data-theme="claude"]) .dark #view-dashboard .d1-heat-cell.is-empty{
+}:where(html[data-theme="claude"]) .dark #view-dashboard .d1-heat-cell.is-active:hover{border-color:rgb(var(--ui-c-a-300) / .66)}:where(html[data-theme="claude"]) .dark #view-dashboard .d1-heat-cell.is-empty{
   border-color:#3a3a36;
   background:repeating-linear-gradient(135deg,rgba(255,253,248,.07) 0 2px,transparent 2px 5px);
 }/* 轴标签：11px 下的 #87867f 只有约 3.4:1，扫读时最先糊掉 */
-:where(html[data-theme="claude"]) #view-dashboard .d1-heatmap-col-label{color:#6b6a63}:where(html[data-theme="claude"]) #view-dashboard .d1-heatmap-row-label{color:#3d3d3a}:where(html[data-theme="claude"]) .dark #view-dashboard .d1-heatmap-col-label{color:#a9a79e}:where(html[data-theme="claude"]) .dark #view-dashboard .d1-heatmap-row-label{color:#d1cfc5}/* 图表下方的 12px 说明文字同步提一档对比度 */
+:where(html[data-theme="claude"]) #view-dashboard .d1-heatmap-col-label{color:#6b6a63}:where(html[data-theme="claude"]) #view-dashboard .d1-heatmap-row-label{color:var(--d1-ink-2)}:where(html[data-theme="claude"]) .dark #view-dashboard .d1-heatmap-col-label{color:#a9a79e}:where(html[data-theme="claude"]) .dark #view-dashboard .d1-heatmap-row-label{color:rgb(var(--ui-c-n-300))}/* 图表下方的 12px 说明文字同步提一档对比度 */
 :where(html[data-theme="claude"]) #view-dashboard .text-slate-500{color:#5e5d5a !important}:where(html[data-theme="claude"]) .dark #view-dashboard .text-slate-500{color:#a9a79e !important}/* ===== Direction A · 对比度 v2（仪表盘：卡面边界 / 次要文字 / 图表 / 热力图）===== */
 /* 1. 卡面：描边再深一档、墨影收紧，卡片边界不再依赖明度差 */
 :where(html[data-theme="claude"]) #view-dashboard .glass-card{
   border-color:#d3ccb6 !important;
-  box-shadow:0 1px 2px rgba(20,20,19,.06),0 16px 30px -22px rgba(20,20,19,.44) !important;
+  box-shadow:0 1px 2px rgb(var(--ui-c-n-900) / .06),0 16px 30px -22px rgb(var(--ui-c-n-900) / .44) !important;
 }:where(html[data-theme="claude"]) #view-dashboard .glass-card:hover{
   border-color:#c3bba1 !important;
-  box-shadow:0 1px 2px rgba(20,20,19,.07),0 20px 34px -22px rgba(20,20,19,.48) !important;
+  box-shadow:0 1px 2px rgb(var(--ui-c-n-900) / .07),0 20px 34px -22px rgb(var(--ui-c-n-900) / .48) !important;
 }:where(html[data-theme="claude"]) .dark #view-dashboard .glass-card{
   border-color:#4a4a44 !important;
   box-shadow:inset 0 1px 0 rgba(255,253,248,.04),0 16px 30px -22px rgba(0,0,0,.66) !important;
 }:where(html[data-theme="claude"]) .dark #view-dashboard .glass-card:hover{border-color:#5c5c54 !important}/* 2. 图表底板：比卡面更亮 + 更实的描边，图表区自成一块 */
 :where(html[data-theme="claude"]) #view-dashboard div:has(>#trafficChart){
-  background:#ffffff;
+  background:var(--d1-on-accent);
   border-color:#ddd6c2;
-  box-shadow:inset 0 0 0 1px rgba(20,20,19,.02);
+  box-shadow:inset 0 0 0 1px rgb(var(--ui-c-n-900) / .02);
 }:where(html[data-theme="claude"]) .dark #view-dashboard div:has(>#trafficChart){background:#141412;border-color:#4a4a44}/* 3. 次要文字：仪表盘里的 slate-300/400/500/600 逐级提深到 AA 以上 */
 :where(html[data-theme="claude"]) #view-dashboard :is(.text-slate-300,.text-slate-400){color:#6b6a62 !important}:where(html[data-theme="claude"]) #view-dashboard .text-slate-500{color:#4f4e48 !important}:where(html[data-theme="claude"]) #view-dashboard .text-slate-600{color:#3d3c37 !important}:where(html[data-theme="claude"]) .dark #view-dashboard :is(.text-slate-300,.text-slate-400){color:#bab8ad !important}:where(html[data-theme="claude"]) .dark #view-dashboard .text-slate-500{color:#c2c0b5 !important}:where(html[data-theme="claude"]) .dark #view-dashboard .text-slate-600{color:#cfcdc2 !important}:where(html[data-theme="claude"]) #view-dashboard .ui-section-kicker{color:#514f49}:where(html[data-theme="claude"]) .dark #view-dashboard .ui-section-kicker{color:#bab8ad}/* 统计卡标签与注释：原 #87867f（约 3.6:1）在纸白上偏淡 */
 :where(html[data-theme="claude"]) #view-dashboard [class*="border-l-4"]>p:first-child{color:#54534c !important}:where(html[data-theme="claude"]) #view-dashboard [class*="border-l-4"]>p:last-child{color:#5e5d55 !important}:where(html[data-theme="claude"]) .dark #view-dashboard [class*="border-l-4"]>p:first-child{color:#bcbaaf !important}:where(html[data-theme="claude"]) .dark #view-dashboard [class*="border-l-4"]>p:last-child{color:#aba99f !important}/* 4. 热力图：低值格设 16% 可见下限（数据仍按原比例编码），边界更实 */
 :where(html[data-theme="claude"]) #view-dashboard .d1-heat-cell{
   border-color:rgba(176,80,53,.46);
-  background:rgba(201,100,66,min(1,max(.16,calc(var(--d1-heat-alpha,.08) * 1.9))));
+  background:rgba(201,100,66,min(1,max(.16,calc(var(--ui-heat-alpha,.08) * 1.9))));
 }:where(html[data-theme="claude"]) #view-dashboard .d1-heat-cell.is-active:hover{
   border-color:rgba(150,64,40,.8);
   box-shadow:0 10px 20px -8px rgba(150,64,40,.5);
 }:where(html[data-theme="claude"]) #view-dashboard .d1-heat-cell.is-empty{
   border-color:#c9c2ac;
-  background:repeating-linear-gradient(135deg,rgba(20,20,19,.1) 0 2px,transparent 2px 5px);
+  background:repeating-linear-gradient(135deg,rgb(var(--ui-c-n-900) / .1) 0 2px,transparent 2px 5px);
 }:where(html[data-theme="claude"]) .dark #view-dashboard .d1-heat-cell{
-  border-color:rgba(217,119,87,.5);
-  background:rgba(217,119,87,min(1,max(.2,calc(var(--d1-heat-alpha,.12) * 1.8))));
+  border-color:rgb(var(--ui-c-a-400) / .5);
+  background:rgba(217,119,87,min(1,max(.2,calc(var(--ui-heat-alpha,.12) * 1.8))));
 }:where(html[data-theme="claude"]) .dark #view-dashboard .d1-heat-cell.is-active:hover{border-color:rgba(230,175,152,.85)}:where(html[data-theme="claude"]) .dark #view-dashboard .d1-heat-cell.is-empty{
   border-color:#55554e;
   background:repeating-linear-gradient(135deg,rgba(255,253,248,.12) 0 2px,transparent 2px 5px);
@@ -450,7 +489,7 @@ html[data-theme="claude"]{--d1-control-radius:8px}:where(html[data-theme="claude
 
 :where(html[data-theme="claude"]) [data-ui-dialog-surface="1"] [class*="bg-brand-"],
 
-:where(html[data-theme="claude"]) [data-ui-dialog-surface="1"] [class*="bg-red-600"]{box-shadow:inset 0 0 0 1px rgba(20,20,19,.18) !important}:where(html[data-theme="claude"]) .dark #view-nodes .node-toolbar-primary-btn,
+:where(html[data-theme="claude"]) [data-ui-dialog-surface="1"] [class*="bg-red-600"]{box-shadow:inset 0 0 0 1px rgb(var(--ui-c-n-900) / .18) !important}:where(html[data-theme="claude"]) .dark #view-nodes .node-toolbar-primary-btn,
 
 :where(html[data-theme="claude"]) .dark #view-nodes .node-toolbar-primary-btn:hover,
 
@@ -462,7 +501,7 @@ html[data-theme="claude"]{--d1-control-radius:8px}:where(html[data-theme="claude
 
 :where(html[data-theme="claude"]) .dark [data-ui-dialog-surface="1"] [class*="bg-brand-"],
 
-:where(html[data-theme="claude"]) .dark [data-ui-dialog-surface="1"] [class*="bg-red-600"]{box-shadow:inset 0 0 0 1px rgba(250,249,245,.16) !important}/* 按下 = 下沉 1px（排除绝对定位按钮，避免位移错位） */
+:where(html[data-theme="claude"]) .dark [data-ui-dialog-surface="1"] [class*="bg-red-600"]{box-shadow:inset 0 0 0 1px rgb(var(--ui-c-white) / .16) !important}/* 按下 = 下沉 1px（排除绝对定位按钮，避免位移错位） */
 :where(html[data-theme="claude"]) #app-shell button:not([class*="absolute"]):active{transform:translateY(1px)}:where(html[data-theme="claude"]) #app-shell [role="tab"]:active{transform:none}/* ===== 设置页控件：并入同一套扁平工具 UI =====
    设置页自带的控件层把输入框留在 12–16px 圆角与轻投影上，与按钮的 8px 方角打架；
    这里只收敛 #view-settings 内的表单控件与可点标签，不动其他视图与面板圆角。 */
@@ -471,7 +510,7 @@ html[data-theme="claude"]{--d1-control-radius:8px}:where(html[data-theme="claude
   box-shadow:none !important;
   background-image:none !important;
 }/* 投影统一归零后，焦点改用外描边环，避免键盘操作失去可见焦点 */
-:where(html[data-theme="claude"]) #view-settings :is(input,select,textarea):focus-visible{outline:2px solid #c96442;outline-offset:1px}:where(html[data-theme="claude"]) #view-settings :is(input[type="checkbox"],input[type="radio"]){accent-color:#c96442;box-shadow:none !important}:where(html[data-theme="claude"]) #view-settings :is([role="button"],label[class*="rounded-control"],.settings-secondary-label){
+:where(html[data-theme="claude"]) #view-settings :is(input,select,textarea):focus-visible{outline:2px solid rgb(var(--ui-c-a-500));outline-offset:1px}:where(html[data-theme="claude"]) #view-settings :is(input[type="checkbox"],input[type="radio"]){accent-color:rgb(var(--ui-c-a-500));box-shadow:none !important}:where(html[data-theme="claude"]) #view-settings :is([role="button"],label[class*="rounded-control"],.settings-secondary-label){
   border-radius:var(--d1-control-radius) !important;
   box-shadow:none !important;
   background-image:none !important;
@@ -481,7 +520,7 @@ html[data-theme="claude"]{--d1-control-radius:8px}:where(html[data-theme="claude
   border-radius:var(--d1-control-radius) !important;
   box-shadow:none !important;
   background-image:none !important;
-}:where(html[data-theme="claude"]) #view-settings :is(label,a):is([class*="border-slate-200"],[class*="border-slate-300"],[class*="bg-slate-200"],[class*="border-brand-"]):focus-visible{outline:2px solid #c96442;outline-offset:1px}:where(html[data-theme="claude"]) #view-settings :is(label,a):is([class*="border-slate-200"],[class*="border-slate-300"],[class*="bg-slate-200"]):active{transform:translateY(1px)}/* 缓存区的危险操作键（Purge）：实心砖红的老式工具键——8px 方角、零投影零渐变、
+}:where(html[data-theme="claude"]) #view-settings :is(label,a):is([class*="border-slate-200"],[class*="border-slate-300"],[class*="bg-slate-200"],[class*="border-brand-"]):focus-visible{outline:2px solid rgb(var(--ui-c-a-500));outline-offset:1px}:where(html[data-theme="claude"]) #view-settings :is(label,a):is([class*="border-slate-200"],[class*="border-slate-300"],[class*="bg-slate-200"]):active{transform:translateY(1px)}/* 缓存区的危险操作键（Purge）：实心砖红的老式工具键——8px 方角、零投影零渐变、
    1px 深色内描边，悬停只加深不发光，按下沉 1px。按 id 定形，不依赖 class 串，
    作用域只到这一个按钮，不会波及其他页面的红描边键。 */
 :where(html[data-theme="claude"]) #app-shell #purge-cache-btn{
@@ -489,7 +528,7 @@ html[data-theme="claude"]{--d1-control-radius:8px}:where(html[data-theme="claude
   border-radius:var(--d1-control-radius) !important;
   background-color:#b23a2c !important;
   background-image:none !important;
-  box-shadow:inset 0 0 0 1px rgba(20,20,19,.16) !important;
+  box-shadow:inset 0 0 0 1px rgb(var(--ui-c-n-900) / .16) !important;
   color:#fbf9f4 !important;
   font-weight:600;
   letter-spacing:.01em;
@@ -498,20 +537,20 @@ html[data-theme="claude"]{--d1-control-radius:8px}:where(html[data-theme="claude
 }:where(html[data-theme="claude"]) #app-shell #purge-cache-btn:hover{
   background-color:#9c3125 !important;
   border-color:#7a251d !important;
-  color:#ffffff !important;
-  box-shadow:inset 0 0 0 1px rgba(20,20,19,.2) !important;
+  color:var(--d1-on-accent) !important;
+  box-shadow:inset 0 0 0 1px rgb(var(--ui-c-n-900) / .2) !important;
 }:where(html[data-theme="claude"]) #app-shell #purge-cache-btn:active{
   transform:translateY(1px);
   background-color:#8a2b20 !important;
   border-color:#6d211a !important;
-}:where(html[data-theme="claude"]) #app-shell #purge-cache-btn:focus-visible{outline:2px solid #c96442;outline-offset:2px}:where(html[data-theme="claude"]) .dark #app-shell #purge-cache-btn{
+}:where(html[data-theme="claude"]) #app-shell #purge-cache-btn:focus-visible{outline:2px solid rgb(var(--ui-c-a-500));outline-offset:2px}:where(html[data-theme="claude"]) .dark #app-shell #purge-cache-btn{
   background-color:#8f2b21 !important;
   border-color:#b5453a !important;
   color:#fdf2ee !important;
 }:where(html[data-theme="claude"]) .dark #app-shell #purge-cache-btn:hover{
   background-color:#a3342a !important;
   border-color:#c9554a !important;
-  color:#ffffff !important;
+  color:var(--d1-on-accent) !important;
 }/* 管理页上传控件（index.html / worker.js）：并入同一套扁平复古工具键——8px 方角、
    零投影零渐变，选择键用 1px 描边定形，悬停只加深不发光，按下沉 1px。 */
 :where(html[data-theme="claude"]) [data-admin-index-file-input="1"],
@@ -528,7 +567,7 @@ html[data-theme="claude"]{--d1-control-radius:8px}:where(html[data-theme="claude
 :where(html[data-theme="claude"]) [data-admin-worker-file-input="1"]::file-selector-button{
   margin:0 10px 0 0;
   padding:5px 12px;
-  border:1px solid rgba(20,20,19,.24);
+  border:1px solid rgb(var(--ui-c-n-900) / .24);
   border-radius:var(--d1-control-radius);
   background-color:transparent;
   background-image:none;
@@ -541,29 +580,29 @@ html[data-theme="claude"]{--d1-control-radius:8px}:where(html[data-theme="claude
   transition:background-color .12s ease,border-color .12s ease,color .12s ease;
 }:where(html[data-theme="claude"]) [data-admin-index-file-input="1"]::file-selector-button:hover,
 :where(html[data-theme="claude"]) [data-admin-worker-file-input="1"]::file-selector-button:hover{
-  background-color:rgba(20,20,19,.06);
-  border-color:rgba(20,20,19,.42);
-  color:#141413;
+  background-color:rgb(var(--ui-c-n-900) / .06);
+  border-color:rgb(var(--ui-c-n-900) / .42);
+  color:rgb(var(--ui-c-n-900));
   box-shadow:none;
 }:where(html[data-theme="claude"]) [data-admin-index-file-input="1"]::file-selector-button:active,
 :where(html[data-theme="claude"]) [data-admin-worker-file-input="1"]::file-selector-button:active{
   transform:translateY(1px);
-  background-color:rgba(20,20,19,.1);
-  border-color:rgba(20,20,19,.5);
+  background-color:rgb(var(--ui-c-n-900) / .1);
+  border-color:rgb(var(--ui-c-n-900) / .5);
 }:where(html[data-theme="claude"]) [data-admin-index-file-input="1"]:focus-visible,
-:where(html[data-theme="claude"]) [data-admin-worker-file-input="1"]:focus-visible{outline:2px solid #c96442;outline-offset:2px}:where(html[data-theme="claude"]) .dark [data-admin-index-file-input="1"],
+:where(html[data-theme="claude"]) [data-admin-worker-file-input="1"]:focus-visible{outline:2px solid rgb(var(--ui-c-a-500));outline-offset:2px}:where(html[data-theme="claude"]) .dark [data-admin-index-file-input="1"],
 :where(html[data-theme="claude"]) .dark [data-admin-worker-file-input="1"]{color:#dcdad0}:where(html[data-theme="claude"]) .dark [data-admin-index-file-input="1"]::file-selector-button,
 :where(html[data-theme="claude"]) .dark [data-admin-worker-file-input="1"]::file-selector-button{
-  border-color:rgba(250,249,245,.26);
-  color:#e8e6dc;
+  border-color:rgb(var(--ui-c-white) / .26);
+  color:rgb(var(--ui-c-n-200));
 }:where(html[data-theme="claude"]) .dark [data-admin-index-file-input="1"]::file-selector-button:hover,
 :where(html[data-theme="claude"]) .dark [data-admin-worker-file-input="1"]::file-selector-button:hover{
-  background-color:rgba(250,249,245,.1);
-  border-color:rgba(250,249,245,.46);
-  color:#faf9f5;
+  background-color:rgb(var(--ui-c-white) / .1);
+  border-color:rgb(var(--ui-c-white) / .46);
+  color:rgb(var(--ui-c-white));
 }:where(html[data-theme="claude"]) .dark [data-admin-index-file-input="1"]::file-selector-button:active,
 :where(html[data-theme="claude"]) .dark [data-admin-worker-file-input="1"]::file-selector-button:active{
-  background-color:rgba(250,249,245,.16);
+  background-color:rgb(var(--ui-c-white) / .16);
 }/* 设置页操作行 · 扁平胶囊主操作（保存 + 其右侧的恢复推荐值） */
 :where(html[data-theme="claude"]) #view-settings button[class*="bg-brand-600"],
 
@@ -572,58 +611,58 @@ html[data-theme="claude"]{--d1-control-radius:8px}:where(html[data-theme="claude
   border-radius:999px !important;
   background-image:none !important;
   box-shadow:none !important;
-  color:#fff !important;
+  color:var(--d1-on-accent) !important;
   font-weight:400 !important;
   padding:9px 22px !important;
   min-height:40px;
   letter-spacing:.01em;
   transition:background-color .12s ease,color .12s ease;
-}:where(html[data-theme="claude"]) #view-settings button[class*="bg-brand-600"]{background-color:#b3502f !important}:where(html[data-theme="claude"]) #view-settings button[class*="border-emerald-200"]{background-color:#8e3a22 !important}:where(html[data-theme="claude"]) #view-settings button[class*="bg-brand-600"]:hover{background-color:#9b4326 !important;color:#fff !important}:where(html[data-theme="claude"]) #view-settings button[class*="border-emerald-200"]:hover{background-color:#7a301b !important;color:#fff !important}:where(html[data-theme="claude"]) #view-settings button[class*="bg-brand-600"]:active,
+}:where(html[data-theme="claude"]) #view-settings button[class*="bg-brand-600"]{background-color:var(--d1-action-strong) !important}:where(html[data-theme="claude"]) #view-settings button[class*="border-emerald-200"]{background-color:var(--d1-action) !important}:where(html[data-theme="claude"]) #view-settings button[class*="bg-brand-600"]:hover{background-color:var(--d1-action-strong-hover) !important;color:var(--d1-on-accent) !important}:where(html[data-theme="claude"]) #view-settings button[class*="border-emerald-200"]:hover{background-color:var(--d1-action-hover) !important;color:var(--d1-on-accent) !important}:where(html[data-theme="claude"]) #view-settings button[class*="bg-brand-600"]:active,
 
-:where(html[data-theme="claude"]) #view-settings button[class*="border-emerald-200"]:active{background-color:#83381f !important;color:#fff !important}:where(html[data-theme="claude"]) #view-settings button[class*="bg-brand-600"]:focus-visible,
+:where(html[data-theme="claude"]) #view-settings button[class*="border-emerald-200"]:active{background-color:var(--d1-action-active) !important;color:var(--d1-on-accent) !important}:where(html[data-theme="claude"]) #view-settings button[class*="bg-brand-600"]:focus-visible,
 
 :where(html[data-theme="claude"]) #view-settings button[class*="border-emerald-200"]:focus-visible{outline:2px solid #e3a98f;outline-offset:2px}:where(html[data-theme="claude"]) #view-settings button[class*="bg-brand-600"]:disabled,
 
-:where(html[data-theme="claude"]) #view-settings button[class*="border-emerald-200"]:disabled{opacity:.55;color:#fff !important}/* 审计修复 · 次要操作（导入备份 / 发送测试通知）→ 扁平实底胶囊 */
+:where(html[data-theme="claude"]) #view-settings button[class*="border-emerald-200"]:disabled{opacity:.55;color:var(--d1-on-accent) !important}/* 审计修复 · 次要操作（导入备份 / 发送测试通知）→ 扁平实底胶囊 */
 :where(html[data-theme="claude"]) #view-settings .settings-secondary-label,
 
 :where(html[data-theme="claude"]) #view-settings button[class*="border-blue-200"][class*="text-blue-600"],
 
 :where(html[data-theme="claude"]) .dark #view-settings button[class*="border-blue-200"][class*="text-blue-600"]{
   border:0 !important;border-radius:999px !important;background-image:none !important;box-shadow:none !important;
-  background-color:#8e3a22 !important;color:#fff !important;font-weight:400 !important;
+  background-color:var(--d1-action) !important;color:var(--d1-on-accent) !important;font-weight:400 !important;
   padding:9px 22px !important;min-height:40px;letter-spacing:.01em;
-  transition:background-color .12s ease,color .12s ease}:where(html[data-theme="claude"]) .dark #view-settings .settings-secondary-label{background-color:#a3452a !important;border:0 !important;color:#fff !important}:where(html[data-theme="claude"]) #view-settings .settings-secondary-label:hover,
+  transition:background-color .12s ease,color .12s ease}:where(html[data-theme="claude"]) .dark #view-settings .settings-secondary-label{background-color:var(--d1-action-dark) !important;border:0 !important;color:var(--d1-on-accent) !important}:where(html[data-theme="claude"]) #view-settings .settings-secondary-label:hover,
 
 :where(html[data-theme="claude"]) .dark #view-settings .settings-secondary-label:hover,
 
 :where(html[data-theme="claude"]) #view-settings button[class*="border-blue-200"][class*="text-blue-600"]:hover,
 
-:where(html[data-theme="claude"]) .dark #view-settings button[class*="border-blue-200"][class*="text-blue-600"]:hover{background-color:#7a301b !important;color:#fff !important;border:0 !important}:where(html[data-theme="claude"]) .dark #view-settings .settings-secondary-label:hover{background-color:#b3502f !important;color:#fff !important}:where(html[data-theme="claude"]) #view-settings .settings-secondary-label:active,
+:where(html[data-theme="claude"]) .dark #view-settings button[class*="border-blue-200"][class*="text-blue-600"]:hover{background-color:var(--d1-action-hover) !important;color:var(--d1-on-accent) !important;border:0 !important}:where(html[data-theme="claude"]) .dark #view-settings .settings-secondary-label:hover{background-color:var(--d1-action-strong) !important;color:var(--d1-on-accent) !important}:where(html[data-theme="claude"]) #view-settings .settings-secondary-label:active,
 
-:where(html[data-theme="claude"]) #view-settings button[class*="border-blue-200"][class*="text-blue-600"]:active{background-color:#83381f !important;color:#fff !important}:where(html[data-theme="claude"]) #view-settings .settings-secondary-label:focus-visible,
+:where(html[data-theme="claude"]) #view-settings button[class*="border-blue-200"][class*="text-blue-600"]:active{background-color:var(--d1-action-active) !important;color:var(--d1-on-accent) !important}:where(html[data-theme="claude"]) #view-settings .settings-secondary-label:focus-visible,
 
 :where(html[data-theme="claude"]) #view-settings button[class*="border-blue-200"][class*="text-blue-600"]:focus-visible{outline:2px solid #e3a98f;outline-offset:2px}/* 审计修复 · 文件选择键 → 同一扁平胶囊语言（去掉描边幽灵形态） */
 :where(html[data-theme="claude"]) [data-admin-index-file-input="1"]::file-selector-button,
 
 :where(html[data-theme="claude"]) [data-admin-worker-file-input="1"]::file-selector-button{
   border:0 !important;border-radius:999px !important;background-image:none !important;box-shadow:none !important;
-  background-color:#8e3a22 !important;color:#fff !important;font-weight:400 !important;
+  background-color:var(--d1-action) !important;color:var(--d1-on-accent) !important;font-weight:400 !important;
   padding:8px 20px !important;letter-spacing:.01em;cursor:pointer}:where(html[data-theme="claude"]) [data-admin-index-file-input="1"]::file-selector-button:hover,
 
-:where(html[data-theme="claude"]) [data-admin-worker-file-input="1"]::file-selector-button:hover{background-color:#7a301b !important;color:#fff !important}:where(html[data-theme="claude"]) [data-admin-index-file-input="1"]::file-selector-button:active,
+:where(html[data-theme="claude"]) [data-admin-worker-file-input="1"]::file-selector-button:hover{background-color:var(--d1-action-hover) !important;color:var(--d1-on-accent) !important}:where(html[data-theme="claude"]) [data-admin-index-file-input="1"]::file-selector-button:active,
 
-:where(html[data-theme="claude"]) [data-admin-worker-file-input="1"]::file-selector-button:active{background-color:#83381f !important;transform:none}:where(html[data-theme="claude"]) .dark [data-admin-index-file-input="1"]::file-selector-button,
+:where(html[data-theme="claude"]) [data-admin-worker-file-input="1"]::file-selector-button:active{background-color:var(--d1-action-active) !important;transform:none}:where(html[data-theme="claude"]) .dark [data-admin-index-file-input="1"]::file-selector-button,
 
-:where(html[data-theme="claude"]) .dark [data-admin-worker-file-input="1"]::file-selector-button{background-color:#a3452a !important;border:0 !important;color:#fff !important}:where(html[data-theme="claude"]) .dark [data-admin-index-file-input="1"]::file-selector-button:hover,
+:where(html[data-theme="claude"]) .dark [data-admin-worker-file-input="1"]::file-selector-button{background-color:var(--d1-action-dark) !important;border:0 !important;color:var(--d1-on-accent) !important}:where(html[data-theme="claude"]) .dark [data-admin-index-file-input="1"]::file-selector-button:hover,
 
-:where(html[data-theme="claude"]) .dark [data-admin-worker-file-input="1"]::file-selector-button:hover{background-color:#b3502f !important;color:#fff !important}/* 设置页其余「导入备份」类次要按钮（不同 class 变体）一并并入胶囊语言 */
+:where(html[data-theme="claude"]) .dark [data-admin-worker-file-input="1"]::file-selector-button:hover{background-color:var(--d1-action-strong) !important;color:var(--d1-on-accent) !important}/* 设置页其余「导入备份」类次要按钮（不同 class 变体）一并并入胶囊语言 */
 :where(html[data-theme="claude"]) #view-settings label[class*="settings-secondary"]:not(.settings-secondary-label),
 
 :where(html[data-theme="claude"]) .dark #view-settings label[class*="settings-secondary"]:not(.settings-secondary-label){
   border:0 !important;border-radius:999px !important;background-image:none !important;box-shadow:none !important;
-  background-color:#8e3a22 !important;color:#fff !important;font-weight:400 !important;
-  padding:9px 22px !important;min-height:40px;letter-spacing:.01em}:where(html[data-theme="claude"]) #view-settings label[class*="settings-secondary"]:not(.settings-secondary-label):hover{background-color:#7a301b !important;color:#fff !important}/* ===== 设置页左侧导航 · 与「全局设置」「UI 圆角弧度」同一套标题宋体（图2 / 图4）=====
+  background-color:var(--d1-action) !important;color:var(--d1-on-accent) !important;font-weight:400 !important;
+  padding:9px 22px !important;min-height:40px;letter-spacing:.01em}:where(html[data-theme="claude"]) #view-settings label[class*="settings-secondary"]:not(.settings-secondary-label):hover{background-color:var(--d1-action-hover) !important;color:var(--d1-on-accent) !important}/* ===== 设置页左侧导航 · 与「全局设置」「UI 圆角弧度」同一套标题宋体（图2 / 图4）=====
    直接复用设计令牌 --font-display（Noto Serif SC → 宋体 / SimSun → Georgia），
    不再单独造圆体栈：图2、图4 就是页面里已有的标题字，导航对齐它们即可。 */
 :where(html[data-theme="claude"]) #view-settings .settings-nav-shell [role="tab"],
@@ -661,8 +700,8 @@ html[data-theme="claude"]{--d1-control-radius:8px}:where(html[data-theme="claude
 :where(html[data-theme="claude"]) #app-shell [data-admin-brand-title="1"]{margin-left:.75rem;min-width:0;font-size:1.0625rem;line-height:1.5rem;letter-spacing:-.01em;white-space:nowrap;overflow:hidden}
 :where(html[data-theme="claude"]) #app-shell [data-admin-brand-title="1"]>span{flex:0 0 auto;white-space:nowrap}
 #view-settings .settings-theme-skin-card [data-admin-skin-option]{transition:background-color .16s ease,border-color .16s ease,color .16s ease}
-#view-settings .settings-theme-skin-card [data-admin-skin-option][aria-pressed="true"]{border-color:#bfdbfe;background:#eff6ff;color:#1d4ed8}
-.dark #view-settings .settings-theme-skin-card [data-admin-skin-option][aria-pressed="true"]{border-color:#3b82f6;background:rgba(59,130,246,.14);color:#bfdbfe}
+#view-settings .settings-theme-skin-card [data-admin-skin-option][aria-pressed="true"]{border-color:rgb(var(--ui-c-a-200));background:rgb(var(--ui-c-a-50));color:rgb(var(--ui-c-a-700))}
+.dark #view-settings .settings-theme-skin-card [data-admin-skin-option][aria-pressed="true"]{border-color:rgb(var(--ui-c-a-500));background:rgb(var(--ui-c-a-500) / .14);color:rgb(var(--ui-c-a-200))}
 /* 侧栏收起/展开：文字随宽度裁切并淡出，而不是瞬间消失（所有皮肤一致） */
 #sidebar [data-admin-brand-title="1"]{min-width:0;white-space:nowrap;overflow:hidden}
 #sidebar [data-admin-brand-title="1"]>span{flex:0 0 auto;white-space:nowrap}
@@ -685,31 +724,31 @@ html[data-theme="claude"]{--d1-control-radius:8px}:where(html[data-theme="claude
 #view-settings .set-tab .block{font-size:inherit;line-height:1.4}
 #view-settings .settings-nav-shell>div:first-child>div:last-child{font-size:1rem;line-height:1.5rem}
 /* 主题B：设置页「整理 KV 数据 / 整理 D1 数据」用红豆实心填充，白字白图标，图标与文字同一行居中 */
-:where(html[data-theme="claude"]) #view-settings button.border-amber-300.text-amber-700{display:inline-flex;align-items:center;justify-content:center;gap:.375rem;white-space:nowrap;text-align:center;border-color:#964742;background:#964742;color:#fff}
-:where(html[data-theme="claude"]) #view-settings button.border-amber-300.text-amber-700>i{margin-right:0;color:#fff}
-:where(html[data-theme="claude"]) #view-settings button.border-amber-300.text-amber-700:hover{border-color:#7f3b37;background:#7f3b37;color:#fff}
-:where(html[data-theme="claude"]) .dark #view-settings button.border-amber-300.text-amber-700{border-color:#964742;background:#964742;color:#fff}
-:where(html[data-theme="claude"]) .dark #view-settings button.border-amber-300.text-amber-700:hover{border-color:#7f3b37;background:#7f3b37;color:#fff}
+:where(html[data-theme="claude"]) #view-settings button.border-amber-300.text-amber-700{display:inline-flex;align-items:center;justify-content:center;gap:.375rem;white-space:nowrap;text-align:center;border-color:var(--d1-bean);background:var(--d1-bean);color:var(--d1-on-accent)}
+:where(html[data-theme="claude"]) #view-settings button.border-amber-300.text-amber-700>i{margin-right:0;color:var(--d1-on-accent)}
+:where(html[data-theme="claude"]) #view-settings button.border-amber-300.text-amber-700:hover{border-color:var(--d1-bean-deep);background:var(--d1-bean-deep);color:var(--d1-on-accent)}
+:where(html[data-theme="claude"]) .dark #view-settings button.border-amber-300.text-amber-700{border-color:var(--d1-bean);background:var(--d1-bean);color:var(--d1-on-accent)}
+:where(html[data-theme="claude"]) .dark #view-settings button.border-amber-300.text-amber-700:hover{border-color:var(--d1-bean-deep);background:var(--d1-bean-deep);color:var(--d1-on-accent)}
 /* 主题B：迁移与备份的「导入备份 / 导出…」同样红豆实心填充，白字白图标，图标与文字同一行居中 */
 :where(html[data-theme="claude"]) #view-settings .settings-secondary-label,
-:where(html[data-theme="claude"]) #view-settings .flex.gap-4.flex-wrap>button[class*="bg-brand-600"]{display:inline-flex;align-items:center;justify-content:center;gap:.375rem;white-space:nowrap;text-align:center;flex:0 0 auto;border:0 !important;background:#964742 !important;color:#fff !important}
+:where(html[data-theme="claude"]) #view-settings .flex.gap-4.flex-wrap>button[class*="bg-brand-600"]{display:inline-flex;align-items:center;justify-content:center;gap:.375rem;white-space:nowrap;text-align:center;flex:0 0 auto;border:0 !important;background:var(--d1-bean) !important;color:var(--d1-on-accent) !important}
 :where(html[data-theme="claude"]) #view-settings .settings-secondary-label>i,
-:where(html[data-theme="claude"]) #view-settings .flex.gap-4.flex-wrap>button[class*="bg-brand-600"]>i{margin-right:0;color:#fff}
+:where(html[data-theme="claude"]) #view-settings .flex.gap-4.flex-wrap>button[class*="bg-brand-600"]>i{margin-right:0;color:var(--d1-on-accent)}
 :where(html[data-theme="claude"]) #view-settings .settings-secondary-label:hover,
-:where(html[data-theme="claude"]) #view-settings .flex.gap-4.flex-wrap>button[class*="bg-brand-600"]:hover{background:#7f3b37 !important;color:#fff !important}
+:where(html[data-theme="claude"]) #view-settings .flex.gap-4.flex-wrap>button[class*="bg-brand-600"]:hover{background:var(--d1-bean-deep) !important;color:var(--d1-on-accent) !important}
 :where(html[data-theme="claude"]) .dark #view-settings .settings-secondary-label,
-:where(html[data-theme="claude"]) .dark #view-settings .flex.gap-4.flex-wrap>button[class*="bg-brand-600"]{border:0 !important;background:#964742 !important;color:#fff !important}
+:where(html[data-theme="claude"]) .dark #view-settings .flex.gap-4.flex-wrap>button[class*="bg-brand-600"]{border:0 !important;background:var(--d1-bean) !important;color:var(--d1-on-accent) !important}
 :where(html[data-theme="claude"]) .dark #view-settings .settings-secondary-label:hover,
-:where(html[data-theme="claude"]) .dark #view-settings .flex.gap-4.flex-wrap>button[class*="bg-brand-600"]:hover{background:#7f3b37 !important;color:#fff !important}
+:where(html[data-theme="claude"]) .dark #view-settings .flex.gap-4.flex-wrap>button[class*="bg-brand-600"]:hover{background:var(--d1-bean-deep) !important;color:var(--d1-on-accent) !important}
 /* 主题B：账号页「一键清理全站缓存 (Purge)」并入同一套红豆实心按钮 */
-:where(html[data-theme="claude"]) #view-settings button.border-red-200.text-red-600{display:inline-flex;align-items:center;justify-content:center;gap:.375rem;white-space:nowrap;text-align:center;border-color:#964742 !important;background:#964742 !important;color:#fff !important}
-:where(html[data-theme="claude"]) #view-settings button.border-red-200.text-red-600:hover{border-color:#7f3b37 !important;background:#7f3b37 !important;color:#fff !important}
+:where(html[data-theme="claude"]) #view-settings button.border-red-200.text-red-600{display:inline-flex;align-items:center;justify-content:center;gap:.375rem;white-space:nowrap;text-align:center;border-color:var(--d1-bean) !important;background:var(--d1-bean) !important;color:var(--d1-on-accent) !important}
+:where(html[data-theme="claude"]) #view-settings button.border-red-200.text-red-600:hover{border-color:var(--d1-bean-deep) !important;background:var(--d1-bean-deep) !important;color:var(--d1-on-accent) !important}
 /* 所有皮肤：设置页面板标题的标签回到最右侧，与标题同一条底边对齐，并去掉外围胶囊包裹 */
 #view-settings .ui-block-head{flex-direction:row;align-items:flex-end !important;justify-content:space-between;gap:.75rem}
 #view-settings .ui-block-head>span{margin:0 !important;border:0 !important;border-radius:0 !important;background:none !important;padding:0 !important;box-shadow:none !important;line-height:1.4;flex:0 0 auto;text-align:right;white-space:nowrap}
 /* 主题B：界面主题选择按钮在本皮肤内改用暖纸底色 + 红豆描边，而不是蓝色高亮 */
-:where(html[data-theme="claude"]) #view-settings .settings-theme-skin-card [data-admin-skin-option][aria-pressed="true"]{border-color:#964742;background:rgb(245,244,237);color:#964742}
-:where(html[data-theme="claude"]) .dark #view-settings .settings-theme-skin-card [data-admin-skin-option][aria-pressed="true"]{border-color:#964742;background:#242420;color:#fa9a80}
+:where(html[data-theme="claude"]) #view-settings .settings-theme-skin-card [data-admin-skin-option][aria-pressed="true"]{border-color:var(--d1-bean);background:rgb(var(--ui-c-n-50));color:var(--d1-bean)}
+:where(html[data-theme="claude"]) .dark #view-settings .settings-theme-skin-card [data-admin-skin-option][aria-pressed="true"]{border-color:var(--d1-bean);background:var(--d1-raised-dark);color:#fa9a80}
 
 /* 主题B：日志表格单元格垂直居中（资源类别标签撑高行时，节点/IP/UA 等文字不再贴基线） */
 :where(html[data-theme="claude"]) #view-logs #logs-tbody td,
@@ -1192,6 +1231,34 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
     toolbarRow.setAttribute('data-admin-node-toolbar-row', '1');
     const actionGroup = [...toolbar.children].find((child) => child !== toolbarMain) || null;
     actionGroup?.setAttribute('data-admin-node-toolbar-actions', '1');
+    // 初始化 DB 复用日志页那条两阶段修复流程（含确认弹窗），排在动作组首位就是为了和
+    // 上方的「新建节点」左对齐：两行在 768–1535 断点共用同一列网格起点。
+    if (actionGroup) ensureNodeToolbarDbInitButton(actionGroup);
+  }
+
+  function ensureNodeToolbarDbInitButton(actionGroup) {
+    let button = actionGroup.querySelector('[data-admin-node-db-init="1"]');
+    if (!button) {
+      button = document.createElement('button');
+      button.type = 'button';
+      button.setAttribute('data-admin-node-db-init', '1');
+      button.setAttribute('title', '初始化 D1 日志表结构');
+      button.className = 'inline-flex items-center justify-center whitespace-nowrap rounded-xl bg-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/30 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700';
+      button.innerHTML = '<i data-lucide="database" class="mr-2 h-4 w-4" aria-hidden="true"></i>初始化 DB';
+      button.addEventListener('click', () => {
+        const app = window.App;
+        if (!app || typeof app.initLogsDbFromUi !== 'function' || button.disabled) return;
+        button.disabled = true;
+        // 失败提示已经在 initLogsDbFromUi 内部弹过，这里只负责解锁按钮。
+        Promise.resolve(app.initLogsDbFromUi()).catch(() => {}).finally(() => {
+          button.disabled = false;
+        });
+      });
+    }
+    if (actionGroup.firstElementChild !== button) {
+      actionGroup.insertBefore(button, actionGroup.firstElementChild);
+    }
+    return button;
   }
 
   function formatWorkerHtmlUploadBytes(bytes) {
@@ -1394,20 +1461,37 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
     if (!advancedSection) {
       advancedSection = document.createElement('details');
       advancedSection.setAttribute('data-admin-node-advanced', '1');
-      advancedSection.open = true;
+      advancedSection.open = false;
       advancedSection.innerHTML = '<summary><span>高级设置</span><i data-lucide="chevron-down" aria-hidden="true"></i></summary><div data-admin-node-advanced-content="1"></div>';
       linesPanel.insertAdjacentElement('afterend', advancedSection);
     }
     const content = advancedSection.querySelector('[data-admin-node-advanced-content="1"]');
     if (!content) return;
+    // 高级设置默认折叠：每次重新打开节点弹窗都回到折叠态。
     const nodeModalIsOpen = !!nodeModal?.open;
-    if (nodeModalIsOpen && !nodeModalWasOpen) advancedSection.open = true;
+    if (nodeModalIsOpen && !nodeModalWasOpen) {
+      advancedSection.open = false;
+      // 每次重开弹窗都重算「继承全局」文案：settingsForm 可能在上次渲染之后才就绪。
+      syncNodeInheritCopy(window.App);
+    }
     nodeModalWasOpen = nodeModalIsOpen;
     advancedFields.setAttribute('data-admin-node-advanced-fields', '1');
     headersPanel.setAttribute('data-admin-node-advanced-headers', '1');
     if (advancedFields.parentElement !== content) content.appendChild(advancedFields);
+    // 入口模式与访问密钥属于低频配置，和 Headers 一起收进高级设置，基础区只留常用字段。
+    // 这两个字段在模板里分别包在各自的 div 里，所以按字段而不是按共同父级移动。
+    const entryFields = ['#form-entry-mode', '#form-secret']
+      .map((selector) => document.querySelector(selector)?.parentElement)
+      .filter((field) => field && !field.closest('[data-admin-node-advanced="1"]'));
+    if (entryFields.length === 2) {
+      for (const field of entryFields) {
+        field.setAttribute('data-admin-node-advanced-entry', '1');
+        if (field.parentElement !== content) content.insertBefore(field, advancedFields);
+      }
+    }
     if (headersPanel.parentElement !== content) content.appendChild(headersPanel);
     syncTmdbAggregationControl(window.App, content, advancedFields);
+    syncNodeInheritCopy(window.App);
   }
 
   function patchTmdbNodeMethods(app) {
@@ -1455,7 +1539,7 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
       field = document.createElement('label');
       field.setAttribute('data-admin-node-tmdb-aggregation', '1');
       field.className = 'col-span-full flex items-start justify-between gap-4 border-b border-slate-100 pb-3.5 dark:border-slate-800';
-      field.innerHTML = '<span class="min-w-0"><span class="block text-sm text-slate-500">TMDB 聚合</span><span class="mt-1 block text-xs leading-5 text-slate-400">启用后，带 tmdb.&lt;id&gt; 的 Provider ID 查询会改写为标题和年份搜索。</span></span><span class="relative mt-0.5 inline-flex h-5 w-9 shrink-0 items-center"><input type="checkbox" class="peer absolute inset-0 h-full w-full cursor-pointer opacity-0"><span class="pointer-events-none absolute inset-0 rounded-full bg-slate-200 transition-colors peer-checked:bg-brand-600 peer-focus-visible:ring-2 peer-focus-visible:ring-brand-400 peer-focus-visible:ring-offset-2 dark:bg-slate-700"></span><span class="pointer-events-none absolute left-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-4"></span></span>';
+      field.innerHTML = '<span class="min-w-0"><span class="block text-sm text-slate-500">TMDB 聚合</span><span class="mt-1 block text-xs leading-5 text-slate-400">启用后，带 tmdb.&lt;id&gt; 的 Provider ID 查询先换成 todbvs，查不到时再退回标题和年份搜索。</span></span><span class="relative mt-0.5 inline-flex h-5 w-9 shrink-0 items-center"><input type="checkbox" class="peer absolute inset-0 h-full w-full cursor-pointer opacity-0"><span class="pointer-events-none absolute inset-0 rounded-full bg-slate-200 transition-colors peer-checked:bg-brand-600 peer-focus-visible:ring-2 peer-focus-visible:ring-brand-400 peer-focus-visible:ring-offset-2 dark:bg-slate-700"></span><span class="pointer-events-none absolute left-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-4"></span></span>';
     }
     const input = field.querySelector('input');
     if (input) {
@@ -1473,22 +1557,117 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
     if (field.parentElement !== advancedFields) advancedFields.prepend(field);
   }
 
+  // 标签颜色自绘下拉：原生 select 的弹出菜单由系统绘制，选项颜色改不动。
+  // select 仍是唯一状态源（v-model 绑在它身上），这里只画一个按钮 + 面板去驱动它。
+  const TAG_COLOR_TONES = {
+    amber: '#d97706',
+    emerald: '#059669',
+    sky: '#0284c7',
+    violet: '#7c3aed',
+    rose: '#e11d48',
+    slate: '#64748b'
+  };
+
+  function closeTagColorPanel() {
+    document.querySelector('[data-admin-node-tag-color-panel="1"]')?.remove();
+    document.querySelector('[data-admin-node-tag-color-trigger="1"]')?.setAttribute('aria-expanded', 'false');
+  }
+
+  function syncTagColorTrigger(select, trigger) {
+    if (!select || !trigger) return;
+    const option = select.selectedOptions?.[0];
+    const tone = TAG_COLOR_TONES[select.value] || TAG_COLOR_TONES.slate;
+    const label = String(option?.textContent || '').trim() || '默认';
+    const labelNode = trigger.querySelector('[data-admin-node-tag-color-label="1"]');
+    const swatch = trigger.querySelector('[data-admin-node-tag-color-swatch="1"]');
+    if (labelNode && labelNode.textContent !== label) labelNode.textContent = label;
+    if (swatch) swatch.style.color = tone;
+    trigger.setAttribute('aria-label', '标签颜色：' + label);
+  }
+
+  function openTagColorPanel(select, trigger) {
+    closeTagColorPanel();
+    const panel = document.createElement('div');
+    panel.setAttribute('data-admin-node-tag-color-panel', '1');
+    panel.setAttribute('role', 'listbox');
+    for (const option of [...select.options]) {
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.setAttribute('data-admin-node-tag-color-option', '1');
+      item.setAttribute('role', 'option');
+      item.setAttribute('aria-selected', option.value === select.value ? 'true' : 'false');
+      const swatch = document.createElement('span');
+      swatch.setAttribute('data-admin-node-tag-color-swatch', '1');
+      swatch.style.color = TAG_COLOR_TONES[option.value] || TAG_COLOR_TONES.slate;
+      const text = document.createElement('span');
+      text.textContent = String(option.textContent || '').trim();
+      item.append(swatch, text);
+      item.addEventListener('click', () => {
+        select.value = option.value;
+        // 模板用 v-model 绑 select，必须派发 change 才会写回 nodeModalForm.tagColor。
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+        syncTagColorTrigger(select, trigger);
+        closeTagColorPanel();
+        trigger.focus();
+      });
+      panel.appendChild(item);
+    }
+    // 原生 <dialog> 处于 top layer，挂到 body 会被永远压在下面；挂进 dialog 才能显示在其上。
+    (document.querySelector('#node-modal[open]') || document.body).appendChild(panel);
+    const rect = trigger.getBoundingClientRect();
+    const panelRect = panel.getBoundingClientRect();
+    const openUp = rect.bottom + panelRect.height + 8 > window.innerHeight;
+    panel.style.left = Math.max(8, Math.min(rect.right - panelRect.width, window.innerWidth - panelRect.width - 8)) + 'px';
+    panel.style.top = (openUp ? rect.top - panelRect.height - 4 : rect.bottom + 4) + 'px';
+    trigger.setAttribute('aria-expanded', 'true');
+    panel.querySelector('[aria-selected="true"]')?.focus?.();
+  }
+
+  function mountTagColorTrigger(select) {
+    if (!select || select.dataset.adminTagColorMounted === '1') return;
+    const row = select.parentElement;
+    if (!row) return;
+    select.dataset.adminTagColorMounted = '1';
+    const trigger = document.createElement('button');
+    trigger.type = 'button';
+    trigger.setAttribute('data-admin-node-tag-color-trigger', '1');
+    trigger.setAttribute('aria-haspopup', 'listbox');
+    trigger.setAttribute('aria-expanded', 'false');
+    trigger.innerHTML = '<span data-admin-node-tag-color-swatch="1" style="width:.75rem;height:.75rem;border-radius:4px;border:1px solid currentColor;display:inline-block;flex:0 0 auto"></span>'
+      + '<span data-admin-node-tag-color-label="1" style="flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>'
+      + '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true" style="flex:0 0 auto"><path d="m6 9 6 6 6-6"/></svg>';
+    trigger.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (document.querySelector('[data-admin-node-tag-color-panel="1"]')) closeTagColorPanel();
+      else openTagColorPanel(select, trigger);
+    });
+    // select 被别处改动（载入节点、表单重置）时同步按钮文案。
+    select.addEventListener('change', () => syncTagColorTrigger(select, trigger));
+    row.appendChild(trigger);
+    syncTagColorTrigger(select, trigger);
+  }
+
+  function applyTagColorDropdown() {
+    const select = document.querySelector('#form-tag-color');
+    if (select) mountTagColorTrigger(select);
+    else closeTagColorPanel();
+  }
+
   function applyNodePrimaryFieldsLayout() {
-    const entryMode = document.querySelector('#form-entry-mode');
     const displayName = document.querySelector('#form-display-name');
     const tag = document.querySelector('#form-tag');
+    const tagColor = document.querySelector('#form-tag-color');
     const remark = document.querySelector('#form-remark');
     const streamMode = document.querySelector('#form-main-video-stream-mode');
-    const entryField = entryMode?.parentElement;
     const basicGrid = displayName?.parentElement?.parentElement;
     const metaGrid = tag?.closest('.grid.grid-cols-1');
     const streamField = streamMode?.parentElement;
     const streamPanel = streamField?.closest('.rounded-2xl.border');
-    if (entryField && basicGrid) {
-      entryField.setAttribute('data-admin-node-entry-field', '1');
-      basicGrid.setAttribute('data-admin-node-basic-grid', '1');
-      if (basicGrid.firstElementChild !== entryField) basicGrid.insertBefore(entryField, basicGrid.firstElementChild);
-    }
+    if (basicGrid) basicGrid.setAttribute('data-admin-node-basic-grid', '1');
+    // 标签颜色不再是独立一格：贴在标签输入框右侧，共用同一行的输入区。
+    const tagRow = tag?.parentElement;
+    if (tagRow && tagColor && tagColor.parentElement === tagRow) tagRow.setAttribute('data-admin-node-tag-field', '1');
     if (metaGrid && remark && streamField) {
       metaGrid.setAttribute('data-admin-node-meta-grid', '1');
       streamField.setAttribute('data-admin-node-stream-field', '1');
@@ -1499,12 +1678,84 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
     }
     streamPanel?.remove();
   }
+  // 线路表格：表头与数据行共用同一套列宽，数量跟随行数，按钮点击后重算。
+  function applyNodeLinesTableLayout() {
+    const panel = document.querySelector('#node-modal [data-admin-node-lines-panel="1"]');
+    if (!panel) return;
+    panel.querySelector('[class*="grid-cols-["]')?.setAttribute('data-admin-node-lines-head', '1');
+    const container = document.querySelector('#node-lines-container');
+    container?.querySelectorAll('[data-node-line-row="1"]').forEach((row) => {
+      row.querySelector('[class*="grid-cols-["]')?.setAttribute('data-admin-node-line-grid', '1');
+    });
+    const label = panel.querySelector(':scope > div:first-child > div:first-child > label');
+    let count = panel.querySelector('[data-admin-node-line-count="1"]');
+    if (label && !count) {
+      count = document.createElement('span');
+      count.setAttribute('data-admin-node-line-count', '1');
+      label.insertAdjacentElement('afterend', count);
+    }
+    if (count) {
+      const text = (container?.querySelectorAll('[data-node-line-row="1"]').length || 0) + ' 条线路';
+      if (count.textContent !== text) count.textContent = text;
+    }
+    if (panel.dataset.adminLineChromeBound === '1') return;
+    panel.dataset.adminLineChromeBound = '1';
+    // 删除/重排只移除节点，不会触发观察器的节点新增分支，这里补一次点击后的重算。
+    panel.addEventListener('click', (event) => {
+      if (event.target?.closest?.('button')) scheduleShellRefresh();
+    });
+  }
+
+  // 说明文字默认只留一行：同字段的第二段起折叠，长说明带「展开」。
+  function applyNodeModalHintFold() {
+    const form = document.querySelector('#node-modal form');
+    if (!form) return;
+    form.querySelectorAll('[data-admin-hint="1"]').forEach((hint) => hint.removeAttribute('data-admin-hint'));
+    const hints = [...form.querySelectorAll('p[class*="text-xs"]')].filter((hint) => {
+      if (/text-red/.test(String(hint.className || ''))) return false;
+      return String(hint.textContent || '').trim().length > 12;
+    });
+    hints.forEach((hint) => hint.setAttribute('data-admin-hint', '1'));
+    for (const field of new Set(hints.map((hint) => hint.parentElement))) {
+      if (!field) continue;
+      const own = [...field.children].filter((child) => child.hasAttribute?.('data-admin-hint'));
+      // 入口模式与访问密钥的提示不做折叠：这两行本身是操作指引，收起反而看不到。
+      const inAdvancedEntry = field.hasAttribute('data-admin-node-advanced-entry');
+      const needsToggle = !inAdvancedEntry && (own.length > 1 || own.some((child) => String(child.textContent || '').trim().length > 26));
+      let toggle = field.querySelector('[data-admin-hint-toggle="1"]');
+      if (!needsToggle) {
+        toggle?.remove();
+        field.removeAttribute('data-admin-hint-field');
+        continue;
+      }
+      field.setAttribute('data-admin-hint-field', '1');
+      if (!toggle) {
+        toggle = document.createElement('button');
+        toggle.type = 'button';
+        toggle.setAttribute('data-admin-hint-toggle', '1');
+        toggle.addEventListener('click', () => {
+          const open = field.getAttribute('data-admin-hint-open') !== '1';
+          toggle.setAttribute('aria-expanded', String(open));
+          toggle.textContent = open ? '收起' : '展开';
+          if (open) field.setAttribute('data-admin-hint-open', '1');
+          else field.removeAttribute('data-admin-hint-open');
+        });
+        field.appendChild(toggle);
+      }
+      const open = field.getAttribute('data-admin-hint-open') === '1';
+      toggle.setAttribute('aria-expanded', String(open));
+      toggle.textContent = open ? '收起' : '展开';
+    }
+  }
 
   function applyLayoutEnhancements() {
     applyNodeToolbarLayout();
     applySettingsLayout();
     applyNodePrimaryFieldsLayout();
     applyNodeAdvancedSettingsLayout();
+    applyNodeLinesTableLayout();
+    applyNodeModalHintFold();
+    applyTagColorDropdown();
   }
 
   function normalizeAdminActionError(responsePayload, status) {
@@ -2901,12 +3152,81 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
     if (passthrough) passthrough.textContent = '透传';
     if (rewrite) rewrite.textContent = '改写模式';
   }
+  // 前三个字段的「继承全局」跟的是设置页的全局默认值，选中前就能看到会继承到什么。
+  const NODE_INHERIT_GLOBAL_LABELS = {
+    'form-playback-info-mode': () => formatNodeInheritGlobalMode('defaultPlaybackInfoMode', { rewrite: '改写', passthrough: '透传' }),
+    'form-media-auth-mode': () => formatNodeInheritGlobalMode('defaultMediaAuthMode', { emby: 'Emby', jellyfin: 'Jellyfin', passthrough: '透传', auto: '自动识别' }),
+    'form-real-client-ip-mode': () => formatNodeInheritGlobalMode('defaultRealClientIpMode', { forward: '透传', strip: '仅 X-Real-IP', disable: '不透传' }),
+    // 主视频流策略没有全局默认值：inherit 由该节点自身的直连标记决定，所以按节点算。
+    'form-main-video-stream-mode': () => formatNodeVideoStreamInheritLabel(window.App)
+  };
+  // 与 Worker 的 isNodeDirectSourceEnabled 同语义：proxyMode/direct 标记优先，其次看标签与备注里的「直连」。
+  function isNodeMarkedDirectSource(node = {}) {
+    const proxyMode = String(node?.proxyMode || node?.mode || '').trim().toLowerCase();
+    if (['direct', 'source-direct', 'origin-direct', 'node-direct'].includes(proxyMode)) return true;
+    if (node?.direct === true || node?.sourceDirect === true || node?.directSource === true || node?.direct2xx === true) return true;
+    const explicitText = (Array.isArray(node?.tags) ? node.tags.join(' ') : String(node?.tag || '')) + ' ' + String(node?.remark || '');
+    return /(?:^|[\\s[(【])(?:直连|source-direct|origin-direct|node-direct)(?:$|[\\s\\])】])/i.test(explicitText);
+  }
+
+  function formatNodeVideoStreamInheritLabel(app) {
+    const form = app?.nodeModalForm;
+    if (!form) return '继承全局';
+    // 已保存节点带着 proxyMode/direct 这类表单里没有的标记，按名字回查一次。
+    const name = String(form.originalName || form.name || '').trim().toLowerCase();
+    const saved = name && Array.isArray(app?.nodes)
+      ? app.nodes.find((node) => String(node?.name || '').trim().toLowerCase() === name)
+      : null;
+    // 标签和备注以表单草稿为准：用户正在改的内容才是保存后的结果。
+    const merged = { ...(saved || {}), tag: form.tag, tags: undefined, remark: form.remark };
+    return isNodeMarkedDirectSource(merged) ? '继承全局（直连）' : '继承全局（反代）';
+  }
+  function readNodeInheritGlobalMode(app, key, labelMap) {
+    const read = (source) => {
+      const value = source && typeof source === 'object' ? source[key] : '';
+      return String(value || '').trim().toLowerCase();
+    };
+    // settingsForm 只在设置页真正渲染后才被填充（可能是空对象），所以逐层回退而不是只读它。
+    const value = read(app?.settingsForm) || read(app?.runtimeConfig) || read(app?.config);
+    // 未知值不直接透给用户看，否则界面会冒出 something_unknown 这种内部标识。
+    return labelMap[value] || '';
+  }
+
+  function formatNodeInheritGlobalMode(key, labelMap) {
+    const label = readNodeInheritGlobalMode(window.App, key, labelMap);
+    return label ? '继承全局（' + label + '）' : '继承全局';
+  }
+
+  function syncNodeInheritCopy(app) {
+    if (!app) return;
+    for (const [id, resolveLabel] of Object.entries(NODE_INHERIT_GLOBAL_LABELS)) {
+      const inherit = document.querySelector('#' + id + ' option[value="inherit"]');
+      if (!inherit) continue;
+      const text = resolveLabel();
+      if (inherit.textContent !== text) inherit.textContent = text;
+    }
+    // 主视频流策略的继承结果取决于标签/备注，这两项是输入框，改完要立即重算。
+    bindNodeVideoStreamInheritInputs();
+  }
+
+  let nodeVideoStreamInheritBound = false;
+  function bindNodeVideoStreamInheritInputs() {
+    if (nodeVideoStreamInheritBound) return;
+    const tag = document.querySelector('#form-tag');
+    const remark = document.querySelector('#form-remark');
+    if (!tag || !remark) return;
+    nodeVideoStreamInheritBound = true;
+    for (const input of [tag, remark]) {
+      input.addEventListener('input', () => syncNodeInheritCopy(window.App));
+    }
+  }
 
   function applySafetyContractEnhancements() {
     const app = window.App;
     if (!app) return;
     patchSafetyContractMethods(app);
     syncPlaybackInfoModeCopy();
+    syncNodeInheritCopy(app);
   }
 
   // 亮暗切换不能靠逐元素的颜色过渡：它们的时长和缓动是为 hover 定的，
@@ -3006,6 +3326,21 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
   }
 
   document.addEventListener?.('keydown', handleDialogEscapeKey);
+  // 自绘下拉是 fixed 定位的独立面板：点外部、按 Esc、滚动或改窗口尺寸都要收起，否则会飘在错位置。
+  document.addEventListener?.('pointerdown', (event) => {
+    const panel = document.querySelector('[data-admin-node-tag-color-panel="1"]');
+    if (!panel) return;
+    if (panel.contains(event.target) || event.target?.closest?.('[data-admin-node-tag-color-trigger="1"]')) return;
+    closeTagColorPanel();
+  }, true);
+  document.addEventListener?.('keydown', (event) => {
+    if (event.key === 'Escape' && document.querySelector('[data-admin-node-tag-color-panel="1"]')) {
+      event.preventDefault?.();
+      closeTagColorPanel();
+    }
+  }, true);
+  window.addEventListener?.('scroll', closeTagColorPanel, true);
+  window.addEventListener?.('resize', closeTagColorPanel);
   syncDialogAccessibility();
 
   if (document.readyState === 'loading') {

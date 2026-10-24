@@ -159,6 +159,42 @@
     border-radius: var(--app-input-radius) !important;
   }
 
+  /* 标签颜色内嵌在标签输入框里：选择器贴右侧，只留一条分隔线。*/
+  .tag-input-shell {
+    @apply relative block min-w-0;
+  }
+
+  .tag-input-shell .field-input {
+    padding-right: 6.25rem;
+  }
+
+  .tag-color-select {
+    @apply absolute text-xs outline-none;
+    top: 0.375rem;
+    right: 0.375rem;
+    bottom: 0.375rem;
+    width: 5.5rem;
+    padding: 0 0.375rem;
+    border: 0;
+    border-left: 1px solid var(--app-border-subtle);
+    border-radius: 0;
+    background: transparent;
+    color: var(--app-text-muted);
+    text-align: center;
+    text-align-last: center;
+    cursor: pointer;
+  }
+
+  .tag-color-select:hover {
+    color: rgb(var(--color-brand-400) / 1);
+  }
+
+  .tag-color-select:focus-visible {
+    outline: 2px solid rgb(var(--color-brand-500) / 0.45);
+    outline-offset: -2px;
+    border-radius: 8px;
+  }
+
   .field-textarea {
     @apply min-h-[7rem] resize-y;
   }
@@ -166,7 +202,6 @@
   .field-input::placeholder {
     color: var(--app-text-faint);
   }
-
   .toggle-card {
     @apply inline-flex items-center gap-3 rounded-2xl border px-4 py-3 text-sm;
     border-color: var(--app-border-subtle);

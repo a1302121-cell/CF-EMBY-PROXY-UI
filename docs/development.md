@@ -81,6 +81,7 @@ node --test tests/*.test.mjs
 - `tests/admin-contract-parity.test.mjs`：管理端跨层契约——前端调用的 action 必须能在 Worker registry 解析、boot 协议符号在壳层/loader/兜底壳三处一致、`frontend/src` 参考源仍只调用可解析的 action 并保持 5 个主视图与 8 个设置分区，以及真实 `frontend/dist/index.html` 能通过 Worker 的壳层校验（含 2 MiB 上限与资产策略）。
 - `tests/worker-bundle-smoke.test.mjs`：生成 Worker bundle 的入口和 Cloudflare handler 形状。
 - `tests/tech-stack-pins.test.mjs`：管理端 4 个 CDN 生产依赖的版本锁定，模板、组合产物与 `dist` 必须一致，且 `docs/tech-stack.md` 记录同步。
+- `tests/frontend-color-tokens.test.mjs`：手写 CSS 的颜色令牌——`var()` 不能引用未定义且无兜底的变量、`--d1-*` 只能出现在 `data-theme="claude"` 规则里、调色板变量只在 `:root`/claude 块定义。这三条在浏览器里都是静默失效（丢声明、变透明），只能靠静态检查守。
 - `tests/fixtures/worker-architecture/negative-cases.json`：架构检查器的反例夹具。
 
 改动路由/代理时至少跑 defensive boundaries 和 bundle；改动配置/KV/D1 时至少跑对应 safety/schema 测试；改动管理端组合链时至少跑 frontend runtime 与同步检查。
@@ -129,7 +130,7 @@ npm.cmd run test:e2e
 
 ### 7.1 视觉基线（截图对比）
 
-`tests/e2e/visual.spec.mjs` 对 5 个主视图 × 浅/深色做整页截图比对，基线放在 `tests/e2e/visual.spec.mjs-snapshots/`。它是 Tailwind v3 → v4 迁移时定位色差与间距漂移的工具，现在留作防退化工具。
+`tests/e2e/visual.spec.mjs` 对 5 个主视图 × 4 个主题组合（经典 / `claude` 皮肤 × 浅色 / 深色）做整页截图比对，基线放在 `tests/e2e/visual.spec.mjs-snapshots/`。它是 Tailwind v3 → v4 迁移时定位色差与间距漂移的工具，现在留作防退化工具。
 
 ```powershell
 npm.cmd run test:visual                                          # 比对基线
@@ -139,6 +140,7 @@ npx playwright test tests/e2e/visual.spec.mjs --update-snapshots # 确认变化�
 
 - 不进 `test:e2e`，也不进 `npm run check` 和 CI：基线文件名带平台后缀（`-win32`），换操作系统就没有可比基线，只会假失败。
 - 差异图在 `test-results/**/*-diff.png`，红块就是差异位置；一次会报出全部视图的差异，因为断言用的是 `expect.soft`。
-- 截图前会等 body 背景非透明、`document.fonts.ready`、冻结动画与过渡、关闭 Chart.js 动画，避免非确定性差异。
+- 截图前会等 body 背景非透明、`document.fonts.ready`、冻结动画与过渡、关闭 Chart.js 动画，避免非确定性差异；`claude` 皮肤还要等 `settleSkinFonts()` 把按 unicode-range 分片的中文字体真正下载完，否则同一份代码的两次截图会拿到不同字形。
+- 像素差异只是冒烟级：同一份代码连跑两次也有 0.01% 量级抗锯齿抖动。要证明"某个颜色没变"，用计算样式逐条比对（`color`/`backgroundColor`/`border*Color`/`boxShadow`/`rect` 全量导出后 diff），不是看截图。
 - 深色主题通过 `addInitScript` 写 `localStorage["theme"]="dark"` 并断言 `html` 拿到 `dark` 类，不去点界面上本来没有的主题按钮。
 - 基线以迁移后的状态为准（现在跑是 0 差异）；迁移遗留的已知差异与 v4 的四个坑见 [`tech-stack.md` 第 5 节](./tech-stack.md)。

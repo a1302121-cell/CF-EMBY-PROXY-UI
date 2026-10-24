@@ -177,6 +177,76 @@ const hostPrefixProxyEnabled = computed(() => {
     settingsConfig && typeof settingsConfig === "object" ? settingsConfig : bootstrapConfig;
   return config?.enableHostPrefixProxy === true;
 });
+// 生产端在生产模板链里用同一套映射改写「继承全局」选项文案，这里保持等价实现。
+const NODE_INHERIT_GLOBAL_LABELS = {
+  defaultPlaybackInfoMode: { rewrite: "改写", passthrough: "透传" },
+  defaultMediaAuthMode: {
+    emby: "Emby",
+    jellyfin: "Jellyfin",
+    passthrough: "透传",
+    auto: "自动识别",
+  },
+  defaultRealClientIpMode: { forward: "透传", strip: "仅 X-Real-IP", disable: "不透传" },
+};
+
+function resolveGlobalSettingValue(key) {
+  const read = (source) => (isPlainObject(source) ? String(source[key] || "").trim() : "");
+  // settingsForm 只在设置页真正渲染后才被填充（可能是空对象），所以逐层回退而不是只读它。
+  return (
+    read(props.adminConsole?.settingsForm) ||
+    read(props.adminConsole?.runtimeConfig) ||
+    read(props.adminConsole?.settingsBootstrap?.config) ||
+    read(props.adminConsole?.adminBootstrap?.config)
+  );
+}
+
+function formatInheritGlobalLabel(key, optionLabel = "继承全局") {
+  const labelMap = NODE_INHERIT_GLOBAL_LABELS[key] || {};
+  const value = resolveGlobalSettingValue(key).toLowerCase();
+  // 未知值不直接透给用户看，否则界面会冒出内部标识。
+  const current = labelMap[value] || "";
+  return current ? `${optionLabel}（${current}）` : optionLabel;
+}
+
+// 主视频流策略没有全局默认值：inherit 由该节点自身的直连标记决定。
+// 与 Worker 的 isNodeDirectSourceEnabled 同语义：proxyMode/direct 标记优先，其次看标签与备注里的「直连」。
+function isNodeMarkedDirectSource(node = {}) {
+  const proxyMode = String(node?.proxyMode || node?.mode || "")
+    .trim()
+    .toLowerCase();
+  if (["direct", "source-direct", "origin-direct", "node-direct"].includes(proxyMode)) return true;
+  if (
+    node?.direct === true ||
+    node?.sourceDirect === true ||
+    node?.directSource === true ||
+    node?.direct2xx === true
+  )
+    return true;
+  const explicitText = `${
+    Array.isArray(node?.tags) ? node.tags.join(" ") : String(node?.tag || "")
+  } ${String(node?.remark || "")}`;
+  return /(?:^|[\s[(【])(?:直连|source-direct|origin-direct|node-direct)(?:$|[\s\])】])/i.test(
+    explicitText,
+  );
+}
+
+function formatMainVideoStreamInheritLabel(optionLabel = "继承全局") {
+  // 已保存节点带着 proxyMode/direct 这类表单里没有的标记，按名字回查一次。
+  const savedName = String(editor.originalName || form.name || "")
+    .trim()
+    .toLowerCase();
+  const savedNode = savedName
+    ? nodes.value.find(
+        (node) =>
+          String(node?.name || "")
+            .trim()
+            .toLowerCase() === savedName,
+      )
+    : null;
+  // 标签和备注以表单草稿为准：用户正在改的内容才是保存后的结果。
+  const merged = { ...(savedNode || {}), tags: undefined, tag: form.tag, remark: form.remark };
+  return `${optionLabel}（${isNodeMarkedDirectSource(merged) ? "直连" : "反代"}）`;
+}
 
 const filteredNodes = computed(() => {
   const keyword = String(query.value || "")
@@ -2484,66 +2554,30 @@ async function copyText(text = "") {
             </label>
 
             <label class="field-shell">
-              <span class="field-label">入口模式</span>
-              <select
-                v-model="form.entryMode"
-                class="field-input"
-                :disabled="savingNode || importingNodes"
-              >
-                <option
-                  v-for="option in ENTRY_MODE_OPTIONS"
-                  :key="option.value"
-                  :value="option.value"
-                >
-                  {{ option.label }}
-                </option>
-              </select>
-            </label>
-
-            <label class="field-shell">
-              <span class="field-label">Secret</span>
-              <input
-                v-model="form.secret"
-                type="text"
-                class="field-input"
-                placeholder="kv_route 时可选"
-                :disabled="savingNode || importingNodes || form.entryMode === 'host_prefix'"
-              />
-              <span class="field-hint">
-                {{
-                  form.entryMode === "host_prefix"
-                    ? hostPrefixHint || "host prefix 节点不会保存 secret。"
-                    : "未填写时沿用无 secret 的普通路径。"
-                }}
-              </span>
-            </label>
-
-            <label class="field-shell">
               <span class="field-label">标签</span>
-              <input
-                v-model="form.tag"
-                type="text"
-                class="field-input"
-                placeholder="例如 Premium"
-                :disabled="savingNode || importingNodes"
-              />
-            </label>
-
-            <label class="field-shell">
-              <span class="field-label">标签颜色</span>
-              <select
-                v-model="form.tagColor"
-                class="field-input"
-                :disabled="savingNode || importingNodes"
-              >
-                <option
-                  v-for="option in TAG_COLOR_OPTIONS"
-                  :key="option.value || 'default'"
-                  :value="option.value"
+              <div class="tag-input-shell">
+                <input
+                  v-model="form.tag"
+                  type="text"
+                  class="field-input"
+                  placeholder="例如 Premium"
+                  :disabled="savingNode || importingNodes"
+                />
+                <select
+                  v-model="form.tagColor"
+                  class="tag-color-select"
+                  aria-label="标签颜色"
+                  :disabled="savingNode || importingNodes"
                 >
-                  {{ option.label }}
-                </option>
-              </select>
+                  <option
+                    v-for="option in TAG_COLOR_OPTIONS"
+                    :key="option.value || 'default'"
+                    :value="option.value"
+                  >
+                    {{ option.label }}
+                  </option>
+                </select>
+              </div>
             </label>
 
             <label class="field-shell md:col-span-2">
@@ -2578,7 +2612,11 @@ async function copyText(text = "") {
                   :key="option.value"
                   :value="option.value"
                 >
-                  {{ option.label }}
+                  {{
+                    option.value === "inherit"
+                      ? formatInheritGlobalLabel("defaultPlaybackInfoMode")
+                      : option.label
+                  }}
                 </option>
               </select>
             </label>
@@ -2595,7 +2633,11 @@ async function copyText(text = "") {
                   :key="option.value"
                   :value="option.value"
                 >
-                  {{ option.label }}
+                  {{
+                    option.value === "inherit"
+                      ? formatInheritGlobalLabel("defaultMediaAuthMode")
+                      : option.label
+                  }}
                 </option>
               </select>
             </label>
@@ -2612,7 +2654,11 @@ async function copyText(text = "") {
                   :key="option.value"
                   :value="option.value"
                 >
-                  {{ option.label }}
+                  {{
+                    option.value === "inherit"
+                      ? formatInheritGlobalLabel("defaultRealClientIpMode")
+                      : option.label
+                  }}
                 </option>
               </select>
             </label>
@@ -2646,7 +2692,9 @@ async function copyText(text = "") {
                   :key="option.value"
                   :value="option.value"
                 >
-                  {{ option.label }}
+                  {{
+                    option.value === "inherit" ? formatMainVideoStreamInheritLabel() : option.label
+                  }}
                 </option>
               </select>
             </label>
@@ -2665,6 +2713,54 @@ async function copyText(text = "") {
           </div>
         </article>
 
+        <article class="rounded-3xl border border-white/10 bg-slate-950/40 p-5 xl:col-span-2">
+          <div class="flex items-center gap-3">
+            <Server class="h-5 w-5 text-brand-300" />
+            <div>
+              <h4 class="text-sm font-medium text-white">入口与访问密钥</h4>
+              <p class="mt-2 text-sm leading-6 text-slate-300">
+                入口模式决定链接形态；访问密钥只在 KV Route 下生效。两者都属于低频配置，收在这里。
+              </p>
+            </div>
+          </div>
+
+          <div class="mt-5 grid gap-4 md:grid-cols-2">
+            <label class="field-shell">
+              <span class="field-label">入口模式</span>
+              <select
+                v-model="form.entryMode"
+                class="field-input"
+                :disabled="savingNode || importingNodes"
+              >
+                <option
+                  v-for="option in ENTRY_MODE_OPTIONS"
+                  :key="option.value"
+                  :value="option.value"
+                >
+                  {{ option.label }}
+                </option>
+              </select>
+            </label>
+
+            <label class="field-shell">
+              <span class="field-label">访问密钥</span>
+              <input
+                v-model="form.secret"
+                type="text"
+                class="field-input"
+                placeholder="kv_route 时可选"
+                :disabled="savingNode || importingNodes || form.entryMode === 'host_prefix'"
+              />
+              <span class="field-hint">
+                {{
+                  form.entryMode === "host_prefix"
+                    ? hostPrefixHint || "host prefix 节点不会保存 secret。"
+                    : "未填写时沿用无 secret 的普通路径。"
+                }}
+              </span>
+            </label>
+          </div>
+        </article>
         <article class="rounded-3xl border border-white/10 bg-slate-950/40 p-5 xl:col-span-2">
           <div class="flex flex-wrap items-center justify-between gap-3">
             <div class="flex items-center gap-3">

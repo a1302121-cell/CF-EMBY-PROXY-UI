@@ -669,6 +669,27 @@ test("node line editor stacks its heading and actions on mobile", () => {
   );
 });
 
+test("nodes toolbar offers DB initialization right under the create button", () => {
+  // 初始化 DB 是动作组的第一个按钮，和上面一行的「新建节点」共用同一起点，
+  // 所以动作组网格必须是 4 列：3 列会把新按钮挤到第二行之外。
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_STYLE,
+    /#view-nodes \[data-admin-node-toolbar-actions="1"\]\{display:grid;grid-template-columns:repeat\(4,max-content\)/,
+  );
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_STYLE,
+    /@media \(min-width:768px\) and \(max-width:1535px\)\{#view-nodes \[data-admin-node-toolbar-actions="1"\]\{grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/,
+  );
+  assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /ensureNodeToolbarDbInitButton\(actionGroup\)/);
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_SCRIPT,
+    /actionGroup\.insertBefore\(button, actionGroup\.firstElementChild\)/,
+  );
+  // 复用日志页那条两阶段修复流程，不另开 action。
+  assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /typeof app\.initLogsDbFromUi !== 'function'/);
+  assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, />初始化 DB'/);
+});
+
 test("theme B tidy buttons fill solid red bean and center icon with text", async () => {
   const template = await readFile(
     new URL("../frontend/admin-runtime.template.html", import.meta.url),
@@ -680,15 +701,15 @@ test("theme B tidy buttons fill solid red bean and center icon with text", async
   );
   assert.match(
     ADMIN_RUNTIME_ENHANCEMENT_STYLE,
-    /#view-settings button\.border-amber-300\.text-amber-700\{display:inline-flex;align-items:center;justify-content:center;gap:\.375rem;white-space:nowrap;text-align:center;border-color:#964742;background:#964742;color:#fff\}/,
+    /#view-settings button\.border-amber-300\.text-amber-700\{display:inline-flex;align-items:center;justify-content:center;gap:\.375rem;white-space:nowrap;text-align:center;border-color:var\(--d1-bean\);background:var\(--d1-bean\);color:var\(--d1-on-accent\)\}/,
   );
   assert.match(
     ADMIN_RUNTIME_ENHANCEMENT_STYLE,
-    /#view-settings button\.border-amber-300\.text-amber-700>i\{margin-right:0;color:#fff\}/,
+    /#view-settings button\.border-amber-300\.text-amber-700>i\{margin-right:0;color:var\(--d1-on-accent\)\}/,
   );
   assert.match(
     ADMIN_RUNTIME_ENHANCEMENT_STYLE,
-    /\.dark #view-settings button\.border-amber-300\.text-amber-700\{border-color:#964742;background:#964742;color:#fff\}/,
+    /\.dark #view-settings button\.border-amber-300\.text-amber-700\{border-color:var\(--d1-bean\);background:var\(--d1-bean\);color:var\(--d1-on-accent\)\}/,
   );
 });
 
@@ -706,11 +727,11 @@ test("theme B migration backup import and export buttons share one solid red bea
   );
   assert.match(
     ADMIN_RUNTIME_ENHANCEMENT_STYLE,
-    /#view-settings \.flex\.gap-4\.flex-wrap>button\[class\*="bg-brand-600"\]\{display:inline-flex;align-items:center;justify-content:center;gap:\.375rem;white-space:nowrap;text-align:center;flex:0 0 auto;border:0 !important;background:#964742 !important;color:#fff !important\}/,
+    /#view-settings \.flex\.gap-4\.flex-wrap>button\[class\*="bg-brand-600"\]\{display:inline-flex;align-items:center;justify-content:center;gap:\.375rem;white-space:nowrap;text-align:center;flex:0 0 auto;border:0 !important;background:var\(--d1-bean\) !important;color:var\(--d1-on-accent\) !important\}/,
   );
   assert.match(
     ADMIN_RUNTIME_ENHANCEMENT_STYLE,
-    /\.settings-secondary-label:hover,\n:where\(html\[data-theme="claude"\]\) #view-settings \.flex\.gap-4\.flex-wrap>button\[class\*="bg-brand-600"\]:hover\{background:#7f3b37 !important;color:#fff !important\}/,
+    /\.settings-secondary-label:hover,\n:where\(html\[data-theme="claude"\]\) #view-settings \.flex\.gap-4\.flex-wrap>button\[class\*="bg-brand-600"\]:hover\{background:var\(--d1-bean-deep\) !important;color:var\(--d1-on-accent\) !important\}/,
   );
 });
 
@@ -722,11 +743,11 @@ test("theme B purge cache button joins the same solid red bean family", async ()
   assert.equal(template.match(/border border-red-200 text-red-600 rounded-xl/g)?.length, 1);
   assert.match(
     ADMIN_RUNTIME_ENHANCEMENT_STYLE,
-    /#view-settings button\.border-red-200\.text-red-600\{display:inline-flex;align-items:center;justify-content:center;gap:\.375rem;white-space:nowrap;text-align:center;border-color:#964742 !important;background:#964742 !important;color:#fff !important\}/,
+    /#view-settings button\.border-red-200\.text-red-600\{display:inline-flex;align-items:center;justify-content:center;gap:\.375rem;white-space:nowrap;text-align:center;border-color:var\(--d1-bean\) !important;background:var\(--d1-bean\) !important;color:var\(--d1-on-accent\) !important\}/,
   );
   assert.match(
     ADMIN_RUNTIME_ENHANCEMENT_STYLE,
-    /#view-settings button\.border-red-200\.text-red-600:hover\{border-color:#7f3b37 !important;background:#7f3b37 !important;color:#fff !important\}/,
+    /#view-settings button\.border-red-200\.text-red-600:hover\{border-color:var\(--d1-bean-deep\) !important;background:var\(--d1-bean-deep\) !important;color:var\(--d1-on-accent\) !important\}/,
   );
 });
 
@@ -744,11 +765,11 @@ test("settings panel head tags stay right-aligned on the title baseline without 
 test("theme B skin option buttons use warm paper fill instead of blue highlight", () => {
   assert.match(
     ADMIN_RUNTIME_ENHANCEMENT_STYLE,
-    /#view-settings \.settings-theme-skin-card \[data-admin-skin-option\]\[aria-pressed="true"\]\{border-color:#964742;background:rgb\(245,244,237\);color:#964742\}/,
+    /#view-settings \.settings-theme-skin-card \[data-admin-skin-option\]\[aria-pressed="true"\]\{border-color:var\(--d1-bean\);background:rgb\(var\(--ui-c-n-50\)\);color:var\(--d1-bean\)\}/,
   );
   assert.match(
     ADMIN_RUNTIME_ENHANCEMENT_STYLE,
-    /\.dark #view-settings \.settings-theme-skin-card \[data-admin-skin-option\]\[aria-pressed="true"\]\{border-color:#964742;background:#242420;color:#fa9a80\}/,
+    /\.dark #view-settings \.settings-theme-skin-card \[data-admin-skin-option\]\[aria-pressed="true"\]\{border-color:var\(--d1-bean\);background:var\(--d1-raised-dark\);color:#fa9a80\}/,
   );
 });
 
@@ -780,6 +801,220 @@ test("node advanced settings stay within the mobile modal width", () => {
     ADMIN_RUNTIME_ENHANCEMENT_STYLE,
     /\[data-admin-node-advanced-headers="1"\] #headers-container>div>input\{flex:1 1 100%;width:100%\}/,
   );
+});
+
+test("node modal keeps one compact spacing scale and a footer bar", () => {
+  // 24px 页面内边距、20px 分组间距、16px 字段间距、44px 控件高度。
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_STYLE,
+    /#node-modal>div\[data-ui-dialog-surface="1"\]\{padding:1\.5rem !important\}/,
+  );
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_STYLE,
+    /#node-modal form>\*\+\*\{margin-top:1\.25rem !important\}/,
+  );
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_STYLE,
+    /#node-modal form>\[class\*="grid"\]\{gap:1rem !important;align-items:start\}/,
+  );
+  assert.match(ADMIN_RUNTIME_ENHANCEMENT_STYLE, /#node-modal form label\{margin-bottom:\.375rem\}/);
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_STYLE,
+    /#node-modal form select\{min-height:2\.75rem;padding-top:\.5rem !important;padding-bottom:\.5rem !important\}/,
+  );
+  // 底部操作栏：48px 按钮 + 16px 间距，右对齐且不再被两个 flex-1 拉满。
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_STYLE,
+    /#node-modal form>div:last-child\{margin-top:1\.25rem !important;gap:1rem !important;padding:\.75rem 0 !important;justify-content:flex-end\}/,
+  );
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_STYLE,
+    /#node-modal form>div:last-child>button\{flex:0 0 auto !important;min-width:7\.5rem;min-height:3rem/,
+  );
+});
+
+test("node modal folds long hints and keeps long help one line", () => {
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_STYLE,
+    /#node-modal \[data-admin-hint="1"\]\{display:-webkit-box;-webkit-line-clamp:1/,
+  );
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_STYLE,
+    /#node-modal \[data-admin-hint="1"\]~\[data-admin-hint="1"\]\{display:none\}/,
+  );
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_STYLE,
+    /\[data-admin-hint-toggle="1"\]\{position:absolute;right:0/,
+  );
+  assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /function applyNodeModalHintFold\(\)/);
+  assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /applyNodeModalHintFold\(\);/);
+  // 红字错误提示不能折叠，否则校验失败时看不到原因。
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_SCRIPT,
+    /if \(\/text-red\/\.test\(String\(hint\.className \|\| ''\)\)\) return false;/,
+  );
+  // 入口模式与访问密钥的提示是操作指引，不做折叠（否则关键信息默认被截断）。
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_SCRIPT,
+    /const inAdvancedEntry = field\.hasAttribute\('data-admin-node-advanced-entry'\);/,
+  );
+  assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /const needsToggle = !inAdvancedEntry && \(/);
+});
+
+test("node lines table shares one column template and shows its count", () => {
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_STYLE,
+    /#node-modal \[data-admin-node-lines-head="1"\],#node-modal \[data-admin-node-line-grid="1"\]\{grid-template-columns:88px minmax\(0,1fr\) minmax\(0,1\.8fr\) 104px 88px 176px !important\}/,
+  );
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_STYLE,
+    /#node-modal \[data-admin-node-lines-panel="1"\]>div:first-child>div:first-child>label\{display:inline-block;margin-bottom:0\}/,
+  );
+  assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /data-admin-node-lines-head/);
+  assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /data-admin-node-line-grid/);
+  assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /data-admin-node-line-count/);
+});
+
+test("node advanced settings start collapsed", () => {
+  assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /advancedSection\.open = false;/);
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_SCRIPT,
+    /if \(nodeModalIsOpen && !nodeModalWasOpen\) \{[\s\S]*?advancedSection\.open = false;[\s\S]*?\}/,
+  );
+});
+test("node entry mode and access key move into the advanced settings block", async () => {
+  const nodesPanel = await readFile(
+    new URL("../frontend/src/features/nodes/NodesPanel.vue", import.meta.url),
+    "utf8",
+  );
+  // 生产端在增强脚本里把这两个字段整组搬进高级设置，参考源保持同样的分区。
+  assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /data-admin-node-advanced-entry/);
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_SCRIPT,
+    /const entryFields = \['#form-entry-mode', '#form-secret'\]/,
+  );
+  assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /content\.insertBefore\(field, advancedFields\)/);
+  assert.match(nodesPanel, /<h4 class="text-sm font-medium text-white">入口与访问密钥<\/h4>/);
+  assert.match(nodesPanel, /<span class="field-label">访问密钥<\/span>/);
+  // 基础字段区（从「基础字段」标题到下一个分区标题）里不再有入口模式。
+  const basicSection = nodesPanel.slice(
+    nodesPanel.indexOf('<h4 class="text-sm font-medium text-white">基础字段</h4>'),
+    nodesPanel.indexOf('<h4 class="text-sm font-medium text-white">代理与播放策略</h4>'),
+  );
+  assert.ok(basicSection.length > 0);
+  assert.doesNotMatch(basicSection, /入口模式/);
+  assert.doesNotMatch(basicSection, /form\.secret/);
+});
+
+test("tag color is embedded into the tag input row", () => {
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_STYLE,
+    /#node-modal \[data-admin-node-tag-field="1"\]>#form-tag\{width:100%;padding-right:6\.25rem\}/,
+  );
+  // 原生 select 隐藏起来只当状态源，可见的是自绘按钮（原生弹出菜单改不动颜色）。
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_STYLE,
+    /#node-modal \[data-admin-node-tag-field="1"\]>#form-tag-color\{position:absolute;width:1px;height:1px/,
+  );
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_STYLE,
+    /\[data-admin-node-tag-color-trigger="1"\]\{position:absolute;top:\.3125rem;right:\.3125rem/,
+  );
+  assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /function mountTagColorTrigger/);
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_SCRIPT,
+    /select\.dispatchEvent\(new Event\('change', \{ bubbles: true \}\)\)/,
+  );
+  assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /applyTagColorDropdown\(\);/);
+  // 面板是 fixed 独立层，必须有外部点击/Esc 收起。
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_SCRIPT,
+    /window\.addEventListener\?\.\('scroll', closeTagColorPanel, true\)/,
+  );
+  assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /data-admin-node-tag-field/);
+  assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /tagColor\.parentElement === tagRow/);
+});
+
+test("inherit options show the current global value", async () => {
+  const [nodesPanel, styleSheet] = await Promise.all([
+    readFile(new URL("../frontend/src/features/nodes/NodesPanel.vue", import.meta.url), "utf8"),
+    readFile(new URL("../frontend/src/style.css", import.meta.url), "utf8"),
+  ]);
+  // 三个策略字段的「继承全局」都要带上当前全局值。
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_SCRIPT,
+    /'\u7ee7\u627f\u5168\u5c40\uff08' \+ label \+ '\uff09'/,
+  );
+  assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /'form-playback-info-mode'/);
+  assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /'form-media-auth-mode'/);
+  assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /'form-real-client-ip-mode'/);
+  assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /syncNodeInheritCopy\(window\.App\)/);
+  assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /syncNodeInheritCopy\(app\);/);
+  assert.match(nodesPanel, /function formatInheritGlobalLabel/);
+  assert.match(nodesPanel, /formatInheritGlobalLabel\("defaultPlaybackInfoMode"\)/);
+  assert.match(nodesPanel, /formatInheritGlobalLabel\("defaultMediaAuthMode"\)/);
+  assert.match(nodesPanel, /formatInheritGlobalLabel\("defaultRealClientIpMode"\)/);
+  assert.match(styleSheet, /\.tag-color-select \{/);
+  // 未知/缺失的全局值回落到不带括号的「继承全局」，不能把内部标识（如 something_unknown）直接渲染给用户。
+  assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /return labelMap\[value\] \|\| '';/);
+  assert.match(nodesPanel, /const current = labelMap\[value\] \|\| "";/);
+  assert.match(nodesPanel, /: optionLabel;/);
+});
+
+test("main video stream inherit label follows the node's own direct marker", async () => {
+  const nodesPanel = await readFile(
+    new URL("../frontend/src/features/nodes/NodesPanel.vue", import.meta.url),
+    "utf8",
+  );
+  // 主视频流策略没有全局默认值：inherit 由节点自身的直连标记决定，不能套用前三个字段的全局文案。
+  assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /function formatNodeVideoStreamInheritLabel/);
+  assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /function isNodeMarkedDirectSource/);
+  assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /'form-main-video-stream-mode'/);
+  assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /继承全局（直连）/);
+  assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /继承全局（反代）/);
+  // 标签/备注改动要立即重算。
+  assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /bindNodeVideoStreamInheritInputs/);
+  assert.match(nodesPanel, /function formatMainVideoStreamInheritLabel/);
+  assert.match(nodesPanel, /formatMainVideoStreamInheritLabel\(\)/);
+});
+
+test("admin runtime enhancement script parses as a whole", () => {
+  // 脚本整体是模板字符串，外层 mjs 的 node --check 看不到内部语法；
+  // 内部少一个大括号也会让整个管理台白屏（曾发生）。这里把 <script> 内容真正解析一遍。
+  const inner = ADMIN_RUNTIME_ENHANCEMENT_SCRIPT.replace(/^<script[^>]*>/, "").replace(
+    /<\/script>\s*$/,
+    "",
+  );
+  assert.doesNotThrow(() => new Function(inner));
+});
+
+test("admin runtime enhancement script survives template-literal escaping", () => {
+  // 增强脚本整体是一个模板字符串：源码里的 \s \d 之类必须写成 \\s \\d，
+  // 否则生成物里只剩字面 s/d，正则会被破坏（曾导致整段脚本 SyntaxError、管理台白屏）。
+  // 被吃掉的转义（\s → 字面 s）仍然构成合法正则，编译不会报错，只能按形态识别：
+  // 字符类里出现孤立的 s/d/w/b（本意是 \s \d \w \b）就是模板字符串吃掉反斜杠的痕迹。
+  const suspicious = [
+    ...ADMIN_RUNTIME_ENHANCEMENT_SCRIPT.matchAll(
+      /(?:return\s+|\()\/((?:[^\/\\\n[]|\\.|\[(?:[^\]\\]|\\.)*\])+)\/([gimsuy]*)\.test\(/g,
+    ),
+  ].filter(([, body]) => /\[[^\]]*(?<![\\A-Za-z])[sdwb](?![A-Za-z])/.test(body));
+  assert.deepEqual(
+    suspicious.map(([literal]) => literal),
+    [],
+    "template literal ate a backslash escape inside a regex character class",
+  );
+  const literals = [
+    ...ADMIN_RUNTIME_ENHANCEMENT_SCRIPT.matchAll(
+      /(?:return\s+|\()\/((?:[^\/\\\n[]|\\.|\[(?:[^\]\\]|\\.)*\])+)\/([gimsuy]*)\.test\(/g,
+    ),
+  ];
+  assert.ok(literals.length > 0, "no regex literals found in generated script");
+  for (const [, body, flags] of literals) {
+    assert.doesNotThrow(
+      () => new RegExp(body, flags),
+      "generated regex literal is invalid: /" + body + "/" + flags,
+    );
+  }
 });
 
 test("settings dirty tracking compares normalized state without JSON serialization", async () => {
@@ -1013,6 +1248,16 @@ test("admin runtime keeps scoped migration, node-only, and release contracts", a
   assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /navigateWithAdminCacheBust/);
   assert.doesNotMatch(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /window\.location\.reload\(\)/);
   assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /必须同时选择 worker\.js 和 index\.html/);
+  // 文件选择框的 ::file-selector-button 样式必须覆盖经典皮肤，否则只有 claude 皮肤有按钮外观，
+  // 经典皮肤下 "Choose File" 退化成裸文字（浏览器默认透明背景 + 黑边），用户看不出这是选择框。
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_STYLE,
+    /\[data-admin-worker-file-input="1"\]::file-selector-button,[\s\S]*?\[data-admin-index-file-input="1"\]::file-selector-button\{[^}]*background:rgb\(var\(--ui-c-a-600\)\)/,
+  );
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_STYLE,
+    /\[data-admin-worker-file-input="1"\],\n#view-settings \.settings-worker-html-update-card \[data-admin-index-file-input="1"\]\{display:block;width:100%/,
+  );
   assert.doesNotMatch(vueRuntimeConfig, /VITE_INDEX_URL|VITE_RELEASE_INDEX_URL/);
   assert.doesNotMatch(
     vueAdminConsole,
@@ -1281,6 +1526,10 @@ test("account settings expose TMDB aggregation credentials", async () => {
     /\{key:"tmdbLanguage",id:"cfg-tmdb-language",kind:"trim",defaultValue:""\}/,
   );
   assert.match(template, /id:"cfg-tmdb-language"/);
+  assert.match(template, /\{key:"todbApiKey",id:"cfg-todb-api-key",kind:"trim",defaultValue:""\}/);
+  assert.match(template, /id:"cfg-todb-api-key"/);
+  // 账号设置里的 todb key 是密钥：必须走密码输入框，不能明文显示。
+  assert.match(template, /type:"password",id:"cfg-todb-api-key",autocomplete:"new-password"/);
 });
 
 test("TMDB aggregation enhancement carries the node flag through form state and save", async () => {
