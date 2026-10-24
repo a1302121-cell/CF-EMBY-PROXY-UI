@@ -97,6 +97,7 @@ var cacheState = {
   PlaybackProgressRelay: /* @__PURE__ */ new Map(),
   MetadataPrewarmTasks: /* @__PURE__ */ new Map(),
   TmdbLookupCache: /* @__PURE__ */ new Map(),
+  TodbVideoIdCache: /* @__PURE__ */ new Map(),
   MedbItemsCountsCache: /* @__PURE__ */ new Map(),
   DashboardMonthlyTrafficCache: /* @__PURE__ */ new Map(),
   SingleFlightTasks: /* @__PURE__ */ new Map(),
@@ -7025,6 +7026,7 @@ var CONFIG_SANITIZE_RULES = {
     "tmdbApiReadToken",
     "tmdbApiV3Key",
     "tmdbLanguage",
+    "todbApiKey",
   ],
   aliasFields: {},
   trimFields: [
@@ -7038,6 +7040,7 @@ var CONFIG_SANITIZE_RULES = {
     "tmdbApiReadToken",
     "tmdbApiV3Key",
     "tmdbLanguage",
+    "todbApiKey",
     "indexUrl",
     "cfQuotaPlanOverride",
     "corsOrigins",
@@ -7499,7 +7502,13 @@ function sanitizeMigratedRuntimeConfig(migratedRawConfig = {}) {
   applyDailyTelegramReportKindCompat(sanitized, migratedRawConfig);
   return sanitized;
 }
-var CONFIG_SECRET_FIELDS = ["cfApiToken", "tgBotToken", "tmdbApiReadToken", "tmdbApiV3Key"];
+var CONFIG_SECRET_FIELDS = [
+  "cfApiToken",
+  "tgBotToken",
+  "tmdbApiReadToken",
+  "tmdbApiV3Key",
+  "todbApiKey",
+];
 function redactRuntimeConfigSecrets(input = {}) {
   const config = sanitizeRuntimeConfig(input);
   for (const field of CONFIG_SECRET_FIELDS) delete config[field];
@@ -26017,10 +26026,174 @@ function buildTmdbConvertedRequestUrl(requestUrl, title, year) {
   else nextUrl.searchParams.delete("Years");
   return nextUrl;
 }
+var TODB_LOOKUP_URL = "https://theotherdb.org/api/video/getVideoIdByExternalId";
+var TODB_LOOKUP_CACHE_MAX = 4096;
+var TODB_LOOKUP_CACHE_TTL_MS = 24 * 60 * 1e3;
+var TODB_LOOKUP_FAILURE_TTL_MS = 60 * 1e3;
+var TODB_LOOKUP_TIMEOUT_MS = 5e3;
+var TODB_VIDEO_ID_FIELDS = ["video_id", "videoId", "video_ids", "videoIds"];
+var TODB_VIDEO_ID_FALLBACK_FIELDS = ["id", "value"];
+var TODB_VIDEO_ID_CONTAINER_KEYS = ["items", "data", "results", "videos", "list"];
+// 归一化 todb 条目的媒体类型：只认电影 / 剧两组，其他一律当「未知」。
+function normalizeTodbVideoType(value) {
+  const type = String(value ?? "")
+    .trim()
+    .toLowerCase();
+  if (!type) return "";
+  if (type === "movie" || type === "film") return "movie";
+  if (type === "tv" || type === "series" || type === "show") return "tv";
+  return "";
+}
+function pushTodbVideoIds(value, videoType, entries) {
+  if (value === null || value === void 0) return;
+  // "1001,1002" 这类逗号拼接也接受，最终会重新用 "," 拼回去。
+  for (const part of String(value).split(",")) {
+    const videoId = part.trim();
+    if (!/^\d+$/.test(videoId)) continue;
+    const existing = entries.find((entry) => entry.videoId === videoId);
+    if (!existing) {
+      entries.push({ videoId, videoType });
+    } else if (!existing.videoType && videoType) {
+      // 同一 id 后出现带类型的条目时补上类型，便于后续按媒体类型过滤。
+      existing.videoType = videoType;
+    }
+  }
+}
+// todb 文档只承诺 { video_id }，Postman 又标注「tmdb 会存在多个情况」，
+// 因此常见的字段名与容器形状都按命中处理：{video_id} / [{video_id}] / {items|data|results|videos|list: [...]}。
+// 字段按强度分三档，同一层只取最强的一档，避免 { id, video_id } 或分页 total 被一起当成 video_id。
+// 条目上的 video_type 一并带出：TMDB 电影 id 与剧 id 是两套独立编号，同一整数可能既是电影又是剧。
+function collectTodbVideoIds(node, videoType, entries, depth = 0) {
+  if (node === null || node === void 0 || depth > 3) return;
+  if (Array.isArray(node)) {
+    for (const item of node.slice(0, 64)) collectTodbVideoIds(item, videoType, entries, depth + 1);
+    return;
+  }
+  if (!isPlainObject(node)) {
+    pushTodbVideoIds(node, videoType, entries);
+    return;
+  }
+  const nodeType = normalizeTodbVideoType(node.video_type ?? node.videoType) || videoType;
+  const pickFields = (fields) => {
+    const matched = fields.filter((field) => Object.prototype.hasOwnProperty.call(node, field));
+    if (!matched.length) return false;
+    for (const field of matched) collectTodbVideoIds(node[field], nodeType, entries, depth + 1);
+    return true;
+  };
+  if (pickFields(TODB_VIDEO_ID_FIELDS)) return;
+  if (pickFields(TODB_VIDEO_ID_CONTAINER_KEYS)) return;
+  pickFields(TODB_VIDEO_ID_FALLBACK_FIELDS);
+}
+function extractTodbVideoIds(payload) {
+  const entries = [];
+  collectTodbVideoIds(payload, "", entries);
+  return entries;
+}
+// 按请求的媒体类型收窄：只有响应确实带 video_type、且存在匹配条目时才过滤，
+// 避免上游字段缺失或改名时把有效命中全部丢掉。
+function selectTodbVideoIds(entries, expectedType) {
+  const typed = entries.filter((entry) => entry.videoType);
+  const scoped =
+    expectedType && typed.length
+      ? entries.filter((entry) => !entry.videoType || entry.videoType === expectedType)
+      : entries;
+  return scoped.map((entry) => entry.videoId);
+}
+async function fetchTodbVideoIdEntries(tmdbId, apiKey) {
+  const cached = cacheState.TodbVideoIdCache.get(tmdbId);
+  if (cached && Number(cached.expiresAt) > nowMs()) return cached.entries;
+  // 冷缓存下并发同 id 只打一次 todb，否则一个聚合页能把上游配额打穿。
+  return await runSingleFlight(buildSingleFlightKey(["todb_video_id", tmdbId]), async () => {
+    const rememberFailure = () =>
+      setBoundedMapEntry(
+        cacheState.TodbVideoIdCache,
+        tmdbId,
+        { entries: null, expiresAt: nowMs() + TODB_LOOKUP_FAILURE_TTL_MS },
+        TODB_LOOKUP_CACHE_MAX,
+      );
+    const lookupUrl = new URL(TODB_LOOKUP_URL);
+    lookupUrl.searchParams.set("type", "tmdb");
+    lookupUrl.searchParams.set("value", tmdbId);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort("todb_timeout"), TODB_LOOKUP_TIMEOUT_MS);
+    try {
+      const response = await fetch(lookupUrl, {
+        headers: { accept: "application/json", authorization: `Bearer ${apiKey}` },
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        console.warn(`todb video id lookup failed: ${response.status}`);
+        rememberFailure();
+        return null;
+      }
+      const entries = extractTodbVideoIds(await response.json());
+      if (!entries.length) {
+        rememberFailure();
+        return null;
+      }
+      setBoundedMapEntry(
+        cacheState.TodbVideoIdCache,
+        tmdbId,
+        { entries, expiresAt: nowMs() + TODB_LOOKUP_CACHE_TTL_MS },
+        TODB_LOOKUP_CACHE_MAX,
+      );
+      return entries;
+    } catch (error) {
+      console.warn("todb video id lookup failed:", error?.message || error);
+      rememberFailure();
+      return null;
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  });
+}
+// todb 聚合：tmdb id -> todb video_id 列表 -> todbvs 参数，替换掉 AnyProviderIdEquals。
+async function convertTmdbRequestToTodbvUrl(
+  requestUrl,
+  env = {},
+  config = {},
+  tmdbId = "",
+  mediaType = "",
+) {
+  const configApiKey = String(config?.todbApiKey || "").trim();
+  const apiKey = configApiKey || String(env?.TODB_API_KEY || "").trim();
+  if (!apiKey) return null;
+  const entries = (await fetchTodbVideoIdEntries(tmdbId, apiKey)) || [];
+  // 缓存的是全量条目（含 mediaType），按当前请求的媒体类型过滤，避免电影/剧 id 撞车时串类型。
+  const videoIds = selectTodbVideoIds(entries, mediaType);
+  if (!videoIds.length) return null;
+  const nextUrl = new URL(requestUrl.toString());
+  nextUrl.searchParams.delete("AnyProviderIdEquals");
+  nextUrl.searchParams.set("todbvs", videoIds.join(","));
+  return nextUrl;
+}
 async function convertTmdbRequestFromUrl(requestUrl, env = {}, config = {}) {
   const providerId = requestUrl?.searchParams?.get?.("AnyProviderIdEquals");
   const tmdbMatch = providerId?.match(/tmdb\.(\d+)/i);
   if (!tmdbMatch) return null;
+  const itemTypes = String(requestUrl.searchParams.get("IncludeItemTypes") || "").toLowerCase();
+  // 集 / 季请求不再特判：与参考实现一致，只按「含 movie 走电影，其余走剧」分流。
+  // 集的 tmdb id 在 todb 里查不到（季 / 集没有外部 ID），自然落到透传，
+  // 但剧级 tmdb id 配上 IncludeItemTypes=Episode/Season 的聚合请求仍能命中。
+  const isMovie = itemTypes.includes("movie");
+  const mediaType = isMovie ? "movie" : "tv";
+  // todb 的 video_type 过滤只在请求类型唯一时启用：Movie,Series 混合查询里
+  // 同一个 tmdb id 本来就无法判定该算电影还是剧，硬选一种会漏掉另一半。
+  const wantsMovie = isMovie;
+  const wantsTv =
+    itemTypes.includes("series") ||
+    itemTypes.includes("tv") ||
+    itemTypes.includes("episode") ||
+    itemTypes.includes("season");
+  const todbMediaType = wantsMovie === wantsTv ? "" : wantsMovie ? "movie" : "tv";
+  const todbvUrl = await convertTmdbRequestToTodbvUrl(
+    requestUrl,
+    env,
+    config,
+    tmdbMatch[1],
+    todbMediaType,
+  );
+  if (todbvUrl) return todbvUrl;
   const configReadToken = String(config?.tmdbApiReadToken || "").trim();
   const configApiKey = String(config?.tmdbApiV3Key || "").trim();
   const envReadToken = String(env?.TMDB_API_READ_TOKEN || "").trim();
@@ -26048,10 +26221,6 @@ async function convertTmdbRequestFromUrl(requestUrl, env = {}, config = {}) {
       },
     );
   }
-  const itemTypes = String(requestUrl.searchParams.get("IncludeItemTypes") || "").toLowerCase();
-  if (itemTypes.includes("episode") || itemTypes.includes("season")) return null;
-  const isMovie = itemTypes.includes("movie");
-  const mediaType = isMovie ? "movie" : "tv";
   const language = String(config?.tmdbLanguage || env?.TMDB_LANGUAGE || "zh-CN").trim() || "zh-CN";
   const cacheKey = `${language}:${mediaType}:${tmdbMatch[1]}`;
   const cached = cacheState.TmdbLookupCache.get(cacheKey);
@@ -26069,47 +26238,52 @@ async function convertTmdbRequestFromUrl(requestUrl, env = {}, config = {}) {
       },
       TMDB_LOOKUP_CACHE_MAX,
     );
-  const tmdbUrl = new URL(`https://api.themoviedb.org/3/${mediaType}/${tmdbMatch[1]}`);
-  tmdbUrl.searchParams.set("language", language);
-  if (apiKey && !readToken) tmdbUrl.searchParams.set("api_key", apiKey);
-  const headers = new Headers({ accept: "application/json" });
-  if (readToken) headers.set("Authorization", `Bearer ${readToken}`);
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort("tmdb_timeout"), 5e3);
-  try {
-    const response = await fetch(tmdbUrl, { headers, signal: controller.signal });
-    if (!response.ok) {
-      console.warn(`TMDB ${mediaType} lookup failed: ${response.status}`);
+  // 冷缓存下并发同 id 只打一次 TMDB；命中后写进 TmdbLookupCache 供后续请求直接读。
+  const lookup = await runSingleFlight(buildSingleFlightKey(["tmdb_title", cacheKey]), async () => {
+    const tmdbUrl = new URL(`https://api.themoviedb.org/3/${mediaType}/${tmdbMatch[1]}`);
+    tmdbUrl.searchParams.set("language", language);
+    if (apiKey && !readToken) tmdbUrl.searchParams.set("api_key", apiKey);
+    const headers = new Headers({ accept: "application/json" });
+    if (readToken) headers.set("Authorization", `Bearer ${readToken}`);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort("tmdb_timeout"), 5e3);
+    try {
+      const response = await fetch(tmdbUrl, { headers, signal: controller.signal });
+      if (!response.ok) {
+        console.warn(`TMDB ${mediaType} lookup failed: ${response.status}`);
+        rememberLookupFailure();
+        return null;
+      }
+      const payload = await response.json();
+      const title = String(isMovie ? payload?.title || "" : payload?.name || "").trim();
+      const year = String(
+        isMovie ? payload?.release_date || "" : payload?.first_air_date || "",
+      ).slice(0, 4);
+      if (!title) {
+        rememberLookupFailure();
+        return null;
+      }
+      setBoundedMapEntry(
+        cacheState.TmdbLookupCache,
+        cacheKey,
+        {
+          title,
+          year,
+          expiresAt: nowMs() + TMDB_LOOKUP_CACHE_TTL_MS,
+        },
+        TMDB_LOOKUP_CACHE_MAX,
+      );
+      return { title, year };
+    } catch (error) {
+      console.warn("TMDB request conversion failed:", error?.message || error);
       rememberLookupFailure();
       return null;
+    } finally {
+      clearTimeout(timeoutId);
     }
-    const payload = await response.json();
-    const title = String(isMovie ? payload?.title || "" : payload?.name || "").trim();
-    const year = String(
-      isMovie ? payload?.release_date || "" : payload?.first_air_date || "",
-    ).slice(0, 4);
-    if (!title) {
-      rememberLookupFailure();
-      return null;
-    }
-    setBoundedMapEntry(
-      cacheState.TmdbLookupCache,
-      cacheKey,
-      {
-        title,
-        year,
-        expiresAt: nowMs() + TMDB_LOOKUP_CACHE_TTL_MS,
-      },
-      TMDB_LOOKUP_CACHE_MAX,
-    );
-    return buildTmdbConvertedRequestUrl(requestUrl, title, year);
-  } catch (error) {
-    console.warn("TMDB request conversion failed:", error?.message || error);
-    rememberLookupFailure();
-    return null;
-  } finally {
-    clearTimeout(timeoutId);
-  }
+  });
+  if (!lookup) return null;
+  return buildTmdbConvertedRequestUrl(requestUrl, lookup.title, lookup.year);
 }
 function definePlaybackExecutionCacheMethods(dependencies = {}, kernel = {}) {
   const { CacheManager } = dependencies;

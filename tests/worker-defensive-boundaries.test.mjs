@@ -3423,32 +3423,452 @@ test("TMDB provider id search honors a configured metadata language", async () =
   );
 });
 
-test("TMDB provider id search skips episode and season lookups", async () => {
+test("TMDB provider id search treats episode and season requests as tv lookups", async () => {
   isolateState.TmdbLookupCache.clear();
-  let fetchCount = 0;
+  const fetched = [];
   await withWorkerGlobals(
     {
-      fetch: async () => {
-        fetchCount += 1;
-        return new Response("{}", { status: 200 });
+      fetch: async (url) => {
+        fetched.push(String(url));
+        return new Response(JSON.stringify({ name: "权力的游戏", first_air_date: "2011-04-17" }), {
+          status: 200,
+        });
       },
     },
     async () => {
+      // 与参考实现一致：集 / 季不再特判，按「不含 movie 就走剧」分流。
       const episodeUrl = new URL(
         "https://worker.test/Items?AnyProviderIdEquals=tmdb.901&IncludeItemTypes=Episode",
       );
       const seasonUrl = new URL(
         "https://worker.test/Items?AnyProviderIdEquals=tmdb.902&IncludeItemTypes=Season",
       );
+      const episodeConverted = await convertTmdbRequestFromUrl(episodeUrl, {
+        TMDB_API_READ_TOKEN: "read-token",
+      });
+      const seasonConverted = await convertTmdbRequestFromUrl(seasonUrl, {
+        TMDB_API_READ_TOKEN: "read-token",
+      });
+      assert.equal(fetched[0], "https://api.themoviedb.org/3/tv/901?language=zh-CN");
+      assert.equal(fetched[1], "https://api.themoviedb.org/3/tv/902?language=zh-CN");
+      for (const converted of [episodeConverted, seasonConverted]) {
+        assert.ok(converted instanceof URL, "expected a converted URL");
+        assert.equal(converted.searchParams.has("AnyProviderIdEquals"), false);
+        assert.equal(converted.searchParams.get("SearchTerm"), "权力的游戏");
+        assert.equal(converted.searchParams.get("Years"), "2011");
+      }
+      assert.equal(episodeConverted.searchParams.get("IncludeItemTypes"), "Episode");
+      assert.equal(seasonConverted.searchParams.get("IncludeItemTypes"), "Season");
+    },
+  );
+});
+
+test("todb aggregation rewrites a tmdb provider id into todbvs", async () => {
+  isolateState.TodbVideoIdCache.clear();
+  const fetched = [];
+  await withWorkerGlobals(
+    {
+      fetch: async (url, init = {}) => {
+        fetched.push({ url: String(url), headers: new Headers(init.headers) });
+        return new Response(JSON.stringify([{ video_id: 1001 }, { video_id: 1002 }]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      },
+    },
+    async () => {
+      const source = new URL(
+        "https://worker.test/node/secret/Items?AnyProviderIdEquals=tmdb.1399&IncludeItemTypes=Series&Recursive=true",
+      );
+      const converted = await convertTmdbRequestFromUrl(source, { TODB_API_KEY: "todb-key" });
+      assert.ok(converted instanceof URL, "expected a converted URL");
+      assert.equal(converted.searchParams.has("AnyProviderIdEquals"), false);
+      assert.equal(converted.searchParams.get("todbvs"), "1001,1002");
+      assert.equal(converted.searchParams.get("IncludeItemTypes"), "Series");
+      assert.equal(converted.searchParams.get("Recursive"), "true");
+      assert.equal(fetched.length, 1);
       assert.equal(
-        await convertTmdbRequestFromUrl(episodeUrl, { TMDB_API_READ_TOKEN: "read-token" }),
+        fetched[0].url,
+        "https://theotherdb.org/api/video/getVideoIdByExternalId?type=tmdb&value=1399",
+      );
+      assert.equal(fetched[0].headers.get("Authorization"), "Bearer todb-key");
+    },
+  );
+});
+
+test("todb aggregation accepts a single video id and deduplicates the list", async () => {
+  isolateState.TodbVideoIdCache.clear();
+  await withWorkerGlobals(
+    {
+      fetch: async () =>
+        new Response(
+          JSON.stringify([
+            { video_id: 7 },
+            { video_id: "7" },
+            { video_id: "abc" },
+            { video_id: null },
+            8,
+          ]),
+          { status: 200 },
+        ),
+    },
+    async () => {
+      const source = new URL("https://worker.test/Items?AnyProviderIdEquals=tmdb.5");
+      const converted = await convertTmdbRequestFromUrl(source, { TODB_API_KEY: "todb-key" });
+      assert.equal(converted.searchParams.get("todbvs"), "7,8");
+
+      isolateState.TodbVideoIdCache.clear();
+      const single = new Response(JSON.stringify({ video_id: 42 }), { status: 200 });
+      globalThis.fetch = async () => single;
+      const singleConverted = await convertTmdbRequestFromUrl(
+        new URL("https://worker.test/Items?AnyProviderIdEquals=tmdb.6"),
+        { TODB_API_KEY: "todb-key" },
+      );
+      assert.equal(singleConverted.searchParams.get("todbvs"), "42");
+    },
+  );
+});
+
+test("todb aggregation tolerates the response field names and wrapper shapes", async () => {
+  const cases = [
+    [{ video_id: 1001 }, "1001"],
+    [[{ video_id: 1001 }, { video_id: 1002 }], "1001,1002"],
+    [[{ videoId: 1001 }, { videoId: 1002 }], "1001,1002"],
+    [{ video_ids: [1001, 1002] }, "1001,1002"],
+    [{ data: [{ video_id: 1001 }, { video_id: 1002 }] }, "1001,1002"],
+    [{ results: [{ videoId: 1003 }] }, "1003"],
+    [{ videos: [{ id: 1004 }] }, "1004"],
+    [[1001, 1002], "1001,1002"],
+    [{ video_id: "1001,1002" }, "1001,1002"],
+    [{ id: 1005 }, "1005"],
+    // 同一层只取最强字段：id 不能和 video_id 一起被当成 id。
+    [{ id: 9, video_id: 1006 }, "1006"],
+    // 分页字段不能被误当成 video_id。
+    [{ total: 7, items: [{ video_id: 1007 }] }, "1007"],
+    // 重复与非法值仍要收敛。
+    [[{ video_id: 1001 }, { video_id: "1001" }, { video_id: "abc" }], "1001"],
+  ];
+  let seq = 0;
+  for (const [payload, expected] of cases) {
+    isolateState.TodbVideoIdCache.clear();
+    await withWorkerGlobals(
+      { fetch: async () => new Response(JSON.stringify(payload), { status: 200 }) },
+      async () => {
+        const converted = await convertTmdbRequestFromUrl(
+          new URL(`https://worker.test/Items?AnyProviderIdEquals=tmdb.${(seq += 1) + 9000}`),
+          { TODB_API_KEY: "todb-key" },
+        );
+        assert.equal(converted.searchParams.get("todbvs"), expected, JSON.stringify(payload));
+      },
+    );
+  }
+});
+
+test("todb aggregation treats an unusable payload as a miss and falls back", async () => {
+  for (const payload of [{}, { video_id: "abc" }, { items: [] }, [], null, "not json"]) {
+    isolateState.TodbVideoIdCache.clear();
+    await withWorkerGlobals(
+      { fetch: async () => new Response(JSON.stringify(payload), { status: 200 }) },
+      async () => {
+        assert.equal(
+          await convertTmdbRequestFromUrl(
+            new URL("https://worker.test/Items?AnyProviderIdEquals=tmdb.4242"),
+            { TODB_API_KEY: "todb-key" },
+          ),
+          null,
+          JSON.stringify(payload),
+        );
+      },
+    );
+  }
+});
+
+test("todb aggregation keeps movie and series video ids apart", async () => {
+  // TMDB 的电影 id 与剧 id 是两套独立编号，同一整数可能既是电影又是剧；
+  // todb 的 getVideoIdByExternalId 只收 type=tmdb，因此响应里可能同时返回两种类型。
+  const mixed = [
+    { video_id: 500, video_type: "movie", video_title: "一部同名电影" },
+    { video_id: 1001, video_type: "tv", video_title: "权力的游戏" },
+  ];
+  const cases = [
+    ["Series", "1001"],
+    ["Movie", "500"],
+    ["Series,Movie", "500,1001"],
+    ["Series,Season", "1001"],
+    ["Episode", "1001"],
+    ["Season", "1001"],
+  ];
+  for (const [itemTypes, expected] of cases) {
+    isolateState.TodbVideoIdCache.clear();
+    await withWorkerGlobals(
+      { fetch: async () => new Response(JSON.stringify(mixed), { status: 200 }) },
+      async () => {
+        const converted = await convertTmdbRequestFromUrl(
+          new URL(
+            `https://worker.test/Items?AnyProviderIdEquals=tmdb.1399&IncludeItemTypes=${itemTypes}`,
+          ),
+          { TODB_API_KEY: "todb-key" },
+        );
+        if (expected === null) {
+          assert.equal(converted, null, itemTypes);
+          return;
+        }
+        assert.equal(converted.searchParams.get("todbvs"), expected, itemTypes);
+      },
+    );
+  }
+});
+
+test("todb aggregation only filters by type when the payload actually carries one", async () => {
+  const cases = [
+    // 无 video_type：无法判断类型，全量保留。
+    [[{ video_id: 1001 }, { video_id: 1002 }], "Series", "1001,1002"],
+    // 大小写与别名归一化。
+    [
+      [
+        { video_id: 1001, video_type: "TV" },
+        { video_id: 500, video_type: "Movie" },
+      ],
+      "Series",
+      "1001",
+    ],
+    [[{ video_id: 1001, video_type: "series" }], "Series", "1001"],
+    [[{ video_id: 1001, video_type: "film" }], "Movie", "1001"],
+    // 未知类型保留，不能因为字段值陌生就把命中丢掉。
+    [[{ video_id: 1, video_type: "anime" }, { video_id: 2 }], "Series", "1,2"],
+    // 全部是另一种媒体类型时视为未命中，交给 TMDB 兜底。
+    [[{ video_id: 500, video_type: "movie" }], "Series", null],
+  ];
+  for (const [payload, itemTypes, expected] of cases) {
+    isolateState.TodbVideoIdCache.clear();
+    isolateState.TmdbLookupCache.clear();
+    await withWorkerGlobals(
+      {
+        fetch: async (input) =>
+          String(input).includes("theotherdb")
+            ? new Response(JSON.stringify(payload), { status: 200 })
+            : new Response(JSON.stringify({ name: "兜底标题", first_air_date: "2011-04-17" }), {
+                status: 200,
+              }),
+      },
+      async () => {
+        const converted = await convertTmdbRequestFromUrl(
+          new URL(
+            `https://worker.test/Items?AnyProviderIdEquals=tmdb.1399&IncludeItemTypes=${itemTypes}`,
+          ),
+          { TODB_API_KEY: "todb-key", TMDB_API_READ_TOKEN: "read-token" },
+        );
+        assert.equal(
+          converted.searchParams.get("todbvs"),
+          expected,
+          `${JSON.stringify(payload)} / ${itemTypes}`,
+        );
+      },
+    );
+  }
+});
+
+test("todb aggregation only resolves the first tmdb id in a multi-provider filter", async () => {
+  isolateState.TodbVideoIdCache.clear();
+  const lookedUp = [];
+  await withWorkerGlobals(
+    {
+      fetch: async (url) => {
+        lookedUp.push(new URL(String(url)).searchParams.get("value"));
+        return new Response(JSON.stringify({ video_id: 2001 }), { status: 200 });
+      },
+    },
+    async () => {
+      const converted = await convertTmdbRequestFromUrl(
+        new URL("https://worker.test/Items?AnyProviderIdEquals=imdb.tt0944947,tmdb.1399,tmdb.600"),
+        { TODB_API_KEY: "todb-key" },
+      );
+      assert.equal(converted.searchParams.get("todbvs"), "2001");
+      // 和参考实现一致：只认第一个 tmdb id，不做全量解析。
+      assert.deepEqual(lookedUp, ["1399"]);
+    },
+  );
+});
+
+test("todb aggregation memoizes a hit and short-caches a miss", async () => {
+  isolateState.TodbVideoIdCache.clear();
+  let hitCount = 0;
+  await withWorkerGlobals(
+    {
+      fetch: async () => {
+        hitCount += 1;
+        return new Response(JSON.stringify({ video_id: 11 }), { status: 200 });
+      },
+    },
+    async () => {
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const converted = await convertTmdbRequestFromUrl(
+          new URL("https://worker.test/Items?AnyProviderIdEquals=tmdb.31"),
+          { TODB_API_KEY: "todb-key" },
+        );
+        assert.equal(converted.searchParams.get("todbvs"), "11");
+      }
+      assert.equal(hitCount, 1);
+    },
+  );
+
+  isolateState.TodbVideoIdCache.clear();
+  let missCount = 0;
+  await withWorkerGlobals(
+    {
+      fetch: async () => {
+        missCount += 1;
+        return new Response("api 404 :(", { status: 404 });
+      },
+    },
+    async () => {
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        assert.equal(
+          await convertTmdbRequestFromUrl(
+            new URL("https://worker.test/Items?AnyProviderIdEquals=tmdb.32"),
+            { TODB_API_KEY: "todb-key" },
+          ),
+          null,
+        );
+      }
+      assert.equal(missCount, 1);
+    },
+  );
+});
+
+test("todb aggregation collapses concurrent identical misses into one upstream call", async () => {
+  isolateState.TodbVideoIdCache.clear();
+  let fetchCount = 0;
+  let releaseLookup;
+  const lookupGate = new Promise((resolve) => {
+    releaseLookup = resolve;
+  });
+  await withWorkerGlobals(
+    {
+      fetch: async () => {
+        fetchCount += 1;
+        await lookupGate;
+        return new Response(JSON.stringify({ video_id: 31 }), { status: 200 });
+      },
+    },
+    async () => {
+      const pending = Array.from({ length: 20 }, () =>
+        convertTmdbRequestFromUrl(
+          new URL("https://worker.test/Items?AnyProviderIdEquals=tmdb.33&IncludeItemTypes=Movie"),
+          { TODB_API_KEY: "todb-key" },
+        ),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      releaseLookup();
+      const converted = await Promise.all(pending);
+      for (const url of converted) assert.equal(url.searchParams.get("todbvs"), "31");
+      // 冷缓存下 20 个并发同 id 请求只应打一次 todb。
+      assert.equal(fetchCount, 1);
+    },
+  );
+});
+
+test("todb aggregation falls back to the TMDB title search when todb misses", async () => {
+  isolateState.TodbVideoIdCache.clear();
+  isolateState.TmdbLookupCache.clear();
+  const fetched = [];
+  await withWorkerGlobals(
+    {
+      fetch: async (url) => {
+        const href = String(url);
+        fetched.push(href);
+        if (href.startsWith("https://theotherdb.org/")) return new Response("{}", { status: 404 });
+        return new Response(
+          JSON.stringify({ title: "Fallback Movie", release_date: "2010-07-16" }),
+          {
+            status: 200,
+          },
+        );
+      },
+    },
+    async () => {
+      const converted = await convertTmdbRequestFromUrl(
+        new URL("https://worker.test/Items?AnyProviderIdEquals=tmdb.27205&IncludeItemTypes=Movie"),
+        { TODB_API_KEY: "todb-key", TMDB_API_READ_TOKEN: "read-token" },
+      );
+      assert.equal(converted.searchParams.has("todbvs"), false);
+      assert.equal(converted.searchParams.get("SearchTerm"), "Fallback Movie");
+      assert.equal(converted.searchParams.get("Years"), "2010");
+      assert.equal(fetched.length, 2);
+      assert.match(fetched[0], /^https:\/\/theotherdb\.org\//);
+      assert.equal(fetched[1], "https://api.themoviedb.org/3/movie/27205?language=zh-CN");
+    },
+  );
+});
+
+test("todb aggregation prefers account-settings credentials and skips todb without one", async () => {
+  isolateState.TodbVideoIdCache.clear();
+  const seen = [];
+  await withWorkerGlobals(
+    {
+      fetch: async (url, init = {}) => {
+        seen.push({ url: String(url), auth: new Headers(init.headers).get("Authorization") });
+        return new Response(JSON.stringify({ video_id: 42 }), { status: 200 });
+      },
+    },
+    async () => {
+      await convertTmdbRequestFromUrl(
+        new URL("https://worker.test/Items?AnyProviderIdEquals=tmdb.3"),
+        { TODB_API_KEY: "env-key" },
+        { todbApiKey: "config-key" },
+      );
+      assert.equal(seen.length, 1);
+      assert.equal(seen[0].auth, "Bearer config-key");
+    },
+  );
+
+  // 没有 todb 凭据时不发 todb 请求，直接走 TMDB 标题搜索（这里也没配 TMDB 凭据，所以原样透传）。
+  isolateState.TodbVideoIdCache.clear();
+  let todbCalls = 0;
+  await withWorkerGlobals(
+    {
+      fetch: async () => {
+        todbCalls += 1;
+        return new Response("{}", { status: 200 });
+      },
+    },
+    async () => {
+      assert.equal(
+        await convertTmdbRequestFromUrl(
+          new URL("https://worker.test/Items?AnyProviderIdEquals=tmdb.4"),
+          {},
+        ),
         null,
       );
-      assert.equal(
-        await convertTmdbRequestFromUrl(seasonUrl, { TMDB_API_READ_TOKEN: "read-token" }),
-        null,
-      );
-      assert.equal(fetchCount, 0);
+    },
+  );
+  assert.equal(todbCalls, 0);
+});
+
+test("todb aggregation resolves episode and season requests as tv", async () => {
+  isolateState.TodbVideoIdCache.clear();
+  let fetchCount = 0;
+  await withWorkerGlobals(
+    {
+      fetch: async () => {
+        fetchCount += 1;
+        return new Response(JSON.stringify({ video_id: 1001, video_type: "tv" }), { status: 200 });
+      },
+    },
+    async () => {
+      for (const itemTypes of ["Episode", "Season"]) {
+        const converted = await convertTmdbRequestFromUrl(
+          new URL(
+            `https://worker.test/Items?AnyProviderIdEquals=tmdb.9&IncludeItemTypes=${itemTypes}`,
+          ),
+          { TODB_API_KEY: "todb-key" },
+        );
+        assert.ok(converted instanceof URL, itemTypes);
+        assert.equal(converted.searchParams.get("todbvs"), "1001", itemTypes);
+        assert.equal(converted.searchParams.get("IncludeItemTypes"), itemTypes, itemTypes);
+      }
+      // 同一个 tmdb id 命中缓存，两次请求只打一次 todb。
+      assert.equal(fetchCount, 1);
     },
   );
 });

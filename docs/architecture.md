@@ -154,9 +154,9 @@ D1 保存日志、统计聚合、DNS/IP 工作区数据、运行状态、缓存/
 | 安全防护 | `geoAllowlist`、`geoBlocklist`、`ipBlacklist`、`rateLimitRpm` | KV `ENI_KV` → `sys:theme` | 代理访问策略 |
 | 日志设置 | `logEnabled`、`logSearchMode`、`logWrite*`、`logDisplay*`、`logRetentionDays`、`logWriteDelayMinutes`、`logFlushCountThreshold`、`logBatch*`、`scheduledLeaseMs` | KV `ENI_KV` → `sys:theme` | 写 D1 `proxy_logs` / 定时清理 |
 | 监控告警 | `tgBotToken`、`tgChatId`、`tgAlert*`、`tgDailyReport*`、`scheduleUtcOffsetMinutes`、`cfQuotaPlan*` | KV `ENI_KV` → `sys:theme` | 定时任务 / Telegram |
-| 账号设置 | `jwtExpiryDays`、`cfAccountId`、`cfZoneId`、`cfApiToken`、`cfKvNamespaceId`、`cfD1DatabaseId`、`tmdb*`、`indexUrl` | KV `ENI_KV` → `sys:theme` | 登录态 / Cloudflare API |
+| 账号设置 | `jwtExpiryDays`、`cfAccountId`、`cfZoneId`、`cfApiToken`、`cfKvNamespaceId`、`cfD1DatabaseId`、`tmdb*`、`todbApiKey`、`indexUrl` | KV `ENI_KV` → `sys:theme` | 登录态 / Cloudflare API |
 | 备份与恢复 | 无设置字段 | KV `sys:theme` + `sys:config_meta:v1`；节点 `node:*` + `sys:nodes_index:v1` | `exportConfig` / `exportSettings` / `importFull` / `importSettings` action；不保留设置变更历史 |
 
 节点级字段写入 `node:{name}`、不进 `sys:theme`：`nodeName`、`entryMode`、`secret`、`orderedTargets`、`headers`、`tags`、`remark`、`activeLineId`，以及可选的 `playbackInfoMode`、`mediaAuthMode`、`realClientIpMode`、`routingDecisionMode`、`mainVideoStreamMode`。索引 `sys:nodes_index:v1` 是列表/导入导出的读入口，缺失时可由 `node:*` 重建。
 
-敏感字段 `cfApiToken`、`tgBotToken`、`tmdbApiReadToken`、`tmdbApiV3Key` 属于 `CONFIG_SECRET_FIELDS`：普通导出与日志都会脱敏，只有经过二次确认的“含密钥”导出才保留原值。
+敏感字段 `cfApiToken`、`tgBotToken`、`tmdbApiReadToken`、`tmdbApiV3Key`、`todbApiKey` 属于 `CONFIG_SECRET_FIELDS`：普通导出与日志都会脱敏，只有经过二次确认的“含密钥”导出才保留原值。

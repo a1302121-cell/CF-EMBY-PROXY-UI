@@ -8,3 +8,8 @@ ADMIN_PASS=replace-with-a-local-admin-password
 # TMDB_API_READ_TOKEN=replace-with-a-tmdb-v4-read-token
 # TMDB_API_KEY=replace-with-a-tmdb-v3-api-key
 # TMDB_LANGUAGE=zh-CN
+
+# Optional: todb aggregation (tmdb id -> todbvs video ids). Account-settings
+# todbApiKey wins over this env var. Without a key the todb lookup is skipped and
+# the request falls back to the TMDB title/year search.
+# TODB_API_KEY=replace-with-a-todb-api-key

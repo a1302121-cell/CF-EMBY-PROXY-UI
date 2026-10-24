@@ -257,6 +257,7 @@ Worker 作为公网入口，外部只能看到 Cloudflare 边缘节点，而不�
 | **`HOST`** | 文本变量 (Var) | **主访问域名**。启用 host prefix 代理或保存 host prefix 节点前必须配置；只填写合法 DNS 主机名。 | `emby.example.com`，不要带协议、端口、路径、通配符或 IP。 |
 | **`LEGACY_HOST`** | 文本变量 (Var) | **兼容旧访问域名**。迁移主域名时保留旧的路径式节点入口。 | `old-emby.example.com` |
 | **`TMDB_API_READ_TOKEN`** / **`TMDB_API_KEY`** / **`TMDB_LANGUAGE`** | 加密变量 / 文本变量 | **TMDB 聚合兜底**。仅当后台「账号设置」里的 TMDB 凭据为空时才使用；两项凭据都在后台填写后，环境变量会被整组忽略。 | 见 `.dev.vars.example` |
+| **`TODB_API_KEY`** | 加密变量 | **todb 聚合兜底**。仅当后台「账号设置」里的 todb API Key 为空时使用。留空则不查 todb，聚合退回 TMDB 标题 + 年份搜索。 | 见 `.dev.vars.example` |
 
 > 💡 **命名兼容性提示**：
 > 核心代码已向下兼容多种旧版命名（如 `KV` / `EMBY_KV` / `EMBY_PROXY` 会自动映射为 `ENI_KV`，`D1` / `PROXY_LOGS` 会映射为 `DB`）。但**强烈建议在新部署时统一使用 `ENI_KV` 和 `DB`**，以确保与后续的更新、README 说明及自动化脚本保持一致。
@@ -738,6 +739,22 @@ https://你的域名/hk/123
 
 ### 6. 直连与省流
 通过节点级“主视频流策略”（`mainVideoStreamMode`，直连 / 代理 / 跟随全局）与“源站直连节点”名单，可以让不适合 Worker 中继的数据直接回到客户端，避免无意义的带宽绕行。跨域 30x 重定向则由鉴权能否随跳转携带自动决定是否继续代理。
+
+### 7. TMDB / todb 聚合
+节点打开「启用 TMDB 聚合」后，Worker 会改写 `AnyProviderIdEquals` 里的 `tmdb.<id>` 查询（只对 `GET` / `HEAD` 生效；`IncludeItemTypes` 含 `movie` 时按电影查，其余一律按剧查，`Episode` / `Season` 不做特判）：
+
+| 顺序 | 条件 | 改写结果 |
+| --- | --- | --- |
+| 1 | 有 todb 凭据且 todb 命中 | 删除 `AnyProviderIdEquals`，写入 `todbvs=<video_id>[,<video_id>...]` |
+| 2 | todb 未配置 / 未命中 / 失败 | 退回 TMDB 标题 + 年份搜索：删除 `AnyProviderIdEquals`，写入 `SearchTerm` 与 `Years` |
+| 3 | 两条路都没有可用凭据 | 请求原样透传（`AnyProviderIdEquals` 保持不变） |
+
+todb 查询走 `GET https://theotherdb.org/api/video/getVideoIdByExternalId?type=tmdb&value=<id>`，请求头带 `Authorization: Bearer <todbApiKey>`；响应里的 `video_id` 可能是单个对象、数组或 `{ items: [...] }`，字段名兼容 `video_id` / `videoId` / `video_ids` / `videoIds`（以及兜底的 `id` / `value`），都会合并去重后用 `,` 拼接。
+
+TMDB 的电影 id 和剧 id 是两套独立编号，同一个整数可能既是电影又是剧，所以该接口可能一次返回两条不同类型的结果。Worker 会读条目上的 `video_type`，在请求类型唯一时（`Series` / `Movie`）只保留匹配的那一类；`Movie,Series` 混合查询不做过滤。响应里没有 `video_type`（或值无法识别）时同样不过滤，避免字段缺失导致命中被整体丢弃。
+
+凭据来自账号设置的 `todbApiKey`，为空时读环境变量 `TODB_API_KEY`。命中缓存 24 小时，失败（非 2xx / 空结果 / 超时）缓存 60 秒，单个查询超时 5 秒。
+关于集与季：todb 的季 / 集没有外部 ID 字段（`external_ids` 只出现在影片与人物上），所以「集的 tmdb id」在 todb 里查不到，这类请求会自然落到透传。反过来说，只要请求里带的是**剧级** tmdb id（哪怕 `IncludeItemTypes` 是 `Episode` / `Season`），Worker 仍会按剧解析出 `todbvs` 并保留 `IncludeItemTypes`，由上游在剧内筛集 / 季。不做 `Episode` / `Season` 特判是刻意与上游参考实现保持一致。
 
 ---
 
