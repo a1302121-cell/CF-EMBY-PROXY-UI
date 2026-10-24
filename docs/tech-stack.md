@@ -17,6 +17,37 @@
 
 这 4 行是**生产依赖**。改其中任何一行，等于改用户浏览器里跑的代码；`npm run check` 里的 `tests/tech-stack-pins.test.mjs` 会把它们钉住，升级必须显式改测试。
 
+### 1.1 这 4 个脚本的内容是同源 + 摇树后的产物
+
+模板里保留绝对 URL 是为了让 Worker 能在投递时改写（浏览器不再直接连 CDN）。链路是：
+
+1. `frontend/scripts/build-admin-vendor.mjs` 按上面 4 个 URL 下载钉死版本的 npm tarball（`frontend/vendor.lock.json` 记录 sha512），摇树后落到 `frontend/vendor/<assetKey>.js`，`publish-dist.mjs` 再把它拷进 `frontend/dist/vendor/`。
+2. `<assetKey>` 就是 Worker 的 `buildAdminReleaseVendorAssetKey()`：`hashStableText(上游 URL) + ".js"`，与 `tests/admin-vendor-bundle.test.mjs` 用 Worker 真实代码交叉校验。
+3. 壳投递时（内置 ASSETS 壳与上传壳都一样）把 4 个 URL 改写成 `/ADMIN_PATH/__release/<rev>/vendor/<assetKey>`；`renderAdminReleaseVendorAsset` **先查本地 vendor 存储**（`ASSETS/vendor/<assetKey>`），命中即同源返回，未命中才回落到上游代理。
+
+收益（实测，`npm run build:vendor` 会打印同样一张表）：
+
+| 资源 | 上游 | 摇树后 | 说明 |
+| --- | --- | --- | --- |
+| Lucide | 397 KB | 13.5 KB | 只保留壳里真实出现过的图标名（含 `upload-cloud`/`file-plus-2`/`file-bar-chart` 这类废弃别名），`createIcons` 语义与上游逐字节对齐 |
+| Chart.js | 206 KB | 169 KB | 只 `Chart.register()` 折线图需要的 `LineController`/`LineElement`/`PointElement`/`LinearScale`/`CategoryScale`/`Filler`/`Tooltip`/`Legend` |
+| Vue | 105 KB | 105 KB | runtime-only global build，**摇不动**：模板 render 函数通过全局对象取 helper，剪掉任何一项都会运行时报错 |
+| Tailwind | 271 KB | 271 KB | 浏览器内 JIT 编译器本体，**摇不动**；真要减只能改成构建期预编译 CSS，见下 |
+| 合计 | 979 KB | 559 KB | gzip 272 KB → 175 KB |
+
+两个坑写在这里，改这块之前先看：
+
+- **chart.js 的 `import '@kurkle/color'` 会被 esbuild 丢掉**（该包 `sideEffects:false`）。真正的颜色解析走 `chunks/helpers.segment.js` 里的具名导入，所以默认注解下是安全的；一旦为了别的目的打开 `ignoreAnnotations`，整个 chart.js 会从 169 KB 涨回 201 KB，且颜色表仍然存在——两个方向的错都不报错，只能靠 `tests/admin-vendor-bundle.test.mjs` 里的 `d3d3d3`/`hwb` 哨兵。
+- **lucide 子集必须按"壳里写的名字"建键**。`replaceElement` 用 `toPascalCase(名字)` 查表，所以 `file-plus-2` 要登记成 `FilePlus2`（它背后是 `file-plus-corner.js`），不能只按上游文件名登记。
+
+后续可做但没做：Tailwind 那 271 KB 是唯一还没消掉的大块。它可以在构建期用 `tailwindcss@4.2.2` 预编译成静态 CSS（模板里的 `@theme` 直接喂给编译器），但模板里有大量 `:class` 动态拼接，漏扫就是静默丢样式；要做必须配套 `npm run test:visual` 全量比对，属于独立任务。
+
+配套的三条防线（改这块时别拆）：
+
+- `tests/e2e/admin-smoke.spec.mjs` 有一条用例主动 `route.abort()` 掉 `cdn.jsdelivr.net/**`，要求管理台照样启动、lucide 图标真的变成 `svg`、chart 画布真的有像素。它挡的是"某次改动悄悄把壳改回直连 CDN"。
+- 启动失败卡片必须**能看见**。`#app` 带 `v-cloak`，而错误卡片是注入 `#app` 内部的；Vue 没起来就没人摘 `v-cloak`，用户只会看到白屏。所以 `__ADMIN_UI_RENDER_BOOT_ERROR__` 里先 `removeAttribute("v-cloak")` 再写卡片。
+- `frontend/vendor/`、`frontend/vendor.lock.json` 要跟着提交（部署直接吃 `frontend/dist/vendor/`）；`frontend/vendor/**` 已加入 oxlint/oxfmt 的 `ignorePatterns`，别让压缩后的第三方代码淹没 lint 输出。`.cache/admin-vendor/`（下载解包缓存）不进仓库。
+
 ## 2. 仓库依赖的真实分层
 
 `package.json`（根）+ `frontend/package.json`（workspace，依赖提升到根 `node_modules/`）加起来 230 个包，但它们分属三种完全不同的角色：

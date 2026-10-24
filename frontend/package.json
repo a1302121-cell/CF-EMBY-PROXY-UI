@@ -10,10 +10,12 @@
     "sync:admin-runtime": "node ./scripts/sync-admin-runtime.mjs",
     "check:admin-runtime": "node ./scripts/sync-admin-runtime.mjs --check",
     "dev": "node ./scripts/sync-admin-runtime.mjs && node ./scripts/dev-server.mjs",
-    "build": "node ./scripts/sync-admin-runtime.mjs && node ./scripts/publish-dist.mjs",
-    "build:cdn": "node ./scripts/sync-admin-runtime.mjs && node ./scripts/publish-dist.mjs && node ./scripts/check-cdn-paths.mjs",
+    "build": "node ./scripts/sync-admin-runtime.mjs && node ./scripts/build-admin-vendor.mjs && node ./scripts/publish-dist.mjs",
+    "build:cdn": "node ./scripts/sync-admin-runtime.mjs && node ./scripts/build-admin-vendor.mjs && node ./scripts/publish-dist.mjs && node ./scripts/check-cdn-paths.mjs",
     "preview": "vite preview --host 0.0.0.0 --port 4173",
-    "check:cdn": "node ./scripts/check-cdn-paths.mjs"
+    "check:cdn": "node ./scripts/check-cdn-paths.mjs",
+    "build:vendor": "node ./scripts/build-admin-vendor.mjs",
+    "check:vendor": "node ./scripts/build-admin-vendor.mjs --check"
   },
   "dependencies": {
     "chart.js": "^4.5.1",

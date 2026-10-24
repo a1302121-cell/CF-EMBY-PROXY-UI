@@ -141,6 +141,7 @@ D1 保存日志、统计聚合、DNS/IP 工作区数据、运行状态、缓存/
 - 应用版本号唯一来源是 `worker/core/build-info.js` 的 `APP_VERSION`；Worker 落地页标题与管理端标题/徽章占位符 `__APP_VERSION__` 都由它派生。发布时改这一处，并同步 `README.md`、`AGENTS.md` 的版本字样，`npm.cmd run check` 的 version consistency 项会校验三者一致。
 - 前端环境变量位于 `frontend/.env.example`，主要控制 API base、admin path、release channel 和开发代理目标；CDN 地址由 Worker 的 `indexUrl`/远端壳配置决定，不经过前端构建。
 - 前端外部 vendor 资源由 CDN path 检查器约束；不要在生产模板中引入 inline dynamic import 或未声明的相对发布资源。
+- 这 4 个 vendor 脚本的**内容**不再来自浏览器直连 CDN：`frontend/scripts/build-admin-vendor.mjs` 摇树后按 Worker 的 `assetKey` 落到 `frontend/vendor/`（随 `ASSETS` 部署到 `dist/vendor/`），Worker 投递壳时把 4 个绝对 URL 改写成 `/ADMIN_PATH/__release/<rev>/vendor/<assetKey>` 并优先从本地存储返回。内置 ASSETS 壳因此和上传壳走同一条同源路径，手机网络连不上 `cdn.jsdelivr.net` 也不会白屏。收益与两个已知坑见 [`docs/tech-stack.md`](tech-stack.md) §1.1。
 
 ## 8. 设置项与绑定/键映射
 

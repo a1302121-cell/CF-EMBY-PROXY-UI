@@ -4976,6 +4976,13 @@ function defineAdminShellCache(dependencies = {}, shell = {}) {
 //#region worker/features/admin/shell-delivery.js
 function defineAdminShellDelivery(dependencies = {}, shell = {}) {
   const { indexRepository } = dependencies;
+  // 内置壳（ASSETS/index.html）没有 KV 上传记录，所以用壳内容 hash 造一个稳定的
+  // assetRevision：它只用于拼 /ADMIN_PATH/__release/<rev>/vendor/<assetKey> 的前缀，
+  // 真正的内容寻址仍然是 assetKey 本身。
+  function buildBundledAdminShellAssetRevision(html = "") {
+    const text = String(html || "");
+    return text ? `bundled-${hashStableText(text)}` : "";
+  }
   async function renderBundledAdminPage(
     request,
     env,
@@ -5012,6 +5019,10 @@ function defineAdminShellDelivery(dependencies = {}, shell = {}) {
     const bootstrap = shell.buildAdminBootstrapPayload(env, initHealth, config);
     const indexState = buildResolvedAdminIndexState(env, config);
     const sourceUrl = assetUrl.toString();
+    // 内置壳也要带 assetRevision，否则 buildAdminShellStoredPayloadFromHtml 不会把 4 个
+    // CDN 脚本改写成 /ADMIN_PATH/__release/<rev>/vendor/<assetKey>：手机网络连不上
+    // cdn.jsdelivr.net 时就会拿到一个没有任何脚本的空白页。revision 用壳内容的稳定 hash，
+    // 同一次部署内恒定，壳一变就换 key（不会误命中旧产物）。
     const shellPayload = shell.buildAdminShellStoredPayloadFromHtml(
       assetBody.text,
       bootstrap,
@@ -5021,6 +5032,7 @@ function defineAdminShellDelivery(dependencies = {}, shell = {}) {
         sourceLabel: "bundled admin shell",
         contentType: assetResponse.headers.get("Content-Type") || "text/html",
         adminPath: bootstrap.adminPath,
+        assetRevision: buildBundledAdminShellAssetRevision(assetBody.text),
         lastModified: assetResponse.headers.get("Last-Modified") || "Thu, 01 Jan 1970 00:00:00 GMT",
         originEtag: assetResponse.headers.get("ETag") || "",
       },
@@ -5398,11 +5410,67 @@ function defineAdminShellDelivery(dependencies = {}, shell = {}) {
     if (stripped === text) return bodyBytes;
     return new TextEncoder().encode(stripped);
   }
+  // 本地 vendor 存储：frontend/scripts/build-admin-vendor.mjs 把 4 个首屏脚本摇树后按
+  // Worker 计算的 assetKey 落到 frontend/vendor/，随 ASSETS 一起部署。命中时直接由本
+  // Worker 同源返回：既不依赖浏览器能不能连 CDN，也不要求 KV 里存在上传记录——内置
+  // ASSETS 壳（没上传 index.html）因此和上传壳走同一条同源路径。
+  const ADMIN_VENDOR_LOCAL_ASSET_PREFIX = "/vendor";
+  const ADMIN_VENDOR_LOCAL_ASSET_KEY_PATTERN = /^[a-z0-9]+\.(?:js|css)$/i;
+  async function readAdminVendorLocalAssetResponse(env, request, assetKey = "") {
+    const normalizedAssetKey = String(assetKey || "").trim();
+    if (!ADMIN_VENDOR_LOCAL_ASSET_KEY_PATTERN.test(normalizedAssetKey)) return null;
+    const assets = env?.ASSETS;
+    if (!assets || typeof assets.fetch !== "function") return null;
+    let assetUrl = null;
+    try {
+      assetUrl = new URL(`${ADMIN_VENDOR_LOCAL_ASSET_PREFIX}/${normalizedAssetKey}`, request.url);
+    } catch {
+      return null;
+    }
+    let assetResponse = null;
+    try {
+      assetResponse = await assets.fetch(
+        new Request(assetUrl, { method: "GET", headers: { Accept: "*/*" } }),
+      );
+    } catch {
+      return null;
+    }
+    if (!assetResponse?.ok) return null;
+    const assetBody = await readResponseBytesWithLimit(
+      assetResponse,
+      shell.ADMIN_RELEASE_VENDOR_MAX_BYTES,
+    );
+    if (assetBody.exceeded || !assetBody.bytes) return null;
+    const headers = new Headers({
+      "Content-Type": normalizedAssetKey.toLowerCase().endsWith(".css")
+        ? "text/css; charset=utf-8"
+        : "text/javascript; charset=utf-8",
+      "Cache-Control": shell.ADMIN_RELEASE_VENDOR_CACHE_CONTROL,
+      ETag: shell.formatAdminHtmlEtag(normalizedAssetKey),
+      [shell.ADMIN_RELEASE_VENDOR_SOURCE_HASH_HEADER]: hashStableText(
+        `local:${normalizedAssetKey}`,
+      ),
+    });
+    return new Response(stripAdminReleaseVendorSourceMapComment(assetBody.bodyBytes), {
+      status: 200,
+      headers,
+    });
+  }
   async function renderAdminReleaseVendorAsset(request, env, ctx, routeMatch = null, config = {}) {
     const releaseTag = normalizeGithubReleaseRefValue(routeMatch?.releaseTag);
     const assetKey = String(routeMatch?.assetKey || "").trim();
     if (!releaseTag || !assetKey)
       return buildAdminReleaseVendorErrorResponse("Release vendor asset not found", 404);
+    // 本地摇树产物优先：assetKey 就是上游 URL 的 hash，同一份资源只会有一种内容。
+    const localVendorResponse = await readAdminVendorLocalAssetResponse(env, request, assetKey);
+    if (localVendorResponse) {
+      if (shell.requestMatchesAdminHtmlResponse(request, localVendorResponse))
+        return shell.buildConditionalNotModifiedResponseFromStoredResponse(
+          localVendorResponse,
+          shell.ADMIN_RELEASE_VENDOR_CACHE_CONTROL,
+        );
+      return shell.buildAdminReleaseVendorClientResponse(localVendorResponse, request.method);
+    }
     const edgeCache = getDefaultCacheHandle();
     const localRevision = parseAdminLocalIndexAssetRevision(releaseTag);
     if (!localRevision)

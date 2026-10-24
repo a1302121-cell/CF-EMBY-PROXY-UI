@@ -1921,7 +1921,17 @@ test("publish-dist replaces stale bundler output with the composed shell", async
       shell: false,
     });
     assert.equal(published.status, 0, published.stderr);
-    assert.deepEqual(await readdir(outputDirectory), ["index.html"]);
+    // dist 里只允许 index.html + vendor/（Worker 同源代理用的摇树产物）；历史打包残留
+    // （assets/、.vite/manifest.json）必须被清掉。
+    assert.deepEqual((await readdir(outputDirectory)).sort(), ["index.html", "vendor"]);
+    assert.deepEqual(
+      (await readdir(path.join(outputDirectory, "vendor")))
+        .filter((name) => name.endsWith(".js"))
+        .sort(),
+      (await readdir(new URL("../frontend/vendor", import.meta.url)))
+        .filter((name) => name.endsWith(".js"))
+        .sort(),
+    );
     assert.equal(
       await readFile(path.join(outputDirectory, "index.html"), "utf8"),
       await readFile(new URL("../frontend/index.html", import.meta.url), "utf8"),

@@ -16,6 +16,8 @@ npm-debug.log*
 .ace-tool/
 .venv/
 bundled/
+# build-admin-vendor.mjs 的 tarball / 解包缓存（产物本身提交在 frontend/vendor/）
+/.cache/
 .worker-dist/
 .worker.js.tmp
 prompts/
@@ -31,3 +33,6 @@ frontend/dist/.vite/
 
 # 本地私有部署配置（真实 worker 名 / KV / D1 / 域），只在本机使用
 /wrangler.local.toml
+
+# 外部参考用的第三方 worker 构建产物，仅供比对，不进仓库
+/worker (*).js
