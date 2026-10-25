@@ -777,6 +777,7 @@ TMDB 的电影 id 和剧 id 是两套独立编号，同一个整数可能既是�
 - 最多 8 个兄弟节点，单个查询超时 6 秒。**任何一个兄弟节点失败（503 / 抛异常 / 返回非 JSON / 节点记录缺失）只让它自己缺席**，不会把请求变成 502。
 - 本节点响应超过 8 MB、非 JSON、或不是 Items 载荷时**彻底放弃聚合**，原始流原样转发（用 `clone()` 读副本，原流从未被消费）。
 - 兄弟节点结果**不去重**：同一部片在多个节点都有时会返回多条。想让客户端把多个源当成「同一部片的不同版本」，见下节的 PlaybackInfo 版本聚合。
+- 可聚合的列表路径：`Items`、`Items/{id}`、`Users/{id}/Items`、`Shows/{id}/Episodes`。最后一个是剧集列表——打开一部剧看有哪些集，返回的同样是 `{ Items, TotalRecordCount }`，合并逻辑完全复用。
 
 ##### 版本级聚合（一条影片、多版本可选）
 
@@ -792,8 +793,11 @@ TMDB 的电影 id 和剧 id 是两套独立编号，同一个整数可能既是�
 `/Items` 里的 `MediaSources` 只是列表元数据，客户端不拿它渲染版本选择器；而且客户端的 `Fields` 通常不含 `MediaSources`，peer 的 `/Items` 根本不会返回该字段。早期版本把归并做在 `/Items` 上，实测归并数恒为 0，已移除。
 
 - **触发条件**：节点开了「启用 EMOS 聚合」，请求是 `GET .../PlaybackInfo`，且**没有** `MediaSourceId`。带了 `MediaSourceId` 说明用户已选定版本，再扇出只会拖慢播放。
-- **归并键**：`tmdb:<id>` 与 `name:<名称>:<年份>` 两组候选，两边取交集非空即视为同一部片。同名不同年（重制版、不同剪辑）不会合并。
-- **找片流程**：先取本节点条目的 `ProviderIds` 与 `ProductionYear`，再按 `AnyProviderIdEquals=tmdb.<id>`（没有 tmdb id 时用 `SearchTerm`）在 peer 上搜同片，拿到 peer 的条目 Id 后请求它的 `PlaybackInfo`。
+- **归并键**：三种身份，两边取交集非空即配对。
+  - `tmdb:<id>` —— 电影最稳，`ProviderIds` 是刮削结果，不受改名影响。
+  - `episode:<剧名>:<季>:<集>` —— 剧集唯一可靠的跨节点身份。Episode 自身通常没有 `ProviderIds`，`Name` 是「第 3 集」这类会随刮削语言变化的值，只有「所属剧 + 季号 + 集号」跨节点稳定。剧集**只用**这个键，不再回退名称键，否则不同剧的第 3 集会互相合并。
+  - `name:<名称>:<年份>` —— 电影兜底。同名同年的不同影片会被错误合并，这是已知代价。
+- **找片流程**：先取本节点条目的 `ProviderIds` / `ProductionYear` / `SeriesName` / `IndexNumber` / `ParentIndexNumber`，再按身份类型选查询入口——电影用 `AnyProviderIdEquals=tmdb.<id>`，剧集用 `SearchTerm=<剧名>&IncludeItemTypes=Episode` 后逐集比对季号与集号，其余用 `SearchTerm=<名称>`。拿到 peer 的条目 Id 后请求它的 `PlaybackInfo`。
 - **片源 Id 自包含**：`n<base64url(节点名)>.<base64url(JSON [peer 条目 Id, peer 片源 Id])>`。必须同时带条目 Id：客户端回传的路径里是本节点的条目 Id，peer 不认识它。
 - **播放地址**：peer 片源的 `Path` / `DirectStreamUrl` 换成本 Worker 的 `/节点名/secret/...` 代理地址，peer 上游主机名不会泄漏给客户端。
 - **播放回程**：客户端选中 peer 片源后回传的 `MediaSourceId` 带前缀，Worker 据此把请求整体改道到那个 peer，并把路径里的条目 Id 与 `MediaSourceId` 分别还原成 peer 自己的编号。

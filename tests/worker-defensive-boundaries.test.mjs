@@ -10965,3 +10965,205 @@ test("playback version aggregation keeps the response intact when a peer fails",
     assert.equal(payload.MediaSources.length, 1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// 剧集：同一集跨节点选版本。Episode 通常没有 ProviderIds，身份靠
+// 「所属剧名 + 季号 + 集号」。
+// ---------------------------------------------------------------------------
+
+test("playback version aggregation matches an episode by series and index", async () => {
+  const ownEpisode = {
+    Id: "e1",
+    Name: "第 3 集",
+    SeriesName: "黑袍纠察队",
+    ParentIndexNumber: 2,
+    IndexNumber: 3,
+    // 刻意不给 ProviderIds：真实 Episode 大多没有。
+  };
+  const peerEpisode = {
+    Id: "pe1",
+    // peer 的刮削语言不同，Name 与本节点不一致——只有季号/集号能对上。
+    Name: "Episode 3",
+    SeriesName: "黑袍纠察队",
+    ParentIndexNumber: 2,
+    IndexNumber: 3,
+  };
+  const { kv } = createInMemoryKvStore();
+  const nodes = [
+    { name: "alpha", target: "https://alpha.example" },
+    { name: "beta", target: "https://beta.example" },
+  ];
+  for (const node of nodes) {
+    kv.put(
+      `${kernel.PREFIX}${node.name}`,
+      JSON.stringify({
+        name: node.name,
+        target: node.target,
+        tmdbAggregationEnabled: true,
+        aggregationMode: "auto",
+      }),
+    );
+  }
+  kv.put(
+    kernel.NODES_SUMMARY_INDEX_KEY,
+    JSON.stringify(nodes.map((node) => ({ ...node, tmdbAggregationEnabled: true }))),
+  );
+  const json = (body) =>
+    new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" } });
+  const calls = [];
+  const fetch = async (input) => {
+    const href = String(input);
+    calls.push(href);
+    const isOwn = href.startsWith("https://alpha.example");
+    if (!isOwn && !href.startsWith("https://beta.example"))
+      return new Response("{}", { status: 404 });
+    if (/PlaybackInfo/i.test(href)) {
+      return json(
+        isOwn
+          ? { MediaSources: [{ Id: "e1-src", Path: "https://alpha.example/v/e1.mkv" }] }
+          : { MediaSources: [{ Id: "pe1-src", Path: "https://beta.example/v/pe1.mkv" }] },
+      );
+    }
+    if (/\/Items\?/i.test(href)) return json({ Items: [peerEpisode], TotalRecordCount: 1 });
+    return json(isOwn ? ownEpisode : peerEpisode);
+  };
+  const env = { ENI_KV: kv, __CONFIG_CACHE_NAMESPACE: `pb-episode-${Date.now()}` };
+  await withWorkerGlobals({ fetch }, async () => {
+    const response = await workerHandler.fetch(
+      new Request("https://worker.test/alpha/emby/Items/e1/PlaybackInfo?UserId=u-episode", {
+        method: "GET",
+        headers: { "X-Emby-Token": "tok" },
+      }),
+      env,
+      { waitUntil() {} },
+    );
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.MediaSources.length, 2);
+    // peer 那一集的片源被收进来了。
+    const peerSource = payload.MediaSources[1];
+    assert.match(peerSource.Id, /^n[A-Za-z0-9_-]+\./);
+    assert.match(peerSource.Path, /^https:\/\/worker\.test\/beta\//);
+  });
+});
+
+test("playback version aggregation does not merge the same episode number from a different show", async () => {
+  // 不同剧的第 2 季第 3 集是两部不同的东西，不能合并。
+  const { kv } = createInMemoryKvStore();
+  const nodes = [
+    { name: "alpha", target: "https://alpha.example" },
+    { name: "beta", target: "https://beta.example" },
+  ];
+  for (const node of nodes) {
+    kv.put(
+      `${kernel.PREFIX}${node.name}`,
+      JSON.stringify({
+        name: node.name,
+        target: node.target,
+        tmdbAggregationEnabled: true,
+        aggregationMode: "auto",
+      }),
+    );
+  }
+  kv.put(
+    kernel.NODES_SUMMARY_INDEX_KEY,
+    JSON.stringify(nodes.map((node) => ({ ...node, tmdbAggregationEnabled: true }))),
+  );
+  const json = (body) =>
+    new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" } });
+  const fetch = async (input) => {
+    const href = String(input);
+    const isOwn = href.startsWith("https://alpha.example");
+    if (!isOwn && !href.startsWith("https://beta.example"))
+      return new Response("{}", { status: 404 });
+    if (/PlaybackInfo/i.test(href))
+      return json({ MediaSources: [{ Id: "s-src", Path: "https://x.example/v.mkv" }] });
+    if (/\/Items\?/i.test(href))
+      return json({
+        Items: [
+          {
+            Id: "other",
+            Name: "第 3 集",
+            SeriesName: "另一部剧",
+            ParentIndexNumber: 2,
+            IndexNumber: 3,
+          },
+        ],
+        TotalRecordCount: 1,
+      });
+    return json({
+      Id: "e1",
+      Name: "第 3 集",
+      SeriesName: "黑袍纠察队",
+      ParentIndexNumber: 2,
+      IndexNumber: 3,
+    });
+  };
+  const env = { ENI_KV: kv, __CONFIG_CACHE_NAMESPACE: `pb-episode-diff-${Date.now()}` };
+  await withWorkerGlobals({ fetch }, async () => {
+    const response = await workerHandler.fetch(
+      new Request("https://worker.test/alpha/emby/Items/e1/PlaybackInfo?UserId=u-ep-diff", {
+        method: "GET",
+        headers: { "X-Emby-Token": "tok" },
+      }),
+      env,
+      { waitUntil() {} },
+    );
+    const payload = await response.json();
+    assert.equal(payload.MediaSources.length, 1);
+  });
+});
+
+test("episode list requests participate in peer aggregation", async () => {
+  // /Shows/{id}/Episodes 是打开一部剧看有哪些集的入口，之前不在白名单里。
+  const { kv } = createInMemoryKvStore();
+  const nodes = [
+    { name: "alpha", target: "https://alpha.example" },
+    { name: "beta", target: "https://beta.example" },
+  ];
+  for (const node of nodes) {
+    kv.put(
+      `${kernel.PREFIX}${node.name}`,
+      JSON.stringify({
+        name: node.name,
+        target: node.target,
+        tmdbAggregationEnabled: true,
+        aggregationMode: "auto",
+      }),
+    );
+  }
+  kv.put(
+    kernel.NODES_SUMMARY_INDEX_KEY,
+    JSON.stringify(nodes.map((node) => ({ ...node, tmdbAggregationEnabled: true }))),
+  );
+  const calls = [];
+  const json = (body) =>
+    new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" } });
+  const fetch = async (input) => {
+    const href = String(input);
+    calls.push(href);
+    const isOwn = href.startsWith("https://alpha.example");
+    const items = isOwn
+      ? [{ Id: "e1", Name: "第 1 集", SeriesName: "某剧", IndexNumber: 1 }]
+      : [{ Id: "pe1", Name: "第 1 集", SeriesName: "某剧", IndexNumber: 1 }];
+    return json({ Items: items, TotalRecordCount: items.length });
+  };
+  const env = { ENI_KV: kv, __CONFIG_CACHE_NAMESPACE: `pb-episodes-list-${Date.now()}` };
+  await withWorkerGlobals({ fetch }, async () => {
+    const response = await workerHandler.fetch(
+      new Request(
+        "https://worker.test/alpha/emby/Shows/326659/Episodes?Fields=ProviderIds,ProductionYear",
+        { method: "GET", headers: { "X-Emby-Token": "tok" } },
+      ),
+      env,
+      { waitUntil() {} },
+    );
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    // 本节点 1 集 + peer 1 集（Id 带前缀）。
+    assert.equal(payload.Items.length, 2);
+    assert.equal(payload.Items[0].Id, "e1");
+    assert.match(payload.Items[1].Id, /^n/);
+    assert.ok(calls.some((href) => href.includes("beta.example")));
+  });
+});

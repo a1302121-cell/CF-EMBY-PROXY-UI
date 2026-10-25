@@ -27015,8 +27015,12 @@ var NODES_SUMMARY_INDEX_KV_KEY = "sys:nodes_index_full:v2";
 var PEER_AGGREGATION_TIMEOUT_MS = 6e3;
 var PEER_AGGREGATION_BODY_MAX_BYTES = 8 * 1024 * 1024;
 // 只合并 Items 列表与单条 Item 详情。播放 / 图片 / 进度不改写，它们靠 Id 前缀重新路由。
+// 可聚合的列表路径。两类：
+//   Items / Items/{id} / Users/{id}/Items   影片与剧集列表、单条详情
+//   Shows/{id}/Episodes                     剧集列表（打开一部剧看有哪些集）
+// 剧集列表返回的同样是 { Items, TotalRecordCount }，合并逻辑完全复用。
 var PEER_AGGREGATION_MERGE_PATH_PATTERN =
-  /^\/(?:emby\/|mediabrowser\/)?(?:users\/[^/]+\/)?items(?:\/\d+)?$/i;
+  /^\/(?:emby\/|mediabrowser\/)?(?:(?:users\/[^/]+\/)?items(?:\/\d+)?|shows\/[^/]+\/episodes)$/i;
 function isPeerAggregationMergePath(path = "") {
   return PEER_AGGREGATION_MERGE_PATH_PATTERN.test(String(path || "").trim());
 }
@@ -27364,7 +27368,12 @@ function definePeerAggregationMethods(dependencies = {}, kernel = {}) {
         targetRecord,
         `/Items/${encodeURIComponent(itemId)}`,
       );
-      upstreamUrl.searchParams.set("Fields", "ProviderIds,ProductionYear");
+      // SeriesName / IndexNumber / ParentIndexNumber 是剧集的跨节点身份来源，
+      // 见 buildEpisodeMatchKey。
+      upstreamUrl.searchParams.set(
+        "Fields",
+        "ProviderIds,ProductionYear,SeriesName,IndexNumber,ParentIndexNumber",
+      );
       const headers = new Headers({ accept: "application/json" });
       const clientAuth =
         execution.request.headers.get("Authorization") ||
@@ -27394,6 +27403,9 @@ function definePeerAggregationMethods(dependencies = {}, kernel = {}) {
           Name: payload.Name,
           ProductionYear: payload.ProductionYear,
           ProviderIds: payload.ProviderIds,
+          SeriesName: payload.SeriesName,
+          IndexNumber: payload.IndexNumber,
+          ParentIndexNumber: payload.ParentIndexNumber,
         };
       } catch {
         return null;
@@ -27474,18 +27486,38 @@ function definePeerAggregationMethods(dependencies = {}, kernel = {}) {
       const searchUrl = buildUpstreamProxyUrl(targetRecord, "/Items");
       const params = searchUrl.searchParams;
       params.set("Recursive", "true");
-      params.set("Limit", "20");
-      params.set("Fields", "ProviderIds,ProductionYear");
-      // 有 tmdb id 就精确查，否则按名称搜。
+      params.set("Fields", "ProviderIds,ProductionYear,SeriesName,IndexNumber,ParentIndexNumber");
+      // 按身份类型选查询方式。三种身份各有自己的精确查询入口：
+      //   tmdb    -> AnyProviderIdEquals=tmdb.<id>
+      //   剧集    -> SeriesName + ParentIndexNumber + IndexNumber，用 SearchTerm 找剧再逐集比对
+      //   名称    -> SearchTerm
       let tmdbId = "";
+      let episodeSeriesName = "";
       for (const key of keys) {
         if (key.startsWith("tmdb:")) {
           tmdbId = key.slice(5);
           break;
         }
+        if (key.startsWith("episode:") && !episodeSeriesName) {
+          // episode:<剧名>:<季>:<集>，剧名里可能含冒号，所以取首尾。
+          const rest = key.slice("episode:".length);
+          const lastColon = rest.lastIndexOf(":");
+          const secondLastColon = rest.lastIndexOf(":", lastColon - 1);
+          if (secondLastColon > 0) episodeSeriesName = rest.slice(0, secondLastColon);
+        }
       }
-      if (tmdbId) params.set("AnyProviderIdEquals", `tmdb.${tmdbId}`);
-      else params.set("SearchTerm", String(identity?.Name || ""));
+      if (tmdbId) {
+        params.set("AnyProviderIdEquals", `tmdb.${tmdbId}`);
+        params.set("Limit", "20");
+      } else if (episodeSeriesName) {
+        // 搜剧名，拿回该剧的剧集后按「季号 + 集号」比对。Limit 放大是因为要覆盖整季。
+        params.set("SearchTerm", episodeSeriesName);
+        params.set("IncludeItemTypes", "Episode");
+        params.set("Limit", "200");
+      } else {
+        params.set("SearchTerm", String(identity?.Name || ""));
+        params.set("Limit", "20");
+      }
       const response = await fetchPort.fetchRequest(searchUrl, {
         method: "GET",
         headers,

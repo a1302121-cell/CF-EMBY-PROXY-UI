@@ -17,7 +17,13 @@ function isPlainObject(value) {
 }
 
 // 一个条目可能同时给出多种可匹配的身份，两边按「交集非空」配对。
-// 与 peer-version-merge.js 的键形状保持一致，避免同一部片在两条链路上判定不同。
+//
+// 三种身份，按可靠性排序：
+//   tmdb:<id>                         电影最稳，ProviderIds 是刮削结果，不受改名影响
+//   episode:<剧名>:<季>:<集>          剧集唯一可靠的跨节点身份。Episode 自身通常没有
+//                                     ProviderIds，Name 是「第 3 集」这类会随刮削语言
+//                                     变化的值，只有「所属剧 + 季号 + 集号」跨节点稳定
+//   name:<名称>:<年份>                兜底。同名同年的不同影片会被错误合并，这是已知代价
 export function buildPlaybackVersionMatchKeys(item) {
   const keys = new Set();
   if (!isPlainObject(item)) return keys;
@@ -29,6 +35,13 @@ export function buildPlaybackVersionMatchKeys(item) {
       if (tmdbId) keys.add(`tmdb:${tmdbId}`);
     }
   }
+  const episodeKey = buildEpisodeMatchKey(item);
+  if (episodeKey) {
+    // 剧集只用剧集键，不能再加名称键：Episode 的 Name 是「第 3 集」这类值，
+    // 不同剧的第 3 集会因此被错误合并成同一部。
+    keys.add(episodeKey);
+    return keys;
+  }
   const name = String(item.Name ?? "")
     .trim()
     .toLowerCase();
@@ -37,6 +50,24 @@ export function buildPlaybackVersionMatchKeys(item) {
     keys.add(year ? `name:${name}:${year}` : `name:${name}:`);
   }
   return keys;
+}
+
+// 剧集身份：`episode:<所属剧名>:<季号>:<集号>`。
+//
+// 必须带剧名：不同剧的第 1 季第 1 集是两部不同的东西。
+// 剧名用 SeriesName（Emby 在 Episode 上直接给出），没有就退回 ParentId —— 但 ParentId
+// 是各节点自己的编号，跨节点对不上，所以那种情况下返回空，让上层退回名称匹配。
+export function buildEpisodeMatchKey(item) {
+  if (!isPlainObject(item)) return "";
+  // IndexNumber 缺失（0 或空）说明这不是剧集，或刮削不全。
+  const indexNumber = String(item.IndexNumber ?? "").trim();
+  if (!indexNumber || indexNumber === "0") return "";
+  const parentIndexNumber = String(item.ParentIndexNumber ?? "").trim() || "0";
+  const seriesName = String(item.SeriesName ?? "")
+    .trim()
+    .toLowerCase();
+  if (!seriesName) return "";
+  return `episode:${seriesName}:${parentIndexNumber}:${indexNumber}`;
 }
 
 // 把 peer 的 PlaybackInfo 转成「可挂进本节点响应的版本」。

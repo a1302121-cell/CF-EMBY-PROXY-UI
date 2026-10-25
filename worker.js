@@ -12,7 +12,7 @@ function xa(n) {
     return "";
   }
 }
-async function ya(n, e) {
+async function Sa(n, e) {
   const t = Math.max(0, Math.floor(Number(e) || 0)), r = pn(n?.headers?.get?.("Content-Length"));
   if (Number.isFinite(r) && r > t) {
     try {
@@ -75,7 +75,7 @@ async function ya(n, e) {
   };
 }
 async function Pe(n, e) {
-  const t = await ya(n, e);
+  const t = await Sa(n, e);
   return {
     text: t.exceeded ? "" : new TextDecoder().decode(t.bodyBytes),
     bytes: t.bytes,
@@ -224,7 +224,7 @@ function Ul(n, e, t, r) {
   const a = Number(n);
   return Number.isFinite(a) ? Math.min(r, Math.max(t, a)) : e;
 }
-function Sa(n, e) {
+function _a(n, e) {
   return !!n && typeof n == "object" && Object.prototype.hasOwnProperty.call(n, e);
 }
 function Ba(n) {
@@ -527,39 +527,49 @@ async function Yl(n, e = {}) {
     })
   }) : xn(n, "invalid_root_object");
 }
-function _a(n) {
+function Kr(n) {
   if (!n || typeof n != "object" || Array.isArray(n)) return !1;
   const e = Object.getPrototypeOf(n);
   return e === Object.prototype || e === null;
 }
 function On(n) {
   const e = /* @__PURE__ */ new Set();
-  if (!_a(n)) return e;
-  const t = _a(n.ProviderIds) ? n.ProviderIds : null;
-  if (t) for (const [a, o] of Object.entries(t)) {
-    if (String(a).toLowerCase() !== "tmdb") continue;
-    const s = String(o ?? "").trim();
-    s && e.add(`tmdb:${s}`);
+  if (!Kr(n)) return e;
+  const t = Kr(n.ProviderIds) ? n.ProviderIds : null;
+  if (t) for (const [o, s] of Object.entries(t)) {
+    if (String(o).toLowerCase() !== "tmdb") continue;
+    const i = String(s ?? "").trim();
+    i && e.add(`tmdb:${i}`);
   }
-  const r = String(n.Name ?? "").trim().toLowerCase();
-  if (r) {
-    const a = String(n.ProductionYear ?? "").trim();
-    e.add(a ? `name:${r}:${a}` : `name:${r}:`);
+  const r = Jl(n);
+  if (r)
+    return e.add(r), e;
+  const a = String(n.Name ?? "").trim().toLowerCase();
+  if (a) {
+    const o = String(n.ProductionYear ?? "").trim();
+    e.add(o ? `name:${a}:${o}` : `name:${a}:`);
   }
   return e;
 }
-function Jl(n, e, t, r) {
+function Jl(n) {
+  if (!Kr(n)) return "";
+  const e = String(n.IndexNumber ?? "").trim();
+  if (!e || e === "0") return "";
+  const t = String(n.ParentIndexNumber ?? "").trim() || "0", r = String(n.SeriesName ?? "").trim().toLowerCase();
+  return r ? `episode:${r}:${t}:${e}` : "";
+}
+function Ql(n, e, t, r) {
   const a = [];
-  if (!_a(n) || !Array.isArray(n.MediaSources) || !String(t ?? "").trim()) return a;
+  if (!Kr(n) || !Array.isArray(n.MediaSources) || !String(t ?? "").trim()) return a;
   const o = [];
   for (const s of n.MediaSources) {
-    if (!_a(s)) continue;
+    if (!Kr(s)) continue;
     const i = String(s.Id ?? "").trim();
     if (!i) continue;
     const c = String(s.DirectStreamUrl || s.Path || "").trim(), l = c ? r(e, c) : "";
     l && o.push({
       ...s,
-      Id: Ql(e, t, i),
+      Id: Zl(e, t, i),
       Path: l,
       DirectStreamUrl: l,
       IsRemote: !1,
@@ -573,12 +583,12 @@ function Jl(n, e, t, r) {
     mediaSources: o
   }), a;
 }
-function Ql(n, e, t) {
+function Zl(n, e, t) {
   const r = JSON.stringify([String(e ?? ""), String(t ?? "")]);
   return `n${ms(n)}.${ms(r)}`;
 }
-function Zl(n, e) {
-  if (!_a(n) || !Array.isArray(n.MediaSources) || !Array.isArray(e) || !e.length) return null;
+function eu(n, e) {
+  if (!Kr(n) || !Array.isArray(n.MediaSources) || !Array.isArray(e) || !e.length) return null;
   const t = n.MediaSources, r = new Set(t.map((s) => String(s?.Id ?? "").trim()).filter(Boolean)), a = [...t];
   let o = 0;
   for (const s of e) for (const i of s.mediaSources) {
@@ -709,7 +719,7 @@ function Ai(n, e = {}) {
     rewriteState: "not_needed"
   };
 }
-function eu(n, e = {}) {
+function tu(n, e = {}) {
   if (!Pt(n)) return {
     kind: "invalid",
     reason: "invalid_representation"
@@ -741,11 +751,11 @@ function eu(n, e = {}) {
     rewriteState: "applied"
   };
 }
-var tu = new TextEncoder();
+var ru = new TextEncoder();
 function Qn(n) {
-  return tu.encode(String(n || "")).byteLength;
+  return ru.encode(String(n || "")).byteLength;
 }
-function ru(n, e) {
+function au(n, e) {
   const t = Number(n?.status);
   if (!(t >= 200 && t < 300) || t === 204 || t === 205) return null;
   let r;
@@ -765,7 +775,7 @@ function ru(n, e) {
     payload: i
   } : null;
 }
-var au = class {
+var nu = class {
   constructor(n = {}) {
     if (!(n.entries instanceof Map)) throw new TypeError("PlaybackInfoCacheStore requires a Map");
     this.entries = n.entries, this.now = typeof n.now == "function" ? n.now : Date.now, this.maxEntries = Math.max(1, Number(n.maxEntries) || 1), this.maxEntryBytes = Math.max(1, Number(n.maxEntryBytes) || 1), this.maxTotalBytes = Math.max(1, Number(n.maxTotalBytes) || 1);
@@ -846,7 +856,7 @@ var au = class {
     }) : (this.entries.delete(n), null);
   }
 };
-function nu() {
+function ou() {
   return {
     NodeCache: /* @__PURE__ */ new Map(),
     PlaybackRouteHotCache: /* @__PURE__ */ new Map(),
@@ -867,7 +877,7 @@ function nu() {
     CleanupState: Hl()
   };
 }
-var Tt = gn(nu), be = (n = null) => Tt.get(n), sr = Wl(), Za = $l(), Zn = Bl(), { runDataMutation: nr, runTidyMutation: ou } = zl(Zn), ee = {
+var Tt = gn(ou), be = (n = null) => Tt.get(n), sr = Wl(), Za = $l(), Zn = Bl(), { runDataMutation: nr, runTidyMutation: su } = zl(Zn), ee = {
   ProxyFailoverStateCache: /* @__PURE__ */ new Map(),
   CryptoKeyCache: /* @__PURE__ */ new Map(),
   PlaybackInfoResponseCache: /* @__PURE__ */ new Map(),
@@ -952,7 +962,7 @@ var te = {
   CfDashboardCacheDbReady: /* @__PURE__ */ new WeakMap(),
   CfRuntimeCacheDbReady: /* @__PURE__ */ new WeakMap()
 };
-function su(n) {
+function iu(n) {
   const e = {}, t = {};
   for (const r of n) for (const a of Object.keys(r)) t[a] = {
     enumerable: !0,
@@ -964,7 +974,7 @@ function su(n) {
   };
   return Object.defineProperties(e, t);
 }
-var iu = su([
+var cu = iu([
   ee,
   Ve,
   te
@@ -984,7 +994,7 @@ function _n(n) {
   const e = String(n?.code || "").trim(), t = Number(n?.status);
   return !!e || Number.isFinite(t) && t >= 400 && t <= 599;
 }
-function cu(n, e = {}) {
+function lu(n, e = {}) {
   const t = xe(e?.status, 500), r = String(e?.code || "INTERNAL_ERROR").trim().toUpperCase() || "INTERNAL_ERROR", a = String(e?.message || "Server Error").trim() || "Server Error", o = _n(n);
   return {
     status: o ? xe(n?.status, t) : t,
@@ -1004,7 +1014,7 @@ function Ri(n = "get", e = {}, t = "unknown_error") {
 function Io(n) {
   return _n(n) && String(n?.code || "").trim().toUpperCase() === "KV_READ_FAILED" && String(n?.details?.dependency || "").trim().toUpperCase() === "KV";
 }
-function lu(n, e = "INTERNAL_ERROR", t = "Server Error", r = "admin.read.kv_read_failed") {
+function uu(n, e = "INTERNAL_ERROR", t = "Server Error", r = "admin.read.kv_read_failed") {
   if (!Io(n)) return n;
   const a = Ie(e, t, 503, { ...k(n?.details) ? n.details : {} });
   return Le(r, a, a.details), a;
@@ -1012,7 +1022,7 @@ function lu(n, e = "INTERNAL_ERROR", t = "Server Error", r = "admin.read.kv_read
 function It(n, e, t, r = "admin.read") {
   if (!Io(n)) return n;
   const a = String(n?.details?.operation || "").trim().toLowerCase() === "list" ? "list" : "get";
-  return lu(n, e, t, `${String(r || "admin.read").trim() || "admin.read"}.kv_${a}_failed`);
+  return uu(n, e, t, `${String(r || "admin.read").trim() || "admin.read"}.kv_${a}_failed`);
 }
 function Le(n, e, t = null, r = "warn") {
   const a = r === "error" ? "error" : "warn", o = String(n || "runtime_failure").trim() || "runtime_failure", s = k(t) ? { ...t } : {}, i = String(e?.code || "").trim(), c = Number(e?.status);
@@ -1038,12 +1048,12 @@ var Ci = 4 * 1024 * 1024, bn = 64 * 1024, wi = Object.freeze({
   "X-Frame-Options": "SAMEORIGIN",
   "X-Content-Type-Options": "nosniff",
   "X-XSS-Protection": "1; mode=block"
-}), fa = Object.freeze({
+}), ma = Object.freeze({
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, HEAD",
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Emby-Authorization, X-Emby-Token, X-Emby-Client, X-Emby-Device-Id, X-Emby-Device-Name, X-Emby-Client-Version, X-MediaBrowser-Authorization, X-MediaBrowser-Token"
 });
-function Kr(n, e) {
+function zr(n, e) {
   const t = n.get("Vary");
   if (!t) {
     n.set("Vary", e);
@@ -1059,7 +1069,7 @@ function ae(n) {
   return Array.isArray(n) || k(n) ? JSON.stringify(n) : n === void 0 ? "" : JSON.stringify(n);
 }
 var $ = () => Date.now(), Li = (n) => new Promise((e) => setTimeout(e, Math.max(0, Number(n) || 0)));
-function uu(n) {
+function du(n) {
   let e = !1, t = () => {
   };
   const r = setTimeout(() => {
@@ -1074,7 +1084,7 @@ function uu(n) {
     }
   };
 }
-var du = Object.freeze({
+var fu = Object.freeze({
   JwtExpiry: 3600 * 24 * 30,
   LoginLockDuration: 900,
   MaxLoginAttempts: 5
@@ -1104,7 +1114,7 @@ var du = Object.freeze({
   CleanupBudgetMs: 1,
   CleanupChunkSize: 64,
   CleanupMinIntervalMs: 1e3
-}), fu = Object.freeze({
+}), mu = Object.freeze({
   EnableHostPrefixProxy: !1,
   MultiLinkCopyPanelEnabled: !1,
   DashboardShowD1WriteHotspot: !1,
@@ -1112,7 +1122,7 @@ var du = Object.freeze({
   UiRadiusPx: 10,
   AdminUiSkin: "classic",
   NodePanelPingAutoSort: !1
-}), mu = Object.freeze({
+}), pu = Object.freeze({
   LogRetentionDays: 7,
   LogRetentionDaysMax: 365,
   LogFlushDelayMinutes: 20,
@@ -1139,7 +1149,7 @@ var du = Object.freeze({
   LogQueueOverflowDropCount: 256,
   LogDedupeMax: 2048,
   LogDedupeTrimTarget: 1024
-}), pu = Object.freeze({
+}), gu = Object.freeze({
   ScheduledLeaseMinMs: 30 * 1e3,
   ScheduledLeaseMs: 300 * 1e3,
   ScheduleUtcOffsetMinutes: 480,
@@ -1170,7 +1180,7 @@ var du = Object.freeze({
   DefaultPlaybackInfoMode: "passthrough",
   DefaultRealClientIpMode: "forward",
   DefaultMediaAuthMode: "auto"
-}), gu = Object.freeze({
+}), hu = Object.freeze({
   DnsHistoryLimit: 5,
   DnsIpProbeCacheTtlSec: 600,
   DnsIpProbeTimeoutMs: 2500,
@@ -1179,23 +1189,23 @@ var du = Object.freeze({
   DnsIpSourceConcurrency: 4,
   DnsIpSourceFetchMaxBytes: 2 * 1024 * 1024,
   DnsIpSourceIpLimit: 5
-}), hu = Object.freeze({
+}), yu = Object.freeze({
   CfQuotaPlanCacheMinutes: 60,
   CfQuotaPlanOverride: ""
-}), yu = Object.freeze({
+}), Su = Object.freeze({
   AssetHash: `v${Ja}`,
   Version: Ja
-}), Su = Object.freeze({
-  ...du,
-  ...vt,
+}), _u = Object.freeze({
   ...fu,
+  ...vt,
   ...mu,
   ...pu,
-  ...We,
   ...gu,
+  ...We,
   ...hu,
-  ...yu
-}), B = Object.freeze({ Defaults: Su });
+  ...yu,
+  ...Su
+}), B = Object.freeze({ Defaults: _u });
 function Ue(n) {
   return fe(n, B.Defaults.ScheduleUtcOffsetMinutes, -720, 840);
 }
@@ -1219,7 +1229,7 @@ function Mr(n = "") {
   const [t, r] = e.split(":");
   return (Number(t) || 0) * 60 + (Number(r) || 0);
 }
-function _u(n = "") {
+function bu(n = "") {
   const e = String(n || "").trim().match(/^(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})$/);
   return e ? {
     dateKey: e[1],
@@ -1229,7 +1239,7 @@ function _u(n = "") {
     clockTime: ""
   };
 }
-function bu(n, e = B.Defaults.ScheduleUtcOffsetMinutes) {
+function Eu(n, e = B.Defaults.ScheduleUtcOffsetMinutes) {
   const t = Ue(e), r = n.getUTCFullYear(), a = String(n.getUTCMonth() + 1).padStart(2, "0"), o = String(n.getUTCDate()).padStart(2, "0"), s = String(n.getUTCHours()).padStart(2, "0"), i = String(n.getUTCMinutes()).padStart(2, "0"), c = String(n.getUTCSeconds()).padStart(2, "0"), l = String(n.getUTCMilliseconds()).padStart(3, "0"), d = t >= 0 ? "+" : "-", u = Math.abs(t);
   return `${r}-${a}-${o}T${s}:${i}:${c}.${l}${d}${String(Math.floor(u / 60)).padStart(2, "0")}:${String(u % 60).padStart(2, "0")}`;
 }
@@ -1247,7 +1257,7 @@ function Oa(n = /* @__PURE__ */ new Date(), e = B.Defaults.ScheduleUtcOffsetMinu
     second: Number(f),
     millisecond: Number(m),
     minuteOfDay: p * 60 + h,
-    localIso: bu(s, t)
+    localIso: Eu(s, t)
   };
 }
 function ps(n = /* @__PURE__ */ new Date(), e = B.Defaults.ScheduleUtcOffsetMinutes) {
@@ -1268,7 +1278,7 @@ function dt(n = /* @__PURE__ */ new Date(), e = B.Defaults.ScheduleUtcOffsetMinu
     endTs: i
   };
 }
-function Eu(n = /* @__PURE__ */ new Date(), e = B.Defaults.ScheduleUtcOffsetMinutes) {
+function Tu(n = /* @__PURE__ */ new Date(), e = B.Defaults.ScheduleUtcOffsetMinutes) {
   const t = ut(n, e);
   return {
     ...t,
@@ -1279,11 +1289,11 @@ function Mo(n = B.Defaults.ScheduleUtcOffsetMinutes) {
   const e = Ue(n), t = e >= 0 ? "+" : "-", r = Math.abs(e);
   return `UTC${t}${String(Math.floor(r / 60)).padStart(2, "0")}:${String(r % 60).padStart(2, "0")}`;
 }
-function Tu(n = {}, e = "") {
+function Au(n = {}, e = "") {
   const t = n?.fixedQueue && typeof n.fixedQueue == "object" ? n.fixedQueue : {};
   let r = String(t.localDateKey || "").trim(), a = xt(t.executedSlots || [], []);
   if (!r) {
-    const o = _u(n?.lastPlannedSlot || "");
+    const o = bu(n?.lastPlannedSlot || "");
     o.dateKey && o.dateKey === e && (r = o.dateKey, a = xt([...a, o.clockTime], []));
   }
   return !e || r !== e ? {
@@ -1294,8 +1304,8 @@ function Tu(n = {}, e = "") {
     executedSlots: a
   };
 }
-function Au(n = {}, e = [], t = B.Defaults.ScheduleUtcOffsetMinutes, r = /* @__PURE__ */ new Date()) {
-  const a = Oa(r, t), o = xt(e, []), s = Tu(n, a.dateKey);
+function Ru(n = {}, e = [], t = B.Defaults.ScheduleUtcOffsetMinutes, r = /* @__PURE__ */ new Date()) {
+  const a = Oa(r, t), o = xt(e, []), s = Au(n, a.dateKey);
   if (!o.length) return {
     due: !1,
     context: a,
@@ -1350,7 +1360,7 @@ function Po(n = "") {
   const e = String(n || "").trim().toLowerCase();
   return e === "strip" ? "strip" : e === "disable" || e === "none" ? "disable" : "forward";
 }
-function zr(n) {
+function Wr(n) {
   return fe(n, B.Defaults.DnsIpSourceIpLimit, 1, 1e3);
 }
 function En(n = "") {
@@ -1361,10 +1371,10 @@ function Or(n = "") {
   const e = String(n || "").trim().toLowerCase();
   return e === "emos" ? "emos" : e === "tmdb" ? "tmdb" : "auto";
 }
-function Wr(n = {}) {
+function Gr(n = {}) {
   return En(n?.mainVideoStreamMode ?? n?.wangpanDirectMode ?? n?.wangpanMode);
 }
-function Gr(n = [], e = "") {
+function Vr(n = [], e = "") {
   const t = Array.isArray(n) ? n : String(n || "").split(/[,，\r\n]+/), r = [], a = /* @__PURE__ */ new Set();
   for (const o of [...t, e]) {
     const s = String(o || "").trim().slice(0, 24), i = s.toLowerCase();
@@ -1621,7 +1631,7 @@ var eo = /\b(?:(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)
     !t || !r || n[t] || (n[t] = r);
   }
   return n.CN = n.CN || "中国", n.HK = n.HK || "中国香港", n.MO = n.MO || "中国澳门", n.TW = n.TW || "中国台湾", n;
-})()), sa = null;
+})()), ia = null;
 function va(n = "") {
   const e = String(n || "").trim();
   if (!e || !/^(?:\d{1,3}\.){3}\d{1,3}$/.test(e)) return !1;
@@ -1631,7 +1641,7 @@ function va(n = "") {
     return Number.isInteger(a) && a >= 0 && a <= 255;
   });
 }
-function Ru(n = "") {
+function Cu(n = "") {
   if (!va(n)) return !1;
   const [e = 0, t = 0] = String(n || "").trim().split(".").map((r) => Number(r));
   return e === 10 || e === 127 || e === 169 && t === 254 || e === 172 && t >= 16 && t <= 31 ? !0 : e === 192 && t === 168;
@@ -1668,7 +1678,7 @@ function xo(n = "", e = {}) {
   for (; (c = eo.exec(t)) !== null && !i(c[0]); ) ;
   return a;
 }
-function Cu(n = null) {
+function wu(n = null) {
   const e = Array.isArray(n?.Answer) ? n.Answer : [], t = /* @__PURE__ */ new Set(), r = [];
   for (const a of e) {
     const o = String(a?.data || "").trim(), s = Je(o);
@@ -1684,7 +1694,7 @@ function Cu(n = null) {
 function vn(n = "") {
   return String(n || "").replace(/&nbsp;/gi, " ").replace(/&amp;/gi, "&").replace(/&lt;/gi, "<").replace(/&gt;/gi, ">").replace(/&quot;/gi, '"').replace(/&#39;/gi, "'");
 }
-function wu(n = "") {
+function Lu(n = "") {
   const e = /* @__PURE__ */ new Map(), t = String(n || ""), r = t.match(/\[[0-9a-f:]{2,}\]/gi) || [];
   for (const o of r) {
     const s = String(o || "").replace(/^\[|\]$/g, "").trim();
@@ -1697,19 +1707,19 @@ function wu(n = "") {
   }
   return [...e.values()];
 }
-function Lu(n = "") {
+function Nu(n = "") {
   const e = String(n || "").trim().toLowerCase();
   return e === "联通" ? "联通" : e === "电信" ? "电信" : e === "移动" ? "移动" : e === "多线" ? "多线" : e === "ipv6" ? "ipv6" : "";
 }
 function hs(n = "", e = "") {
-  const t = Lu(e);
+  const t = Nu(e);
   return t ? String(n || "").trim().toLowerCase() === t.toLowerCase() : !0;
 }
-function Nu(n = "", e = "") {
+function Du(n = "", e = "") {
   const t = /* @__PURE__ */ new Map(), r = (s, i = "") => {
     const c = String(s || "").trim(), l = Je(c);
-    if (!l || Ru(c)) return;
-    const d = c.toLowerCase(), u = Vr(i), f = t.get(d);
+    if (!l || Cu(c)) return;
+    const d = c.toLowerCase(), u = jr(i), f = t.get(d);
     if (!f) {
       t.set(d, {
         ip: c,
@@ -1718,7 +1728,7 @@ function Nu(n = "", e = "") {
       });
       return;
     }
-    !Vr(f?.lineLabel) && u && t.set(d, {
+    !jr(f?.lineLabel) && u && t.set(d, {
       ...f,
       lineLabel: u
     });
@@ -1728,7 +1738,7 @@ function Nu(n = "", e = "") {
     if (i.length < 3) continue;
     const c = vn(String(i[1] || "").replace(/<[^>]+>/g, " ")).replace(/\s+/g, " ").trim();
     if (!hs(c, e)) continue;
-    const l = wu(vn(String(i[2] || "").replace(/<[^>]+>/g, " "))).find((d) => Je(d)) || "";
+    const l = Lu(vn(String(i[2] || "").replace(/<[^>]+>/g, " "))).find((d) => Je(d)) || "";
     l && r(l, c);
   }
   if (!t.size) {
@@ -1740,10 +1750,10 @@ function Nu(n = "", e = "") {
   }
   return [...t.values()];
 }
-function Du(n = "", e = {}) {
+function Iu(n = "", e = {}) {
   return xo(n, e);
 }
-function Iu(n = "") {
+function Mu(n = "") {
   const e = String(n || "").trim().toUpperCase(), t = Di[e];
   return e ? t ? {
     coloCode: e,
@@ -1762,13 +1772,13 @@ function Iu(n = "") {
     countryName: "未知"
   };
 }
-function Mu(n = "") {
+function Pu(n = "") {
   const e = String(n || "").trim().toUpperCase();
   if (!e || e === "UNKNOWN") return "未知";
   if (gs[e]) return gs[e];
   try {
-    if (sa === null && (sa = typeof Intl?.DisplayNames == "function" ? new Intl.DisplayNames(["zh-CN"], { type: "region" }) : !1), sa && typeof sa.of == "function") {
-      const t = String(sa.of(e) || "").trim();
+    if (ia === null && (ia = typeof Intl?.DisplayNames == "function" ? new Intl.DisplayNames(["zh-CN"], { type: "region" }) : !1), ia && typeof ia.of == "function") {
+      const t = String(ia.of(e) || "").trim();
       if (t) return t;
     }
   } catch {
@@ -1781,7 +1791,7 @@ function Mi(n = "") {
   const t = e.match(/-([A-Za-z]{3,4})$/);
   return t ? String(t[1] || "").trim().toUpperCase() : "";
 }
-function Pu(n = "") {
+function xu(n = "") {
   return `dns-ip-source-${ie(n || `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)}`;
 }
 function Rt(n = "") {
@@ -1834,7 +1844,7 @@ var Pi = Object.freeze([Object.freeze({
     sourceType: "url",
     url: "https://raw.githubusercontent.com/hubbylei/bestcf/main/bestcf.txt"
   })
-]), xu = Object.freeze([
+]), Ou = Object.freeze([
   Object.freeze({
     label: "CM优选域名集合",
     url: "https://cf.090227.xyz/"
@@ -1847,14 +1857,14 @@ var Pi = Object.freeze([Object.freeze({
     label: "VPS789 域名优选",
     url: "https://vps789.com/cfip/?remarks=domain"
   })
-]), Ou = Object.freeze([Object.freeze({
+]), vu = Object.freeze([Object.freeze({
   label: "VPS789 优选IP",
   url: "https://vps789.com/cfip/"
 }), Object.freeze({
   label: "Wetest IPv4 优选",
   url: "https://www.wetest.vip/page/cloudflare/address_v4.html"
 })]);
-function vu(n = "") {
+function Fu(n = "") {
   const e = String(n || "").trim().toLowerCase();
   return e === "builtin" ? "builtin" : e === "preset" ? "preset" : "custom";
 }
@@ -1862,15 +1872,15 @@ function Oi(n = "") {
   const e = String(n || "").trim().toLowerCase();
   return e === "preferred" ? "preferred" : e === "all" ? "all" : "";
 }
-function Fu(n = "") {
+function Uu(n = "") {
   return String(n || "").trim().toLowerCase().replace(/[^a-z0-9_:-]+/g, "_");
 }
-function Uu(n = "") {
+function ku(n = "") {
   const e = Oi(n);
   return Pi.find((t) => t.id === e) || null;
 }
-function ku(n = "") {
-  const e = Fu(n);
+function Hu(n = "") {
+  const e = Uu(n);
   return e && xi.find((t) => t.id === e) || null;
 }
 function Tr() {
@@ -1887,16 +1897,16 @@ function Tr() {
       sourceType: n.sourceType,
       value: "domain" in n ? n.domain : n.url
     })),
-    preferredDomainLinks: xu.map((n) => ({ ...n })),
-    preferredIpLinks: Ou.map((n) => ({ ...n }))
+    preferredDomainLinks: Ou.map((n) => ({ ...n })),
+    preferredIpLinks: vu.map((n) => ({ ...n }))
   };
 }
-function Vr(n = "") {
+function jr(n = "") {
   const e = String(n || "").trim().toLowerCase();
   return e.includes("联通") ? "联通" : e.includes("电信") ? "电信" : e.includes("移动") ? "移动" : e.includes("多线") ? "多线" : e.includes("ipv6") ? "ipv6" : "";
 }
 function vi(n = {}) {
-  const e = vu(n?.sourceKind || n?.source_kind || ""), t = e === "builtin" ? Uu(n?.builtinId || n?.builtin_id || n?.presetId || n?.preset_id || n?.name) : null, r = e === "preset" ? ku(n?.presetId || n?.preset_id || n?.builtinId || n?.builtin_id || n?.name) : null, a = t || r || null, o = Rt(a?.sourceType || n?.sourceType || n?.source_type || ""), s = a && "url" in a ? a.url : "", i = a && "domain" in a ? a.domain : "", c = String(s || n?.url || "").trim(), l = oe(i || n?.domain || ""), d = String(n?.name || a?.label || "").trim();
+  const e = Fu(n?.sourceKind || n?.source_kind || ""), t = e === "builtin" ? ku(n?.builtinId || n?.builtin_id || n?.presetId || n?.preset_id || n?.name) : null, r = e === "preset" ? Hu(n?.presetId || n?.preset_id || n?.builtinId || n?.builtin_id || n?.name) : null, a = t || r || null, o = Rt(a?.sourceType || n?.sourceType || n?.source_type || ""), s = a && "url" in a ? a.url : "", i = a && "domain" in a ? a.domain : "", c = String(s || n?.url || "").trim(), l = oe(i || n?.domain || ""), d = String(n?.name || a?.label || "").trim();
   return {
     sourceKind: e,
     builtinId: t?.id || "",
@@ -1918,7 +1928,7 @@ function cr(n = {}) {
 function gr(n = {}, e = {}) {
   const t = String(n?.ip || n?.content || "").trim(), r = Je(t);
   if (!t || !r) return null;
-  const a = String(e.updatedAt || /* @__PURE__ */ (/* @__PURE__ */ new Date()).toISOString()), o = String(n?.sourceKind || n?.source_kind || e.sourceKind || "manual").trim().toLowerCase() || "manual", s = String(n?.sourceLabel || n?.source_label || e.sourceLabel || "").trim(), i = Vr(n?.lineLabel || n?.line_label || e.lineLabel || ""), c = String(n?.remark || "").trim();
+  const a = String(e.updatedAt || /* @__PURE__ */ (/* @__PURE__ */ new Date()).toISOString()), o = String(n?.sourceKind || n?.source_kind || e.sourceKind || "manual").trim().toLowerCase() || "manual", s = String(n?.sourceLabel || n?.source_label || e.sourceLabel || "").trim(), i = jr(n?.lineLabel || n?.line_label || e.lineLabel || ""), c = String(n?.remark || "").trim();
   return {
     id: String(n?.id || `dns-ip-${ie(t.toLowerCase())}`),
     ip: t,
@@ -1934,7 +1944,7 @@ function gr(n = {}, e = {}) {
 function Ot(n = {}, e = 0) {
   const t = /* @__PURE__ */ (/* @__PURE__ */ new Date()).toISOString(), r = vi(n), a = r.sourceKind, o = Rt(r.sourceType), s = String(r.builtinId || n?.builtinId || n?.builtin_id || "").trim(), i = String(r.presetId || n?.presetId || n?.preset_id || "").trim(), c = String(r.resolvedLabel || "").trim(), l = String(r.url || "").trim(), d = oe(r.domain || ""), u = o === "domain" ? d : l, f = String(n?.name || c || "").trim(), m = n?.enabled, p = m == null ? !0 : !(m === !1 || m === 0 || String(m).trim() === "0");
   return {
-    id: String(n?.id || Pu(`${a}|${s}|${i}|${o}|${u}|${e}`)),
+    id: String(n?.id || xu(`${a}|${s}|${i}|${o}|${u}|${e}`)),
     name: f || c || `抓取源 ${Number(e) + 1}`,
     url: l,
     domain: d,
@@ -1944,7 +1954,7 @@ function Ot(n = {}, e = 0) {
     builtinId: s,
     enabled: p,
     sortOrder: Math.max(0, Number.parseInt(String(n?.sortOrder ?? n?.sort_order ?? e), 10) || 0),
-    ipLimit: zr(n?.ipLimit ?? n?.ip_limit),
+    ipLimit: Wr(n?.ipLimit ?? n?.ip_limit),
     lastFetchAt: String(n?.lastFetchAt || n?.last_fetch_at || ""),
     lastFetchStatus: String(n?.lastFetchStatus || n?.last_fetch_status || ""),
     lastFetchCount: Math.max(0, Number(n?.lastFetchCount ?? n?.last_fetch_count) || 0),
@@ -1965,14 +1975,14 @@ function hr(n = []) {
       continue;
     }
     const i = e[s];
-    i && !Vr(i.lineLabel) && Vr(a.lineLabel) && (e[s] = {
+    i && !jr(i.lineLabel) && jr(a.lineLabel) && (e[s] = {
       ...i,
       lineLabel: a.lineLabel
     });
   }
   return e;
 }
-function Hu(n = {}) {
+function $u(n = {}) {
   const e = gr(n);
   return e ? {
     ...e,
@@ -1987,14 +1997,14 @@ function Hu(n = {}) {
   } : null;
 }
 function Oo(n = []) {
-  return hr(n).map((e) => Hu(e)).filter(Boolean);
+  return hr(n).map((e) => $u(e)).filter(Boolean);
 }
 function An(n = "") {
   const e = String(n || "").trim().toLowerCase();
   return e === "success" ? "success" : e === "failed" ? "failed" : "empty";
 }
 function Ui(n = {}, e = {}) {
-  const t = Ot(e), r = hr(n?.items || []).slice(0, zr(t?.ipLimit)), a = An(n?.status || (r.length ? "success" : "empty"));
+  const t = Ot(e), r = hr(n?.items || []).slice(0, Wr(t?.ipLimit)), a = An(n?.status || (r.length ? "success" : "empty"));
   return {
     id: String(n?.id || t?.id || ""),
     name: String(n?.name || t?.name || ""),
@@ -2021,7 +2031,7 @@ function ki(n = []) {
     };
   });
 }
-function $u(n = []) {
+function Bu(n = []) {
   const e = Array.isArray(n) ? n : [];
   return e.length ? e.some((t) => An(t?.status) !== "failed") : !0;
 }
@@ -2037,12 +2047,12 @@ function Va(n = [], e = B.Defaults.DnsIpSourceFetchMaxBytes) {
       name: String(t.name || ""),
       sourceType: Rt(t.sourceType),
       target: Fi(t),
-      ipLimit: zr(t.ipLimit),
+      ipLimit: Wr(t.ipLimit),
       enabled: t.enabled !== !1
     }))
   }));
 }
-function Bu(n = "") {
+function Ku(n = "") {
   return String(n || "").trim().toLowerCase() === "shared_snapshot" ? "shared_snapshot" : "local_pool";
 }
 function Hi(n = []) {
@@ -2075,7 +2085,7 @@ function ys(n = [], e = /* @__PURE__ */ new Set()) {
     removedItems: r
   };
 }
-function Ku(n = {}, e = []) {
+function zu(n = {}, e = []) {
   const { deleteKeySet: t } = Hi(e), r = hr(n?.items || []), a = Array.isArray(n?.sourceResults) ? n.sourceResults : [];
   if (!t.size) return {
     deletedCount: 0,
@@ -2123,7 +2133,7 @@ function Fn(n = []) {
     coloCount: r.size
   };
 }
-function zu(n = [], e = []) {
+function Wu(n = [], e = []) {
   const t = Array.isArray(n) ? n : [], r = Array.isArray(e) ? e : [];
   return {
     currentHost: Fn(t),
@@ -2131,20 +2141,20 @@ function zu(n = [], e = []) {
     combined: Fn([...t, ...r])
   };
 }
-function Wu(n = "") {
+function Gu(n = "") {
   const e = String(n || "").trim().toLowerCase();
   if (!e) return "";
   const t = e.endsWith(".") ? e.slice(0, -1) : e;
   return !t || t.length > 253 || t.endsWith(".") || /\s|[:/@*?#\\]/.test(t) || va(t) || Tn(t) || t.split(".").some((r) => !Fa(r)) ? "" : t;
 }
 function Ge(n) {
-  return Wu(n?.HOST);
+  return Gu(n?.HOST);
 }
-function jr(n) {
+function qr(n) {
   return oe(n?.LEGACY_HOST);
 }
-function Gu(n) {
-  const e = Ge(n), t = jr(n), r = vo(t, e);
+function Vu(n) {
+  const e = Ge(n), t = qr(n), r = vo(t, e);
   return r?.prefix ? {
     name: String(r.prefix || "").trim().toLowerCase(),
     reservedBy: t,
@@ -2169,7 +2179,7 @@ function $i(n = "") {
   const e = String(n || "").trim();
   return !e || Xt(e) ? "" : "CNAME 指向必须是合法主机名，不能包含协议、端口、路径、通配符、空格或 IP 地址";
 }
-function Vu(n = "", e = "defaultHostPrefixCnameTarget") {
+function ju(n = "", e = "defaultHostPrefixCnameTarget") {
   const t = $i(n);
   if (t)
     throw Ie("HOST_PREFIX_CNAME_TARGET_INVALID", t, 400, {
@@ -2207,7 +2217,7 @@ function Fo(n, e = {}) {
   let r = 0;
   return e.wildcard || (r += 100), n.includes(".workers.dev") && (r -= 20), t === "/" || t === "/*" ? r += 20 : t.endsWith("*") ? r += 10 : t && (r += 4), r += n.split(".").length * 4, r -= Math.min(t.length, 30), r;
 }
-var ju = "https://admin-local-index.invalid", qu = "local-", Xu = "sys:admin_index_upload:v1:", Yu = "sys:admin_index_active:v2";
+var qu = "https://admin-local-index.invalid", Xu = "local-", Yu = "sys:admin_index_upload:v1:", Ju = "sys:admin_index_active:v2";
 function vr(n = "") {
   const e = String(n || "").trim();
   if (!e) return "";
@@ -2218,21 +2228,21 @@ function vr(n = "") {
     return "";
   }
 }
-function Ju(n = "") {
+function Qu(n = "") {
   const e = String(n || "").trim();
   return !(!e || /[\x00-\x20~^:?*[\\\]]/.test(e) || e.includes("..") || e.includes("@{") || e.includes("//") || e.startsWith("/") || e.endsWith("/") || e.endsWith(".") || e.endsWith(".lock"));
 }
 function yt(n = "") {
   const e = String(n || "").trim();
-  return Ju(e) ? e : "";
+  return Qu(e) ? e : "";
 }
 function Mt(n = "") {
   const e = String(n || "").trim().toLowerCase();
   return /^[a-f0-9]{64}$/.test(e) ? e : "";
 }
-function qr(n = "") {
+function Xr(n = "") {
   const e = Mt(n);
-  return e ? `${ju}/${e}/index.html` : "";
+  return e ? `${qu}/${e}/index.html` : "";
 }
 function tt(n = "") {
   const e = vr(n);
@@ -2246,14 +2256,14 @@ function tt(n = "") {
 }
 function Uo(n = "") {
   const e = Mt(n);
-  return e ? `${qu}${e}` : "";
+  return e ? `${Xu}${e}` : "";
 }
-function Qu(n = "") {
+function Zu(n = "") {
   const e = String(n || "").trim().toLowerCase();
   return e.startsWith("local-") ? Mt(e.slice(6)) : "";
 }
 function St(n = null, e = {}) {
-  const t = vr((k(e) ? e : {}).indexUrl), r = tt(t), a = !!r, o = a ? qr(r) : "";
+  const t = vr((k(e) ? e : {}).indexUrl), r = tt(t), a = !!r, o = a ? Xr(r) : "";
   return {
     effectiveRef: r,
     effectiveRefType: a ? "local_upload" : "",
@@ -2271,7 +2281,7 @@ function St(n = null, e = {}) {
     gateState: o ? "shell_ready" : "setup_required"
   };
 }
-function Zu(n = {}) {
+function ed(n = {}) {
   const e = String(k(n) && n.indexUrl || "").trim();
   if (!(!e || tt(e)))
     throw Ie("ADMIN_INDEX_SOURCE_UPLOAD_ONLY", "管理台 HTML 仅支持本地上传，请通过启动门或 Worker 和 HTML 更新面板提交 index.html", 400, { field: "indexUrl" });
@@ -2293,7 +2303,7 @@ function zi(n = {}) {
       reason: "invalid_hostname"
     });
 }
-function ed(n = {}, e = null) {
+function td(n = {}, e = null) {
   if (n?.enableHostPrefixProxy !== !0) return;
   const t = Ki(n, e);
   if (zi(t), !(t.missingFields.length <= 0))
@@ -2302,7 +2312,7 @@ function ed(n = {}, e = null) {
       host: t.host
     });
 }
-function ma(n = {}, e = null) {
+function pa(n = {}, e = null) {
   const t = Ki(n, e);
   if (zi(t), t.missingFields.length <= 0) return t;
   throw Ie("HOST_PREFIX_DNS_CONFIG_REQUIRED", "保存域名前缀节点前，必须先配置 HOST、Cloudflare Zone ID 和 API 令牌", 400, {
@@ -2311,22 +2321,22 @@ function ma(n = {}, e = null) {
   });
 }
 function Un(n = [], e = {}, t = null) {
-  return (Array.isArray(n) ? n : [n]).some((r) => et(r?.nextNode?.entryMode)) ? ma(e, t) : null;
+  return (Array.isArray(n) ? n : [n]).some((r) => et(r?.nextNode?.entryMode)) ? pa(e, t) : null;
 }
-var td = We.PingTimeoutMs, rd = We.UpstreamTimeoutMs, to = We.UpstreamRetryAttempts, Wi = We.HedgeProbePath, Ss = "/emby/system/info/public", ad = "/emby/system/ping", nd = "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7", ro = "Hills/1.10.0 (android; 16)";
-function od(n = "") {
+var rd = We.PingTimeoutMs, ad = We.UpstreamTimeoutMs, to = We.UpstreamRetryAttempts, Wi = We.HedgeProbePath, Ss = "/emby/system/info/public", nd = "/emby/system/ping", od = "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7", ro = "Hills/1.10.0 (android; 16)";
+function sd(n = "") {
   return String(n || "").trim() || ro;
 }
 function ko(n = "") {
   return {
     Accept: "*/*",
-    "Accept-Language": nd,
+    "Accept-Language": od,
     "Cache-Control": "no-store",
     Pragma: "no-cache",
-    "User-Agent": od(n)
+    "User-Agent": sd(n)
   };
 }
-var sd = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36", Ho = We.HedgeProbeTimeoutMs, Gi = We.HedgeProbeParallelism, Vi = We.HedgeWaitTimeoutMs, ji = We.HedgeLockTtlMs, ua = We.HedgePreferredTtlSec, qi = We.HedgeFailureCooldownSec, Xi = We.HedgeWakeJitterMs, Yi = We.BufferedRetryBodyMaxBytes, id = We.MetadataPrewarmTimeoutMs, cd = We.PrewarmCacheTtl, ld = vt.PlaybackInfoCacheTtlSec, $o = vt.PlaybackInfoCacheEntryMaxBytes, ud = vt.PlaybackInfoCacheTotalMaxBytes, Ji = vt.VideoProgressForwardIntervalSec, dd = vt.VideoProgressSnapshotMaxBytes, Qi = vt.CacheTtlImagesDays, fd = vt.PlaybackRouteHotCacheTtlMs, lr = vt.PlaybackRouteHotCacheMax, Zi = 12 * 1024 * 1024, md = Zi - 64 * 1024, pd = 2e6, Yt = 19e5, _s = 50, ec = 512 * 1024, gd = 4, Bo = 8 * 1024 * 1024, kn = 256 * 1024, ao = 32, bs = 64, Es = 64 * 1024, Ts = 128, As = 8 * 1024, Ar = 4 * 1024, hd = Object.freeze([
+var id = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36", Ho = We.HedgeProbeTimeoutMs, Gi = We.HedgeProbeParallelism, Vi = We.HedgeWaitTimeoutMs, ji = We.HedgeLockTtlMs, da = We.HedgePreferredTtlSec, qi = We.HedgeFailureCooldownSec, Xi = We.HedgeWakeJitterMs, Yi = We.BufferedRetryBodyMaxBytes, cd = We.MetadataPrewarmTimeoutMs, ld = We.PrewarmCacheTtl, ud = vt.PlaybackInfoCacheTtlSec, $o = vt.PlaybackInfoCacheEntryMaxBytes, dd = vt.PlaybackInfoCacheTotalMaxBytes, Ji = vt.VideoProgressForwardIntervalSec, fd = vt.VideoProgressSnapshotMaxBytes, Qi = vt.CacheTtlImagesDays, md = vt.PlaybackRouteHotCacheTtlMs, lr = vt.PlaybackRouteHotCacheMax, Zi = 12 * 1024 * 1024, pd = Zi - 64 * 1024, gd = 2e6, Yt = 19e5, _s = 50, ec = 512 * 1024, hd = 4, Bo = 8 * 1024 * 1024, kn = 256 * 1024, ao = 32, bs = 64, Es = 64 * 1024, Ts = 128, As = 8 * 1024, Ar = 4 * 1024, yd = Object.freeze([
   "displayName",
   "remark",
   "tag",
@@ -2335,12 +2345,12 @@ var sd = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, l
   "secret",
   "hostPrefixCnameTarget",
   "hedgeProbePath"
-]), Rs = 500, Ka = 1e4, Fr = 25e3, za = 1e4, yd = 1e4, Hn = 1e4, Sd = 600 * 1e3, _d = 120 * 1e3, it = 2, Wa = 2;
+]), Rs = 500, Ka = 1e4, Fr = 25e3, za = 1e4, Sd = 1e4, Hn = 1e4, _d = 600 * 1e3, bd = 120 * 1e3, it = 2, Wa = 2;
 function $n(n = "") {
   const e = String(n || "").trim().toUpperCase();
   return e.includes("INT") ? "INTEGER" : e.includes("CHAR") || e.includes("CLOB") || e.includes("TEXT") ? "TEXT" : e.includes("REAL") || e.includes("FLOA") || e.includes("DOUB") ? "REAL" : !e || e.includes("BLOB") ? "BLOB" : "NUMERIC";
 }
-var Xr = /\.(?:jpg|jpeg|gif|png|svg|ico|webp)$/i, bd = /\.(?:js|css|woff2?|ttf|otf|map|webmanifest)$/i, yr = /\.(?:srt|ass|vtt|sub)$/i, Yr = /(?:\/Images\/|\/Icons\/|\/Branding\/|\/emby\/covers\/)/i, At = /\.(?:m3u8|mpd)$/i, tc = /\.(?:ts|m4s)$/i, Ed = /\.(?:mp4|m4v|m4a|ogv|webm|mkv|mov|avi|wmv|flv)$/i, Ta = /* @__PURE__ */ new Set([
+var Yr = /\.(?:jpg|jpeg|gif|png|svg|ico|webp)$/i, Ed = /\.(?:js|css|woff2?|ttf|otf|map|webmanifest)$/i, yr = /\.(?:srt|ass|vtt|sub)$/i, Jr = /(?:\/Images\/|\/Icons\/|\/Branding\/|\/emby\/covers\/)/i, At = /\.(?:m3u8|mpd)$/i, tc = /\.(?:ts|m4s)$/i, Td = /\.(?:mp4|m4v|m4a|ogv|webm|mkv|mov|avi|wmv|flv)$/i, Ta = /* @__PURE__ */ new Set([
   "host",
   "x-real-ip",
   "x-forwarded-for",
@@ -2356,7 +2366,7 @@ var Xr = /\.(?:jpg|jpeg|gif|png|svg|ico|webp)$/i, bd = /\.(?:js|css|woff2?|ttf|o
   "proxy-authenticate",
   "trailer",
   "expect"
-]), Td = /* @__PURE__ */ new Set([
+]), Ad = /* @__PURE__ */ new Set([
   "cf-connecting-ip",
   "cf-connecting-ipv6",
   "cf-ipcountry",
@@ -2377,7 +2387,7 @@ var Xr = /\.(?:jpg|jpeg|gif|png|svg|ico|webp)$/i, bd = /\.(?:js|css|woff2?|ttf|o
   "cf-visitor",
   "cf-ray",
   "cf-pseudo-ipv4"
-]), Ad = /* @__PURE__ */ new Set([
+]), Rd = /* @__PURE__ */ new Set([
   "access-control-allow-origin",
   "access-control-allow-methods",
   "access-control-allow-headers",
@@ -2389,7 +2399,7 @@ var Xr = /\.(?:jpg|jpeg|gif|png|svg|ico|webp)$/i, bd = /\.(?:js|css|woff2?|ttf|o
   "referrer-policy",
   "x-powered-by",
   "server"
-]), Ko = "legacy_proxy_ctx", Rd = 86400, Aa = [Ko, "emby_web_bypass"], Cd = /* @__PURE__ */ new Set([
+]), Ko = "legacy_proxy_ctx", Cd = 86400, Aa = [Ko, "emby_web_bypass"], wd = /* @__PURE__ */ new Set([
   "users",
   "items",
   "videos",
@@ -2398,11 +2408,11 @@ var Xr = /\.(?:jpg|jpeg|gif|png|svg|ico|webp)$/i, bd = /\.(?:js|css|woff2?|ttf|o
   "sessions",
   "system"
 ]);
-function ra(n, e, t = null) {
-  const r = e.headers.get("Origin"), a = e.headers.get("Access-Control-Request-Headers") || fa["Access-Control-Allow-Headers"];
+function aa(n, e, t = null) {
+  const r = e.headers.get("Origin"), a = e.headers.get("Access-Control-Request-Headers") || ma["Access-Control-Allow-Headers"];
   return {
-    "Access-Control-Allow-Origin": t || r || fa["Access-Control-Allow-Origin"],
-    "Access-Control-Allow-Methods": fa["Access-Control-Allow-Methods"],
+    "Access-Control-Allow-Origin": t || r || ma["Access-Control-Allow-Origin"],
+    "Access-Control-Allow-Methods": ma["Access-Control-Allow-Methods"],
     "Access-Control-Allow-Headers": a,
     "Access-Control-Expose-Headers": "Content-Length, Content-Range",
     "Access-Control-Max-Age": "86400"
@@ -2436,7 +2446,7 @@ function Ra(n = "") {
   const r = `/${t.join("/")}`;
   return r === "/web" || r.startsWith("/web/");
 }
-function Jr(n = "") {
+function Qr(n = "") {
   const e = String(n || ""), t = new TextEncoder().encode(e);
   let r = "";
   for (const a of t) r += String.fromCharCode(a);
@@ -2472,7 +2482,7 @@ function Rn(n = "/admin") {
 function zo(n) {
   return Rn(ft(n));
 }
-function wd(n) {
+function Ld(n) {
   const e = ft(n), t = Z(e).toLowerCase(), r = [], a = t.split("/").filter(Boolean).map((o) => at(o).toLowerCase());
   return a.length === 1 && a[0] && r.push({
     name: a[0],
@@ -2484,9 +2494,9 @@ function wd(n) {
     reason: "legacy_admin_login"
   }), r;
 }
-function Ld(n, e) {
+function Nd(n, e) {
   const t = String(n || "").trim().toLowerCase();
-  return t && wd(e).find((r) => r.name === t) || null;
+  return t && Ld(e).find((r) => r.name === t) || null;
 }
 function nc(n = {}) {
   return String(n?.name || "").trim() ? String(n?.target || "").trim() ? !0 : Array.isArray(n?.lines) && n.lines.length > 0 : !1;
@@ -2495,7 +2505,7 @@ function Cs(n, e) {
   const t = Array.isArray(n) ? n : [n];
   for (const r of t) {
     if (!nc(r) || et(r?.entryMode)) continue;
-    const a = Ld(r?.name, e);
+    const a = Nd(r?.name, e);
     if (a)
       return {
         ...a,
@@ -2504,7 +2514,7 @@ function Cs(n, e) {
   }
   return null;
 }
-function Nd(n = {}, e = null) {
+function Dd(n = {}, e = null) {
   if (!et(n?.entryMode)) return null;
   const t = String(n?.name || "").trim().toLowerCase();
   if (!t) return {
@@ -2517,7 +2527,7 @@ function Nd(n = {}, e = null) {
     message: "域名前缀仅支持小写字母、数字、连字符，且不能以下划线、点或连字符结尾",
     name: t
   };
-  const r = Gu(e);
+  const r = Vu(e);
   if (r && r.name === t) return {
     code: "HOST_PREFIX_RESERVED_BY_LEGACY_HOST",
     message: "该域名前缀已被旧部署子域兼容入口保留，请更换后重试",
@@ -2540,19 +2550,19 @@ function ws(n, e = null) {
   const t = Array.isArray(n) ? n : [n];
   for (const r of t) {
     if (!nc(r)) continue;
-    const a = Nd(r, e);
+    const a = Dd(r, e);
     if (a) return a;
   }
   return null;
 }
-function Dd(n) {
+function Id(n) {
   const e = ft(n);
   return e === "/" ? "/" : e;
 }
 function Ce(n) {
   return String(n ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
-function Qr(n) {
+function Zr(n) {
   return JSON.stringify(n).replace(/</g, "\\u003c").replace(/>/g, "\\u003e").replace(/&/g, "\\u0026").replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029");
 }
 function Ke(n, e = null) {
@@ -2578,23 +2588,23 @@ function no(n) {
   const e = Array.isArray(n.missing) && n.missing.length ? n.missing.map((t) => `<code class="rounded bg-amber-100/80 px-1.5 py-0.5 text-[11px] font-semibold text-amber-700">${Ce(t)}</code>`).join(" ") : '<code class="rounded bg-amber-100/80 px-1.5 py-0.5 text-[11px] font-semibold text-amber-700">UNKNOWN</code>';
   return `<div id="init-health-banner" class="mx-4 mt-4 rounded-2xl border border-amber-200 bg-amber-50/95 px-4 py-3 text-sm text-amber-900 shadow-sm"><div class="flex flex-col gap-1 md:flex-row md:items-center md:justify-between"><div class="font-semibold">系统未初始化</div><div class="text-xs text-amber-700">管理入口：${Ce(n.adminPath || "/admin")}</div></div><p class="mt-2 leading-6">检测到关键环境变量缺失：${e}</p><p class="mt-1 text-xs leading-5 text-amber-700">请先在 Cloudflare Worker 环境变量中补齐后再使用管理台登录与敏感操作。</p></div>`;
 }
-function da(n) {
+function fa(n) {
   return String(n?.cf?.colo || "").trim().toUpperCase() || "UNKNOWN";
 }
 function rn(n) {
   return Mi(String(n?.headers?.get?.("CF-RAY") || n?.headers?.get?.("cf-ray") || "").trim());
 }
-function Id(n) {
+function Md(n) {
   return String(n?.cf?.country || "").trim().toUpperCase() || "UNKNOWN";
 }
-function Md(n) {
-  const e = Id(n);
+function Pd(n) {
+  const e = Md(n);
   return {
     countryCode: e,
-    countryName: Mu(e)
+    countryName: Pu(e)
   };
 }
-function Pd(n = {}, e = {}) {
+function xd(n = {}, e = {}) {
   const { statusPort: t } = n, r = '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"><link rel="icon" href="/favicon.ico" sizes="any"><title>Emby Proxy Admin Shell</title><script id="admin-bootstrap" type="application/json">__ADMIN_BOOTSTRAP_JSON__<\/script><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(circle at top,#0f172a 0,#020617 44%,#020617 100%);color:#e2e8f0;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}a{color:inherit;text-decoration:none}.admin-fallback-shell{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:32px 18px}.admin-fallback-card{width:min(100%,980px);border:1px solid rgba(51,65,85,.92);border-radius:30px;background:rgba(15,23,42,.94);box-shadow:0 32px 96px rgba(2,6,23,.52);padding:28px;backdrop-filter:blur(20px)}.admin-fallback-pill{display:inline-flex;align-items:center;gap:8px;border-radius:999px;padding:8px 14px;background:rgba(59,130,246,.12);border:1px solid rgba(96,165,250,.32);color:#bfdbfe;font-size:12px;font-weight:700;letter-spacing:.14em;text-transform:uppercase}.admin-fallback-title{margin:20px 0 0;font-size:clamp(1.9rem,4vw,3rem);line-height:1.08;color:#fff}.admin-fallback-copy{margin:14px 0 0;max-width:54rem;color:#cbd5e1;font-size:15px;line-height:1.8}.admin-fallback-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-top:24px}.admin-fallback-stat{border:1px solid rgba(51,65,85,.9);border-radius:22px;background:rgba(2,6,23,.48);padding:16px}.admin-fallback-k{font-size:12px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#64748b}.admin-fallback-v{margin-top:10px;font-size:15px;line-height:1.7;color:#f8fafc;word-break:break-word}.admin-fallback-actions{display:flex;flex-wrap:wrap;gap:12px;margin-top:24px}.admin-fallback-btn{display:inline-flex;align-items:center;justify-content:center;border-radius:16px;padding:12px 18px;font-size:14px;font-weight:700;transition:transform .18s ease,background-color .18s ease,border-color .18s ease}.admin-fallback-btn:hover{transform:translateY(-1px)}.admin-fallback-btn-primary{background:#2563eb;color:#fff;border:1px solid rgba(147,197,253,.7);box-shadow:0 12px 28px rgba(37,99,235,.24)}.admin-fallback-btn-primary:hover{background:#1d4ed8;border-color:#93c5fd}.admin-fallback-btn-secondary{background:rgba(15,23,42,.5);color:#e2e8f0;border:1px solid rgba(51,65,85,.95)}.admin-fallback-btn-secondary:hover{background:rgba(30,41,59,.85)}.admin-fallback-panel{margin-top:24px;border:1px solid rgba(51,65,85,.9);border-radius:24px;background:rgba(2,6,23,.4);padding:20px}.admin-fallback-panel h2{margin:0;font-size:15px;color:#fff}.admin-fallback-panel p{margin:10px 0 0;font-size:14px;line-height:1.7;color:#cbd5e1}.admin-fallback-panel details{margin-top:16px}.admin-fallback-panel summary{cursor:pointer;color:#93c5fd;font-weight:700}.admin-fallback-panel pre{overflow:auto;margin:12px 0 0;padding:14px;border-radius:18px;background:#020617;color:#cbd5e1;font-size:12px;line-height:1.6}.admin-fallback-note{margin-top:16px;color:#94a3b8;font-size:13px;line-height:1.7}@media (max-width:640px){.admin-fallback-shell{padding:18px 12px}.admin-fallback-card,.admin-fallback-stat,.admin-fallback-panel{border-radius:22px}.admin-fallback-card{padding:22px}.admin-fallback-actions{flex-direction:column}.admin-fallback-btn{width:100%}}</style></head><body><main class="admin-fallback-shell"><section class="admin-fallback-card"><div class="admin-fallback-pill">Admin Shell</div><h1 class="admin-fallback-title">管理台壳层正在处理中</h1><p class="admin-fallback-copy">Worker 继续负责管理台壳、登录与统一后台 API；页面主体会根据当前状态注入设置页、远端壳或错误态内容。</p>__INIT_HEALTH_BANNER____ADMIN_APP_ROOT__</section></main></body></html>';
   let a = -1;
   const o = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
@@ -2752,13 +2762,13 @@ function Pd(n = {}, e = {}) {
     return St(K, G).indexUrl;
   }
   function Me(K = {}) {
-    const G = k(K.shellState) ? K.shellState : {}, Y = k(K.initHealth) ? K.initHealth : {}, W = k(K.indexState) ? K.indexState : {}, re = String(K.remoteShellIndexUrl || G.remoteShellIndexUrl || W.indexUrl || "").trim(), le = String(K.mode || "").trim().toLowerCase(), he = le === "remote" ? "remote" : le === "gate" ? "gate" : "embedded", Ze = G.remoteShellConfigured === !0 || !!re, gt = G.embeddedFallbackAvailable === !0, je = G.finalUiHtmlRetired !== !1, Nt = String(K.routeState || "").trim() || (he === "remote" ? "remote_active" : he === "gate" ? "setup_gate" : "embedded_active"), oa = String(K.lifecycleState || G.lifecycleState || "").trim() || pe(Ze, K.gateState || G.gateState || W.gateState || ""), Bt = String(K.embeddedFallbackState || G.embeddedFallbackState || "").trim() || Ae(gt, Nt), xl = String(K.retirementState || G.retirementState || "").trim() || _e(gt, je), Ol = String(K.gateState || G.gateState || W.gateState || (re ? "shell_ready" : "setup_required")).trim() || "setup_required";
+    const G = k(K.shellState) ? K.shellState : {}, Y = k(K.initHealth) ? K.initHealth : {}, W = k(K.indexState) ? K.indexState : {}, re = String(K.remoteShellIndexUrl || G.remoteShellIndexUrl || W.indexUrl || "").trim(), le = String(K.mode || "").trim().toLowerCase(), he = le === "remote" ? "remote" : le === "gate" ? "gate" : "embedded", Ze = G.remoteShellConfigured === !0 || !!re, gt = G.embeddedFallbackAvailable === !0, je = G.finalUiHtmlRetired !== !1, Nt = String(K.routeState || "").trim() || (he === "remote" ? "remote_active" : he === "gate" ? "setup_gate" : "embedded_active"), sa = String(K.lifecycleState || G.lifecycleState || "").trim() || pe(Ze, K.gateState || G.gateState || W.gateState || ""), Bt = String(K.embeddedFallbackState || G.embeddedFallbackState || "").trim() || Ae(gt, Nt), xl = String(K.retirementState || G.retirementState || "").trim() || _e(gt, je), Ol = String(K.gateState || G.gateState || W.gateState || (re ? "shell_ready" : "setup_required")).trim() || "setup_required";
     return {
       ...G,
       mode: he,
       effectiveMode: ye(he, Nt),
       gateState: Ol,
-      lifecycleState: oa,
+      lifecycleState: sa,
       embeddedFallbackState: Bt,
       retirementState: xl,
       sourceType: String(K.sourceType || "").trim().toLowerCase() || (he === "remote" ? "remote_fetch" : he === "gate" ? "setup_gate" : "embedded_local"),
@@ -2782,7 +2792,7 @@ function Pd(n = {}, e = {}) {
       updatedAt: String(K.updatedAt || "").trim() || /* @__PURE__ */ (/* @__PURE__ */ new Date()).toISOString()
     };
   }
-  async function aa(K, G = {}, Y = null) {
+  async function na(K, G = {}, Y = null) {
     const W = k(G.shellState) ? G.shellState : ke(K, G.initHealth, G.config || {}), re = Me({
       ...G,
       shellState: W
@@ -2791,7 +2801,7 @@ function Pd(n = {}, e = {}) {
       if (je.writePromise) return je.writePromise;
       if ($() - (Number(je.writtenAt) || 0) < Nt) return null;
     }
-    const oa = ge(Promise.resolve(t.patchOpsStatus(K, { adminShell: re }, Y)).then((Bt) => ({
+    const sa = ge(Promise.resolve(t.patchOpsStatus(K, { adminShell: re }, Y)).then((Bt) => ({
       ok: !0,
       result: Bt
     })), "admin.shell_status_patch", {
@@ -2801,7 +2811,7 @@ function Pd(n = {}, e = {}) {
     }, {
       ok: !1,
       result: null
-    }).then((Bt) => (!le || te.AdminShellStatusWriteState.get(le)?.writePromise !== oa || (Bt?.ok === !0 ? te.AdminShellStatusWriteState.set(le, {
+    }).then((Bt) => (!le || te.AdminShellStatusWriteState.get(le)?.writePromise !== sa || (Bt?.ok === !0 ? te.AdminShellStatusWriteState.set(le, {
       fingerprint: gt,
       writtenAt: $(),
       writePromise: null
@@ -2809,8 +2819,8 @@ function Pd(n = {}, e = {}) {
     return le && te.AdminShellStatusWriteState.set(le, {
       fingerprint: gt,
       writtenAt: 0,
-      writePromise: oa
-    }), oa;
+      writePromise: sa
+    }), sa;
   }
   function ot(K = {}, G, Y = {}, W = Ke(G)) {
     const re = k(K) ? K : {}, le = St(G, Y), he = ke(G, W, Y);
@@ -2897,8 +2907,8 @@ function Pd(n = {}, e = {}) {
         </section>
       </div>`;
   }
-  function na(K = {}, G = {}, Y = {}, W = {}, re = {}) {
-    const le = String(K.adminPath || "/admin").trim() || "/admin", he = re?.isLocalUpload === !0, Ze = Qr({ adminPath: le });
+  function oa(K = {}, G = {}, Y = {}, W = {}, re = {}) {
+    const le = String(K.adminPath || "/admin").trim() || "/admin", he = re?.isLocalUpload === !0, Ze = Zr({ adminPath: le });
     return `<style>
         .admin-gate-shell{max-width:720px;margin:0 auto;padding:48px 20px 64px;color:#0f172a}
         .admin-gate-card{background:#fff;border:1px solid #dbe3ee;border-radius:8px;box-shadow:0 18px 50px rgba(15,23,42,.1);overflow:hidden}
@@ -3146,11 +3156,11 @@ function Pd(n = {}, e = {}) {
     buildAdminShellState: ke,
     resolveAdminShellIndexUrl: Ft,
     normalizeAdminShellRuntimeStatus: Me,
-    patchAdminShellRuntimeStatus: aa,
+    patchAdminShellRuntimeStatus: na,
     withAdminShellRuntimeStatus: ot,
     describeAdminRemoteShellFailureReason: st,
     buildAdminRemoteShellErrorContent: br,
-    buildAdminIndexSetupContent: na,
+    buildAdminIndexSetupContent: oa,
     renderAdminHtmlShell: $e,
     buildAdminHtmlVariantEtag: Zt,
     formatAdminHtmlEtag: mt,
@@ -3165,7 +3175,7 @@ function Pd(n = {}, e = {}) {
     buildConditionalNotModifiedResponseFromStoredResponse: $t
   };
 }
-function xd(n = {}, e = {}) {
+function Od(n = {}, e = {}) {
   function t(v = "{}") {
     return `${s(v)}${r}`;
   }
@@ -3689,7 +3699,7 @@ function an(n) {
   const e = wn(n);
   e.RuntimeConfigCacheGeneration += 1, e.ConfigCache = null;
 }
-function Od(n, e) {
+function vd(n, e) {
   const t = wn(n);
   t.RuntimeConfigCacheGeneration += 1, t.ConfigCache = {
     data: e,
@@ -3703,7 +3713,7 @@ async function so(n, e) {
   });
   return ee.AdminRemoteShellCacheMutationChains.set(t, r), await r;
 }
-function vd(n = {}, e = {}) {
+function Fd(n = {}, e = {}) {
   function t(E = "", w = {}) {
     const R = e.buildAdminHtmlResponseHeaders(w.variantEtag || "", e.ADMIN_REMOTE_SHELL_EDGE_CACHE_CONTROL), D = Number.parseInt(String(w.cachedAt || ""), 10);
     R.set(e.ADMIN_REMOTE_SHELL_CACHED_AT_HEADER, String(Number.isFinite(D) && D > 0 ? D : $()));
@@ -3737,7 +3747,7 @@ function vd(n = {}, e = {}) {
   async function a(E, w, R, D) {
     const x = await Pe(E, e.ADMIN_REMOTE_SHELL_MAX_BYTES);
     if (x.exceeded) throw new Error("legacy remote admin shell too large");
-    const L = x.text, F = e.applyAdminRemoteBootstrapMarkup(L, Qr(R)), I = E.headers.get(e.ADMIN_REMOTE_SHELL_SOURCE_ETAG_HEADER) || "", U = e.normalizeAdminHttpDateHeader(E.headers.get(e.ADMIN_REMOTE_SHELL_SOURCE_LAST_MODIFIED_HEADER) || ""), V = e.normalizeAdminHttpDateHeader(E.headers.get("Last-Modified") || "") || U;
+    const L = x.text, F = e.applyAdminRemoteBootstrapMarkup(L, Zr(R)), I = E.headers.get(e.ADMIN_REMOTE_SHELL_SOURCE_ETAG_HEADER) || "", U = e.normalizeAdminHttpDateHeader(E.headers.get(e.ADMIN_REMOTE_SHELL_SOURCE_LAST_MODIFIED_HEADER) || ""), V = e.normalizeAdminHttpDateHeader(E.headers.get("Last-Modified") || "") || U;
     return t(F, {
       variantEtag: e.buildAdminRemoteShellVariantEtag({
         html: F,
@@ -3887,7 +3897,7 @@ function vd(n = {}, e = {}) {
       adminPath: String(x.adminPath || w?.adminPath || "/admin").trim() || "/admin",
       releaseTag: F,
       sourceUrl: D
-    }) : L.html, V = e.applyAdminRemoteBootstrapMarkup(U, Qr(w)), X = e.normalizeAdminHttpDateHeader(x.lastModified || "") || /* @__PURE__ */ (/* @__PURE__ */ new Date()).toUTCString(), v = String(x.originEtag || "").trim();
+    }) : L.html, V = e.applyAdminRemoteBootstrapMarkup(U, Zr(w)), X = e.normalizeAdminHttpDateHeader(x.lastModified || "") || /* @__PURE__ */ (/* @__PURE__ */ new Date()).toUTCString(), v = String(x.originEtag || "").trim();
     return {
       storedResponse: t(V, {
         variantEtag: e.buildAdminRemoteShellVariantEtag({
@@ -3908,7 +3918,7 @@ function vd(n = {}, e = {}) {
     };
   }
   async function A(E = "", w = "index.html") {
-    const R = String(E || ""), D = await Xn(R), x = qr(D);
+    const R = String(E || ""), D = await Xn(R), x = Xr(D);
     let L;
     try {
       L = T(R, x, {
@@ -4034,7 +4044,7 @@ function vd(n = {}, e = {}) {
     loadAdminRemoteShellColdCache: P
   };
 }
-function Fd(n = {}, e = {}) {
+function Ud(n = {}, e = {}) {
   const { indexRepository: t } = n;
   function r(g = "") {
     const y = String(g || "");
@@ -4082,7 +4092,7 @@ function Fd(n = {}, e = {}) {
     }, _), e.requestMatchesAdminHtmlResponse(g, x) ? e.buildConditionalNotModifiedResponseFromStoredResponse(x, e.ADMIN_REMOTE_SHELL_BROWSER_CACHE_CONTROL) : e.buildAdminRemoteShellClientResponse(x, g.method);
   }
   async function o(g, y, _, S = Ke(y), T = {}, b = "index_url_not_configured") {
-    const A = St(y, T), C = e.buildAdminShellState(y, S, T), N = e.buildAdminBootstrapPayload(y, S, T), P = Qr(N), E = no(S), w = new URL(g.url).pathname;
+    const A = St(y, T), C = e.buildAdminShellState(y, S, T), N = e.buildAdminBootstrapPayload(y, S, T), P = Zr(N), E = no(S), w = new URL(g.url).pathname;
     await e.patchAdminShellRuntimeStatus(y, {
       shellState: C,
       initHealth: S,
@@ -4104,7 +4114,7 @@ function Fd(n = {}, e = {}) {
     return y === "1" || y === "true";
   }
   async function i(g, y, _, S = Ke(y), T = {}, b = {}) {
-    const A = e.buildAdminShellState(y, S, b), C = e.buildAdminBootstrapPayload(y, S, b), N = St(y, b), P = Qr(C), E = no(S), w = new URL(g.url).pathname, R = {
+    const A = e.buildAdminShellState(y, S, b), C = e.buildAdminBootstrapPayload(y, S, b), N = St(y, b), P = Zr(C), E = no(S), w = new URL(g.url).pathname, R = {
       ...T,
       shellState: A,
       initHealth: S,
@@ -4250,7 +4260,7 @@ function Fd(n = {}, e = {}) {
       return null;
     }
     if (!A?.ok) return null;
-    const C = await ya(A, e.ADMIN_RELEASE_VENDOR_MAX_BYTES);
+    const C = await Sa(A, e.ADMIN_RELEASE_VENDOR_MAX_BYTES);
     if (C.exceeded || !C.bytes) return null;
     const N = new Headers({
       "Content-Type": S.toLowerCase().endsWith(".css") ? "text/css; charset=utf-8" : "text/javascript; charset=utf-8",
@@ -4269,7 +4279,7 @@ function Fd(n = {}, e = {}) {
     const C = await p(y, g, A);
     if (C)
       return e.requestMatchesAdminHtmlResponse(g, C) ? e.buildConditionalNotModifiedResponseFromStoredResponse(C, e.ADMIN_RELEASE_VENDOR_CACHE_CONTROL) : e.buildAdminReleaseVendorClientResponse(C, g.method);
-    const N = mr(), P = Qu(b);
+    const N = mr(), P = Zu(b);
     if (!P) return l("Local index vendor asset not found", 404);
     const E = P ? await t.getAdminIndexUploadRecord(t.getKV(y), P) : null;
     if (P && !E) return l("Local index vendor asset not found", 404);
@@ -4299,7 +4309,7 @@ function Fd(n = {}, e = {}) {
     if (!e.isAcceptedAdminReleaseVendorContentType(U, D.assetKind)) return l(`Release vendor asset content-type invalid: ${U || "unknown"}`, 502);
     const V = Number.parseInt(String(I.headers.get("Content-Length") || ""), 10);
     if (Number.isFinite(V) && V > e.ADMIN_RELEASE_VENDOR_MAX_BYTES) return l(`Release vendor asset too large: ${V} bytes`, 502);
-    const X = await ya(I, e.ADMIN_RELEASE_VENDOR_MAX_BYTES), v = X.bytes;
+    const X = await Sa(I, e.ADMIN_RELEASE_VENDOR_MAX_BYTES), v = X.bytes;
     if (X.exceeded || !v || v > e.ADMIN_RELEASE_VENDOR_MAX_BYTES) return l(`Release vendor asset payload invalid: ${v} bytes`, 502);
     const O = new Headers({ "Cache-Control": L }), M = e.normalizeEtagToken(I.headers.get("ETag") || ""), H = e.normalizeAdminHttpDateHeader(I.headers.get("Last-Modified") || "");
     U && O.set("Content-Type", U), M && O.set("ETag", e.formatAdminHtmlEtag(M)), H && O.set("Last-Modified", H), O.set(e.ADMIN_RELEASE_VENDOR_CACHED_AT_HEADER, String($())), O.set(e.ADMIN_RELEASE_VENDOR_SOURCE_HASH_HEADER, ie(D.upstreamUrl));
@@ -4329,7 +4339,7 @@ function Fd(n = {}, e = {}) {
 function ic(n = {}) {
   return {
     ...wi,
-    ...fa,
+    ...ma,
     "Content-Type": "application/json; charset=utf-8",
     "Cache-Control": "no-store, max-age=0",
     ...n
@@ -4351,9 +4361,9 @@ function z(n, e, t = 400, r = null, a = {}) {
   };
   return r != null && (o.error.details = r), ne(o, t, a);
 }
-async function Ud(n) {
+async function kd(n) {
   const e = new Headers(n.headers || {});
-  if (e.set("Content-Type", "application/json; charset=utf-8"), e.set("Cache-Control", "no-store, max-age=0"), Object.entries(fa).forEach(([c, l]) => e.set(c, l)), De(e), n.ok) return new Response(n.body, {
+  if (e.set("Content-Type", "application/json; charset=utf-8"), e.set("Cache-Control", "no-store, max-age=0"), Object.entries(ma).forEach(([c, l]) => e.set(c, l)), De(e), n.ok) return new Response(n.body, {
     status: n.status,
     headers: e
   });
@@ -4396,7 +4406,7 @@ function uc(n = "") {
   const e = String(n || "").trim().toLowerCase();
   return e === "summary" || e === "kv" || e === "d1" ? e : "";
 }
-function kd(n = []) {
+function Hd(n = []) {
   const e = [], t = /* @__PURE__ */ new Set();
   for (const r of Array.isArray(n) ? n : [n]) {
     const a = uc(r);
@@ -4404,33 +4414,33 @@ function kd(n = []) {
   }
   return e;
 }
-function Hd(n = {}) {
-  return lc.some(({ configKey: e }) => Sa(n, e));
+function $d(n = {}) {
+  return lc.some(({ configKey: e }) => _a(n, e));
 }
 function dc(n = {}, e = n) {
   const t = n && typeof n == "object" ? n : {}, r = e && typeof e == "object" ? e : {};
-  return t.tgDailyReportEnabled === !0 && !Hd(r);
+  return t.tgDailyReportEnabled === !0 && !$d(r);
 }
-function $d(n = {}, e = {}) {
+function Bd(n = {}, e = {}) {
   const t = n && typeof n == "object" ? n : {};
   return dc(t, e && typeof e == "object" ? e : {}) ? (t.tgDailyReportSummaryEnabled = !0, t.tgDailyReportKvEnabled = !1, t.tgDailyReportD1Enabled = !1, t) : (t.tgDailyReportSummaryEnabled = t.tgDailyReportSummaryEnabled === !0, t.tgDailyReportKvEnabled = t.tgDailyReportKvEnabled === !0, t.tgDailyReportD1Enabled = t.tgDailyReportD1Enabled === !0, t);
 }
 function fc(n = {}, e = n, t = {}) {
-  const r = n && typeof n == "object" ? n : {}, a = kd(t?.reportKinds);
+  const r = n && typeof n == "object" ? n : {}, a = Hd(t?.reportKinds);
   if (a.length > 0) return a;
   const o = lc.filter(({ configKey: s }) => r[s] === !0).map(({ kind: s }) => s);
   return o.length > 0 ? o : t?.fallbackAllWhenLegacy === !0 && dc(r, e) ? ["summary"] : [];
 }
-function Bd(n = {}) {
+function Kd(n = {}) {
   return Ur(n?.routingDecisionMode);
 }
 function kr(n = "") {
   const e = String(n || "").trim().toLowerCase();
   return e === "legacy" || e === "simplified" ? e : "inherit";
 }
-function Kd(n = {}, e = {}) {
+function zd(n = {}, e = {}) {
   const t = kr(n?.routingDecisionMode);
-  return t === "inherit" ? Bd(e) : t;
+  return t === "inherit" ? Kd(e) : t;
 }
 function ur(n) {
   const e = String(n ?? "").trim();
@@ -4439,14 +4449,14 @@ function ur(n) {
   const t = Number(e);
   return !Number.isInteger(t) || t < 1 || t > 65535 ? null : String(t);
 }
-function zd(n) {
+function Wd(n) {
   return n === "http:" ? "80" : n === "https:" ? "443" : "";
 }
-function Wd(n) {
+function Gd(n) {
   const e = String(n?.username || ""), t = String(n?.password || "");
   return !e && !t ? "" : `${e}${t ? `:${t}` : ""}@`;
 }
-function Gd(n, e = "") {
+function Vd(n, e = "") {
   if (!(n instanceof URL)) return "";
   const t = String(n.protocol || "").trim().toLowerCase();
   if (!["http:", "https:"].includes(t)) return "";
@@ -4455,7 +4465,7 @@ function Gd(n, e = "") {
   const a = String(n.hostname || "").trim();
   if (!a) return "";
   const o = String(n.pathname || "/") || "/", s = String(n.search || ""), i = String(n.hash || "");
-  return `${t}//${Wd(n)}${a}${r ? `:${r}` : ""}${o}${s}${i}`.replace(/\/$/, "");
+  return `${t}//${Gd(n)}${a}${r ? `:${r}` : ""}${o}${s}${i}`.replace(/\/$/, "");
 }
 function Ns(n, e = "", t = "") {
   const r = String(n || "").trim();
@@ -4464,12 +4474,12 @@ function Ns(n, e = "", t = "") {
     const a = new URL(r);
     if (!["http:", "https:"].includes(a.protocol)) return null;
     const o = ur(a.port), s = ur(e), i = ur(t);
-    return o === null || s === null || i === null ? null : Gd(a, o || s || i || zd(a.protocol)) || null;
+    return o === null || s === null || i === null ? null : Vd(a, o || s || i || Wd(a.protocol)) || null;
   } catch {
     return null;
   }
 }
-function Vd(n = "") {
+function jd(n = "") {
   const e = String(n || "").trim();
   if (!e) return !1;
   try {
@@ -4494,7 +4504,7 @@ function Ds(n = "") {
   if (!e) return !1;
   try {
     const t = new URL(e);
-    return ["http:", "https:"].includes(t.protocol) ? !Vd(e) : !1;
+    return ["http:", "https:"].includes(t.protocol) ? !jd(e) : !1;
   } catch {
     return !1;
   }
@@ -4526,10 +4536,10 @@ function Ua(n) {
 function qe(n) {
   return Qe(n) ? String(n.absoluteBasePrefix || n.originText || "").trim() : "";
 }
-function jd(n = []) {
+function qd(n = []) {
   return ie(ae((Array.isArray(n) ? n : []).map((e) => qe(e)).filter(Boolean)));
 }
-function qd(n = []) {
+function Xd(n = []) {
   return new Set((Array.isArray(n) ? n : []).map((e) => qe(e)).filter(Boolean)).size;
 }
 function ka(n = "", e = B.Defaults.HedgeProbePath) {
@@ -4540,7 +4550,7 @@ function ka(n = "", e = B.Defaults.HedgeProbePath) {
     return Z(t);
   }
 }
-function pa(n = "") {
+function ga(n = "") {
   const e = String(n || "").trim();
   return e ? ka(e, B.Defaults.HedgeProbePath) : "";
 }
@@ -4551,7 +4561,7 @@ function Is(n = "") {
   const e = String(n || "");
   return e ? e.startsWith("?") ? e : `?${e}` : "";
 }
-function Xd(n = "GET", e = {}, t = {}) {
+function Yd(n = "GET", e = {}, t = {}) {
   const r = String(n || "GET").toUpperCase();
   return !(r !== "GET" && r !== "HEAD" || e?.isSegment !== !0 || e?.isWsUpgrade === !0 || t.playbackRelayTargetUrl instanceof URL || t.protocolFallbackRetry === !0 || t.isExternalRedirect === !0);
 }
@@ -4560,7 +4570,7 @@ var Vo = ["proxyMode", "mode"], jo = [
   "sourceDirect",
   "directSource",
   "direct2xx"
-], Yd = [
+], Jd = [
   "wangpanMode",
   "videoThrottling",
   "interceptMs"
@@ -4569,7 +4579,7 @@ var Vo = ["proxyMode", "mode"], jo = [
   proxy_a: "__proxy-a",
   proxy_b: "__proxy-b"
 });
-function Jd(n = {}) {
+function Qd(n = {}) {
   const e = n && typeof n == "object" && !Array.isArray(n) ? n : {}, t = [];
   let r = !1;
   const a = ur(e.port), o = Array.isArray(e.lines) ? e.lines.reduce((i, c) => i + (ur(c?.port) ? 1 : 0), 0) : 0, s = Array.isArray(e.lines) && e.lines.length ? e.lines.reduce((i, c) => ur(c?.port) || a ? i : i + (Ds(c?.target) ? 1 : 0), 0) : a ? 0 : String(e.target || "").split(",").map((i) => i.trim()).filter(Boolean).reduce((i, c) => i + (Ds(c) ? 1 : 0), 0);
@@ -4586,7 +4596,7 @@ function Jd(n = {}) {
   }
   for (const i of jo)
     Object.prototype.hasOwnProperty.call(e, i) && (t.push(i), e[i] === !0 && (r = !0));
-  for (const i of Yd)
+  for (const i of Jd)
     Object.prototype.hasOwnProperty.call(e, i) && t.push(i);
   return {
     legacyKeysPresent: ar(t),
@@ -4597,43 +4607,43 @@ function Jd(n = {}) {
     defaultPortLineCount: s
   };
 }
-function Qd(n, e = {}) {
-  const t = Wr(n);
+function Zd(n, e = {}) {
+  const t = Gr(n);
   return {
     mode: t,
     forceVideoDirect: t === "direct",
     forceVideoProxy: t === "proxy"
   };
 }
-function Zd(n = {}) {
+function ef(n = {}) {
   return Ni(n?.defaultMediaAuthMode);
 }
 function nn(n = {}) {
-  return Sa(n, "defaultPlaybackInfoMode") ? qt(n?.defaultPlaybackInfoMode) : Reflect.get(n, "playbackInfoAutoProxy") !== void 0 ? Reflect.get(n, "playbackInfoAutoProxy") !== !1 ? "rewrite" : "passthrough" : Reflect.get(n, "playbackInfoBlockWangpanProxy") !== void 0 ? "rewrite" : B.Defaults.DefaultPlaybackInfoMode;
-}
-function ef(n = {}) {
-  return qt(nn(n));
+  return _a(n, "defaultPlaybackInfoMode") ? qt(n?.defaultPlaybackInfoMode) : Reflect.get(n, "playbackInfoAutoProxy") !== void 0 ? Reflect.get(n, "playbackInfoAutoProxy") !== !1 ? "rewrite" : "passthrough" : Reflect.get(n, "playbackInfoBlockWangpanProxy") !== void 0 ? "rewrite" : B.Defaults.DefaultPlaybackInfoMode;
 }
 function tf(n = {}) {
+  return qt(nn(n));
+}
+function rf(n = {}) {
   return Po(n?.defaultRealClientIpMode);
 }
-function rf(n = {}, e = {}) {
-  const t = n || {}, r = n && typeof n == "object" && Object.prototype.hasOwnProperty.call(n, "mediaAuthMode") ? Gt(t.mediaAuthMode) : "auto";
-  return r === "inherit" ? Zd(e) : r;
-}
 function af(n = {}, e = {}) {
-  const t = n || {}, r = n && typeof n == "object" && Object.prototype.hasOwnProperty.call(n, "playbackInfoMode") ? xr(t.playbackInfoMode) : "inherit";
+  const t = n || {}, r = n && typeof n == "object" && Object.prototype.hasOwnProperty.call(n, "mediaAuthMode") ? Gt(t.mediaAuthMode) : "auto";
   return r === "inherit" ? ef(e) : r;
 }
 function nf(n = {}, e = {}) {
-  const t = n || {}, r = n && typeof n == "object" && Object.prototype.hasOwnProperty.call(n, "realClientIpMode") ? Pr(t.realClientIpMode) : "forward";
+  const t = n || {}, r = n && typeof n == "object" && Object.prototype.hasOwnProperty.call(n, "playbackInfoMode") ? xr(t.playbackInfoMode) : "inherit";
   return r === "inherit" ? tf(e) : r;
 }
 function of(n = {}, e = {}) {
-  const t = n || {};
-  return (n && typeof n == "object" && Object.prototype.hasOwnProperty.call(n, "hedgeProbePath") ? pa(t.hedgeProbePath) : "") || ka(e?.hedgeProbePath, B.Defaults.HedgeProbePath);
+  const t = n || {}, r = n && typeof n == "object" && Object.prototype.hasOwnProperty.call(n, "realClientIpMode") ? Pr(t.realClientIpMode) : "forward";
+  return r === "inherit" ? rf(e) : r;
 }
-function sf(n) {
+function sf(n = {}, e = {}) {
+  const t = n || {};
+  return (n && typeof n == "object" && Object.prototype.hasOwnProperty.call(n, "hedgeProbePath") ? ga(t.hedgeProbePath) : "") || ka(e?.hedgeProbePath, B.Defaults.HedgeProbePath);
+}
+function cf(n) {
   const e = Po(typeof n == "string" ? n : n?.realClientIpMode);
   return e === "forward" ? "full" : e === "strip" ? "real-ip-only" : e === "disable" ? "none" : "full";
 }
@@ -4641,7 +4651,7 @@ function gc(n = "") {
   const e = String(n || "").trim().toLowerCase();
   return e === "proxy_a" || e === "__proxy-a" ? "proxy_a" : e === "proxy_b" || e === "__proxy-b" ? "proxy_b" : "main";
 }
-function cf(n = "main") {
+function lf(n = "main") {
   return co[gc(n)] || "";
 }
 function hc(n = "") {
@@ -4669,10 +4679,10 @@ function Nr(n = "") {
 function Sr(n = {}) {
   return n.ENI_KV || n.KV || n.EMBY_KV || n.EMBY_PROXY || null;
 }
-function lf(n = {}) {
+function uf(n = {}) {
   return n.DB || n.D1 || n.PROXY_LOGS || null;
 }
-var uf = 16 * 1024;
+var df = 16 * 1024;
 async function _t(n, e) {
   const t = new TextEncoder(), r = Date.now();
   let a = ee.CryptoKeyCache.get(n);
@@ -4690,7 +4700,7 @@ async function _t(n, e) {
   const o = await Yn().sign("HMAC", a.key, t.encode(e));
   return btoa(String.fromCharCode(...new Uint8Array(o))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
-var df = class {
+var ff = class {
   constructor({ actionHandlers: n, bindingService: e, configReader: t, repository: r, requestModel: a, shellService: o }) {
     this.actionHandlers = Object.freeze({ ...n }), this.bindingService = e, this.configReader = t, this.repository = r, this.requestModel = a, this.shellService = o, this.actionAliases = Object.freeze({
       import: "saveOrImport",
@@ -4717,9 +4727,9 @@ var df = class {
     if (i !== "POST" || !Lr(r.pathnameLower, r.adminPathLower)) return null;
     if (!await this.#a(n, e)) return z("UNAUTHORIZED", "未授权", 401);
     try {
-      return await Ud(await this.#s(n, e, t));
+      return await kd(await this.#s(n, e, t));
     } catch (h) {
-      const g = cu(h, {
+      const g = lu(h, {
         code: "INTERNAL_ERROR",
         message: "Server Error",
         status: 500
@@ -4777,7 +4787,7 @@ var df = class {
     return ac(n.pathnameLower, n.adminPathLower) || Lr(n.pathnameLower, n.adminLoginPathLower) || this.#n(n);
   }
   #i(n, e, t, r = 200) {
-    return this.shellService.buildEdgeCorsResponse(ra(e, n), t, r, { mergeOriginVary: !0 });
+    return this.shellService.buildEdgeCorsResponse(aa(e, n), t, r, { mergeOriginVary: !0 });
   }
   #c(n, e) {
     const t = new URL(n.url), r = oe(t.hostname), a = Z(t.pathname), o = a.toLowerCase(), s = ft(e), i = s.toLowerCase(), c = Rn(s), l = c.toLowerCase(), d = oc(e, {
@@ -4789,7 +4799,7 @@ var df = class {
       requestUrl: t,
       requestHost: r,
       configuredHost: Ge(e),
-      configuredLegacyHost: jr(e),
+      configuredLegacyHost: qr(e),
       normalizedPathname: a,
       pathnameLower: o,
       adminPath: s,
@@ -4802,13 +4812,13 @@ var df = class {
     };
   }
   async #u(n, e) {
-    const t = n.headers.get("cf-connecting-ip") || "unknown", r = this.repository.getDB(e), a = Dd(e), o = await this.configReader.getRuntimeConfig(e), s = Math.max(1, parseInt(o.jwtExpiryDays) || 30) * 86400;
+    const t = n.headers.get("cf-connecting-ip") || "unknown", r = this.repository.getDB(e), a = Id(e), o = await this.configReader.getRuntimeConfig(e), s = Math.max(1, parseInt(o.jwtExpiryDays) || 30) * 86400;
     try {
       const i = await ge(this.repository.getAuthFailureEntry(r, t), "auth.login.read_auth_failure", { ip: t }, null), c = Math.max(0, Number(i?.failCount) || 0);
       if (c >= B.Defaults.MaxLoginAttempts) return z("TOO_MANY_ATTEMPTS", "账户已锁定，请稍后再试", 429);
       let l = "";
       if ((n.headers.get("content-type") || "").includes("application/json")) {
-        const u = await Pe(n, uf);
+        const u = await Pe(n, df);
         if (u.exceeded) return z("REQUEST_TOO_LARGE", "请求体过大", 413);
         const f = JSON.parse(u.text || "{}");
         l = typeof f.password == "string" ? f.password : "";
@@ -4922,10 +4932,10 @@ function Sc(n = {}, e = {}, t = {}) {
   const a = Number(e.statusCode) || 0;
   return !(qo(n?.logWriteMode) === "error" && (a < 400 || a >= 600));
 }
-function ff(n = "", e = "") {
+function mf(n = "", e = "") {
   return yc(n, e) === "playback_info";
 }
-function mf(n = "", e = "") {
+function pf(n = "", e = "") {
   const t = String(n || "").trim().toLowerCase(), r = String(e || "").trim().toLowerCase();
   return r === "stream" || r === "segment" || r === "manifest" ? !0 : /\/stream(?:$|[/?])/.test(t) || t.includes("/master.m3u8") || /\/videos\/[^/]+\/(?:original|download|file)(?:$|[/?])/.test(t) || /\/items\/[^/]+\/download(?:$|[/?])/.test(t) || t.includes("static=true") || t.includes("download=true");
 }
@@ -4939,11 +4949,11 @@ function bc(n) {
 function qo(n) {
   return String(n || "").trim().toLowerCase() === "error" ? "error" : B.Defaults.LogWriteMode;
 }
-function pf(n) {
+function gf(n) {
   const e = String(n || "").trim().toLowerCase().replace(/[\s-]+/g, "_");
   return e === "playback" || e === "playback_info" ? "playback_info" : e === "image" ? "image" : e === "api" ? "api" : e === "auth" ? "auth" : "";
 }
-function gf(n) {
+function hf(n) {
   const e = String(n || "").trim().toLowerCase().replace(/[\s-]+/g, "_");
   return e === "4xx" || e === "status_4xx" ? "4xx" : e === "5xx" || e === "status_5xx" ? "5xx" : "";
 }
@@ -4951,11 +4961,11 @@ function Ms(n) {
   const e = String(n || "").trim().toLowerCase().replace(/[\s-]+/g, "_");
   return e === "direct" ? "direct" : e === "proxy" || e === "proxied" ? "proxy" : "";
 }
-function hf(n = "") {
+function yf(n = "") {
   const e = String(n || "").trim().toLowerCase().replace(/[\s-]+/g, "_");
   return e === "connect_timeout" ? "connect_timeout" : e === "idle_timeout" ? "idle_timeout" : e === "tls_handshake_failed" ? "tls_handshake_failed" : e === "http_version_fallback" ? "http_version_fallback" : e === "redirect_loop" ? "redirect_loop" : e === "redirect_limit_exceeded" ? "redirect_limit_exceeded" : e === "range_unsatisfied" ? "range_unsatisfied" : e === "upstream_4xx" ? "upstream_4xx" : e === "upstream_5xx" ? "upstream_5xx" : e === "unknown_fetch_error" ? "unknown_fetch_error" : "";
 }
-var yf = Object.freeze({
+var Sf = Object.freeze({
   400: Object.freeze({
     code: "bad_request",
     text: "请求格式无效或参数不符合上游要求"
@@ -5037,13 +5047,13 @@ var yf = Object.freeze({
     text: "源站 DNS 解析或 Cloudflare 到源站的访问链路存在致命错误"
   })
 });
-function Sf(n) {
+function _f(n) {
   const e = Math.trunc(Number(n) || 0);
   if (!Number.isFinite(e) || e <= 0) return {
     code: null,
     text: null
   };
-  const t = yf[e];
+  const t = Sf[e];
   return t ? {
     code: t.code,
     text: t.text
@@ -5052,22 +5062,22 @@ function Sf(n) {
     text: null
   };
 }
-function _f(n) {
+function bf(n) {
   const e = String(n || "").trim();
   return e ? /\b(?:AND|OR|NOT|NEAR)\b/i.test(e) || /(?:^|\s)(?:node_name|request_path|user_agent|error_detail)\s*:/i.test(e) || /(?:^|\s)[^\s"]+\*/.test(e) ? !0 : /^"(?:[^"]|"")+"$/.test(e) : !1;
 }
 function Ec(n) {
   return `"${String(n || "").replace(/"/g, '""')}"`;
 }
-function bf(n) {
+function Ef(n) {
   return `${Ec(n)}*`;
 }
-function Ef(n) {
+function Tf(n) {
   return String(n || "").replace(/(^|\s)((?:node_name|request_path|user_agent|error_detail)\s*:\s*)([^"\s()]+)(?=\s|$)/gi, (e, t, r, a) => `${t}${r}${Ec(a)}`);
 }
-function Tf(n) {
+function Af(n) {
   const e = String(n || "").trim();
-  return e ? _f(e) ? Ef(e) : e.split(/\s+/).filter(Boolean).map((t) => bf(t)).join(" AND ") : "";
+  return e ? bf(e) ? Tf(e) : e.split(/\s+/).filter(Boolean).map((t) => Ef(t)).join(" AND ") : "";
 }
 function Tc(n = null) {
   if (!n || typeof n != "object") return null;
@@ -5077,7 +5087,7 @@ function Tc(n = null) {
     id: t
   };
 }
-function Af(n = null) {
+function Rf(n = null) {
   return Tc({
     timestamp: Number(n?.timestamp),
     id: Number(n?.id)
@@ -5110,15 +5120,15 @@ function qa(n, e, t = {}) {
   }
   return "";
 }
-function Rf(n = "") {
+function Cf(n = "") {
   const e = String(n || "").trim();
   return e ? qa("CNAME", e) ? "" : e : "";
 }
-var Cf = [
+var wf = [
   "logIncludeClientIp",
   "logIncludeColo",
   "logIncludeUa"
-], wf = [
+], Lf = [
   "playbackInfoAutoProxy",
   "playbackInfoBlockWangpanProxy",
   "sameOriginRedirectProxy",
@@ -5129,15 +5139,15 @@ var Cf = [
   "enableWangpanDirect",
   "wangpandirect",
   "tgDailyReportTime"
-], Ac = ["directSourceNodes", "nodeDirectList"], Lf = ["sourceSameOriginProxy", "forceExternalProxy"], Rc = [
+], Ac = ["directSourceNodes", "nodeDirectList"], Nf = ["sourceSameOriginProxy", "forceExternalProxy"], Rc = [
   "enableH2",
   "enableH3",
   "peakDowngrade"
 ], Ps = [
-  ...Cf,
   ...wf,
-  ...Ac,
   ...Lf,
+  ...Ac,
+  ...Nf,
   ...Rc
 ], Cc = {
   allowedFields: [
@@ -5459,7 +5469,7 @@ var Cf = [
     "logWriteMediaMetadata"
   ]
 };
-function Nf(n = {}, e = {}) {
+function Df(n = {}, e = {}) {
   for (const [t, r] of Object.entries(e.aliasFields || {}))
     if (!(n[t] !== void 0 && n[t] !== null) && Array.isArray(r)) {
       for (const a of r)
@@ -5470,7 +5480,7 @@ function Nf(n = {}, e = {}) {
     }
   return n;
 }
-function Df(n = {}, e = {}) {
+function If(n = {}, e = {}) {
   const t = Array.isArray(e.allowedFields) ? e.allowedFields : [];
   if (!t.length) return n;
   const r = {};
@@ -5478,9 +5488,9 @@ function Df(n = {}, e = {}) {
     Object.prototype.hasOwnProperty.call(n, a) && (r[a] = n[a]);
   return r;
 }
-function If(n = {}, e = Cc, t = {}) {
+function Mf(n = {}, e = Cc, t = {}) {
   let r = n && typeof n == "object" && !Array.isArray(n) ? { ...n } : {};
-  r = Nf(r, e);
+  r = Df(r, e);
   for (const a of e.trimFields || [])
     r[a] === void 0 || r[a] === null || (r[a] = String(r[a]).trim());
   for (const [a, o] of Object.entries(e.arrayNormalizers || {}))
@@ -5489,7 +5499,7 @@ function If(n = {}, e = Cc, t = {}) {
   for (const [a, o] of Object.entries(e.numberFields || {})) r[a] = Ul(r[a], o.fallback, o.min, o.max);
   for (const a of e.booleanTrueFields || []) r[a] = r[a] !== !1;
   for (const a of e.booleanFalseFields || []) r[a] = r[a] === !0;
-  return Df(r, e);
+  return If(r, e);
 }
 function wc(n = {}) {
   const e = n && typeof n == "object" && !Array.isArray(n) ? n : {}, t = { ...e };
@@ -5534,14 +5544,14 @@ function ce(n = {}) {
   return Nc(e);
 }
 function Nc(n = {}) {
-  const e = If({
+  const e = Mf({
     ...n,
-    defaultPlaybackInfoMode: Sa(n, "defaultPlaybackInfoMode") ? Reflect.get(n, "defaultPlaybackInfoMode") : nn(n),
-    protocolStrategy: Sa(n, "protocolStrategy") ? Reflect.get(n, "protocolStrategy") : Go(n)
+    defaultPlaybackInfoMode: _a(n, "defaultPlaybackInfoMode") ? Reflect.get(n, "defaultPlaybackInfoMode") : nn(n),
+    protocolStrategy: _a(n, "protocolStrategy") ? Reflect.get(n, "protocolStrategy") : Go(n)
   }, Cc, { normalizeNodeNameList: bt });
-  e.prewarmDepth = _c(e.prewarmDepth), e.hedgeProbePath = ka(e.hedgeProbePath, B.Defaults.HedgeProbePath), e.dnsDefaultFallbackCname = Rf(e.dnsDefaultFallbackCname), e.defaultHostPrefixCnameTarget = Xt(e.defaultHostPrefixCnameTarget), e.settingsExperienceMode = String(e.settingsExperienceMode || "").trim().toLowerCase() === "expert" ? "expert" : "novice", Object.prototype.hasOwnProperty.call(e, "adminUiSkin") && (e.adminUiSkin = Lc(e.adminUiSkin)), e.cfQuotaPlanOverride = Xo(e.cfQuotaPlanOverride), e.logSearchMode = bc(e.logSearchMode), e.logWriteMode = qo(e.logWriteMode), e.routingDecisionMode = Ur(e.routingDecisionMode), e.protocolStrategy = cc(e.protocolStrategy), e.defaultPlaybackInfoMode = qt(e.defaultPlaybackInfoMode), e.defaultRealClientIpMode = Po(e.defaultRealClientIpMode), e.defaultMediaAuthMode = Ni(e.defaultMediaAuthMode), e.scheduleUtcOffsetMinutes = Ue(e.scheduleUtcOffsetMinutes), e.tgDailyReportClockTimes = xt(e.tgDailyReportClockTimes, B.Defaults.TgDailyReportClockTimes);
+  e.prewarmDepth = _c(e.prewarmDepth), e.hedgeProbePath = ka(e.hedgeProbePath, B.Defaults.HedgeProbePath), e.dnsDefaultFallbackCname = Cf(e.dnsDefaultFallbackCname), e.defaultHostPrefixCnameTarget = Xt(e.defaultHostPrefixCnameTarget), e.settingsExperienceMode = String(e.settingsExperienceMode || "").trim().toLowerCase() === "expert" ? "expert" : "novice", Object.prototype.hasOwnProperty.call(e, "adminUiSkin") && (e.adminUiSkin = Lc(e.adminUiSkin)), e.cfQuotaPlanOverride = Xo(e.cfQuotaPlanOverride), e.logSearchMode = bc(e.logSearchMode), e.logWriteMode = qo(e.logWriteMode), e.routingDecisionMode = Ur(e.routingDecisionMode), e.protocolStrategy = cc(e.protocolStrategy), e.defaultPlaybackInfoMode = qt(e.defaultPlaybackInfoMode), e.defaultRealClientIpMode = Po(e.defaultRealClientIpMode), e.defaultMediaAuthMode = Ni(e.defaultMediaAuthMode), e.scheduleUtcOffsetMinutes = Ue(e.scheduleUtcOffsetMinutes), e.tgDailyReportClockTimes = xt(e.tgDailyReportClockTimes, B.Defaults.TgDailyReportClockTimes);
   const t = tt(e.indexUrl);
-  return e.indexUrl = t ? qr(t) : "", $d(e, n), e;
+  return e.indexUrl = t ? Xr(t) : "", Bd(e, n), e;
 }
 var Dc = [
   "cfApiToken",
@@ -5566,9 +5576,9 @@ function Ic(n = {}, e = {}) {
 }
 function Bn(n = {}, e = {}) {
   const t = Ic(n, e), r = tt(ce(e).indexUrl);
-  return t.indexUrl = r ? qr(r) : "", t;
+  return t.indexUrl = r ? Xr(r) : "", t;
 }
-function Mf(n = "", e = {}) {
+function Pf(n = "", e = {}) {
   const t = String(n || "").trim();
   if (!t) return;
   const r = t.split(".").pop() || "", a = ie(ae(ce(e)));
@@ -5578,7 +5588,7 @@ function Mf(n = "", e = {}) {
       currentHash: a
     });
 }
-function Pf(n = {}) {
+function xf(n = {}) {
   const e = wc(n);
   return {
     cleanedConfig: Nc(e.config),
@@ -5601,7 +5611,7 @@ function lo(n, e = {}) {
     revision: zt(t, r)
   };
 }
-function xf(n = {}, e = {}) {
+function Of(n = {}, e = {}) {
   const t = ce(n), r = ce(e), a = [.../* @__PURE__ */ new Set([...Object.keys(t), ...Object.keys(r)])].sort(), o = [];
   for (const s of a)
     ae(t[s]) !== ae(r[s]) && o.push({
@@ -5611,12 +5621,12 @@ function xf(n = {}, e = {}) {
     });
   return o;
 }
-function Of(n = [], e = 20) {
+function vf(n = [], e = 20) {
   const t = Math.max(1, Number(e) || 20);
   return [...new Set((Array.isArray(n) ? n : [n]).map((r) => String(r ?? "").trim()).filter(Boolean))].slice(0, t);
 }
 function ht(n = "", e = "", t = [], r = {}) {
-  const a = Of(t, r.limit), o = Number(r.count), s = Number.isFinite(o) ? Math.max(0, Math.floor(o)) : a.length, i = String(r.note || "").trim();
+  const a = vf(t, r.limit), o = Number(r.count), s = Number.isFinite(o) ? Math.max(0, Math.floor(o)) : a.length, i = String(r.note || "").trim();
   return {
     key: String(n || "").trim(),
     label: String(e || "").trim(),
@@ -5633,7 +5643,7 @@ function Te(n, e, t = "", r = "", a = [], o = 0, s = "") {
     note: s
   })), n;
 }
-function vf(n = {}) {
+function Ff(n = {}) {
   const e = [], t = ar(n.configFieldTargets || []);
   if (t.length > 0) {
     const i = [];
@@ -5652,7 +5662,7 @@ function vf(n = {}) {
   }
   return e;
 }
-function Ff(n = []) {
+function Uf(n = []) {
   return (Array.isArray(n) ? n : []).map((e) => e?.name || e?.id);
 }
 async function ve(n, e, t = {}) {
@@ -5664,7 +5674,7 @@ async function ve(n, e, t = {}) {
     throw Ri("get", { key: r }, ue(o));
   }
 }
-async function Uf(n, e = {}) {
+async function kf(n, e = {}) {
   if (!n || typeof n.list != "function") return {
     keys: [],
     list_complete: !0,
@@ -5680,7 +5690,7 @@ async function Uf(n, e = {}) {
     throw Ri("list", { prefix: r }, ue(o));
   }
 }
-var kf = "sys:theme";
+var Hf = "sys:theme";
 function Mc(n, e = {}) {
   const t = String(n || "").trim(), r = t.toLowerCase(), a = String(e.zoneId || "").trim(), o = {
     status: "CF 查询失败",
@@ -5737,7 +5747,7 @@ async function we(n) {
       const d = i && typeof i == "object";
       Le("runtime_config.load_failed", l, {
         cacheNamespace: t,
-        configKey: kf,
+        configKey: Hf,
         usedCachedConfig: d === !0
       }), c = d ? i : ce({});
     }
@@ -5752,7 +5762,7 @@ async function me(n) {
   const e = Sr(n);
   return e ? await Pc(e) : {};
 }
-function Hf(n = {}, e = {}) {
+function $f(n = {}, e = {}) {
   const { indexRepository: t } = n;
   async function r(f, m, p, h = Ke(m), g = null) {
     const y = k(g) ? ce(g) : ce(await me(m)), _ = await t.getAdminActiveIndexRecord(t.getKV(m)), S = _ ? ce({
@@ -5867,7 +5877,7 @@ function Hf(n = {}, e = {}) {
     });
   }
   async function d(f, m, p = Ke(m)) {
-    const h = ft(m), g = zo(m), y = no(p), _ = Qr({
+    const h = ft(m), g = zo(m), y = no(p), _ = Zr({
       adminPath: h,
       loginPath: g,
       initHealth: p,
@@ -6148,7 +6158,7 @@ function Hf(n = {}, e = {}) {
   }
   function u(f, m, p = 200, h = {}) {
     const g = new Headers(f);
-    return De(g), h.mergeOriginVary === !0 && g.get("Access-Control-Allow-Origin") !== "*" && Kr(g, "Origin"), new Response(m, {
+    return De(g), h.mergeOriginVary === !0 && g.get("Access-Control-Allow-Origin") !== "*" && zr(g, "Origin"), new Response(m, {
       status: p,
       headers: g
     });
@@ -6171,7 +6181,7 @@ function Yo(n = "") {
 function Ca(n = "") {
   return on(n) || /\/audio\/[^/]+(?:\/|$)/i.test(String(n || "")) || /\/livetv\/[^/]+(?:\/|$)/i.test(String(n || "")) || Yo(n);
 }
-function $f(n = "") {
+function Bf(n = "") {
   const e = String(n || "").trim();
   return /^[a-z][a-z0-9+.-]*:/i.test(e) || e.startsWith("//");
 }
@@ -6188,14 +6198,14 @@ function Oc(n = "") {
 function vc(n = "") {
   return /\/sessions\/playing\/stopped(?:$|[/?])/i.test(String(n || ""));
 }
-function Bf(n = "") {
+function Kf(n = "") {
   return /\/sessions\/playing\/ping(?:$|[/?])/i.test(String(n || ""));
 }
-function Kf(n = "") {
+function zf(n = "") {
   const e = String(n || "");
-  return Oc(e) || vc(e) || Bf(e) ? !1 : /\/sessions\/playing(?:\/started)?(?:$|[/?])/i.test(e);
+  return Oc(e) || vc(e) || Kf(e) ? !1 : /\/sessions\/playing(?:\/started)?(?:$|[/?])/i.test(e);
 }
-function zf(n = {}, e = {}) {
+function Wf(n = {}, e = {}) {
   function t(r, a) {
     let o = a;
     const s = at(r[o]);
@@ -6205,14 +6215,14 @@ function zf(n = {}, e = {}) {
   }
   return { isPlaybackCriticalSegments: t };
 }
-function Wf(n = {}) {
+function Gf(n = {}) {
   const e = {};
-  for (const [t, r] of Object.entries(Pd(n, e))) e[t] = r;
   for (const [t, r] of Object.entries(xd(n, e))) e[t] = r;
-  for (const [t, r] of Object.entries(vd(n, e))) e[t] = r;
+  for (const [t, r] of Object.entries(Od(n, e))) e[t] = r;
   for (const [t, r] of Object.entries(Fd(n, e))) e[t] = r;
-  for (const [t, r] of Object.entries(Hf(n, e))) e[t] = r;
-  for (const [t, r] of Object.entries(zf(n, e))) e[t] = r;
+  for (const [t, r] of Object.entries(Ud(n, e))) e[t] = r;
+  for (const [t, r] of Object.entries($f(n, e))) e[t] = r;
+  for (const [t, r] of Object.entries(Wf(n, e))) e[t] = r;
   return e;
 }
 function sn(n) {
@@ -6226,7 +6236,7 @@ function sn(n) {
   ], r = Math.floor(Math.log(n) / Math.log(e));
   return parseFloat((n / Math.pow(e, r)).toFixed(2)) + " " + t[r];
 }
-var Fc = 1024 * 1024 * 1024, Gf = 500 * 1024 * 1024, Vf = 10 * 1024 * 1024 * 1024, Jo = Object.freeze({
+var Fc = 1024 * 1024 * 1024, Vf = 500 * 1024 * 1024, jf = 10 * 1024 * 1024 * 1024, Jo = Object.freeze({
   planClass: "free",
   planLabel: "FREE",
   periodLabel: "今日",
@@ -6240,7 +6250,7 @@ var Fc = 1024 * 1024 * 1024, Gf = 500 * 1024 * 1024, Vf = 10 * 1024 * 1024 * 102
   d1: {
     rowsRead: 5e6,
     rowsWritten: 1e5,
-    storageBytes: Gf
+    storageBytes: Vf
   }
 }), Uc = Object.freeze({
   planClass: "paid",
@@ -6256,9 +6266,9 @@ var Fc = 1024 * 1024 * 1024, Gf = 500 * 1024 * 1024, Vf = 10 * 1024 * 1024 * 102
   d1: {
     rowsRead: 25e9,
     rowsWritten: 5e7,
-    storageBytes: Vf
+    storageBytes: jf
   }
-}), jf = Object.freeze({
+}), qf = Object.freeze({
   free: Jo,
   paid: Uc
 });
@@ -6270,7 +6280,7 @@ function wa(n) {
   const e = Number(n);
   return !Number.isFinite(e) || e <= 0 ? 0 : e >= 100 ? 100 : Math.max(0, Math.round(e * 10) / 10);
 }
-function qf(n = 0) {
+function Xf(n = 0) {
   const e = Number(n);
   return !Number.isFinite(e) || e <= 0 ? "slate" : e >= 90 ? "danger" : e >= 70 ? "warning" : "success";
 }
@@ -6299,9 +6309,9 @@ function uo(n = {}) {
   };
 }
 function Na(n = "free") {
-  return jf[String(n || "").trim().toLowerCase() === "paid" ? "paid" : "free"] || Jo;
+  return qf[String(n || "").trim().toLowerCase() === "paid" ? "paid" : "free"] || Jo;
 }
-async function Xf(n = {}) {
+async function Yf(n = {}) {
   const e = ce(k(n) ? n : {}), t = Xo(e.cfQuotaPlanOverride);
   if (t) return uo({ override: t });
   const r = String(e.cfAccountId || "").trim(), a = String(e.cfApiToken || "").trim();
@@ -6320,15 +6330,15 @@ async function Xf(n = {}) {
     };
   }
 }
-function Yf(n = {}) {
+function Jf(n = {}) {
   const e = k(n) ? n : {}, t = Math.max(1, Math.floor(Number(e.writeLimit) || 0)), r = Math.max(0, Math.floor(Number(e.estimatedPutCount) || 0)), a = Math.max(0, Math.floor(Number(e.estimatedRollbackWriteCount) || 0)), o = Math.max(0, Math.floor(Number(e.estimatedWorstCaseWriteCount) || 0)), s = Math.max(0, o - t), i = String(e.planLabel || "").trim() || "FREE", c = String(e.periodLabel || "").trim() || "今日";
   return o <= t ? "" : `KV 整理已拦截：当前 ${i} 计划 · ${c} 写入上限为 ${Se(t)}，本次预计写入 ${Se(r)} 次，最坏回滚写回 ${Se(a)} 次，最坏共 ${Se(o)} 次，超出 ${Se(s)} 次。`;
 }
-function Jf(n = {}) {
+function Qf(n = {}) {
   const e = k(n) ? n : {}, t = String(e.planLabel || "").trim() || "FREE", r = String(e.periodLabel || "").trim() || "今日", a = Math.max(1, Math.floor(Number(e.writeLimit) || 0)), o = Math.max(0, Math.floor(Number(e.estimatedPutCount) || 0)), s = Math.max(0, Math.floor(Number(e.estimatedDeleteCount) || 0)), i = Math.max(0, Math.floor(Number(e.estimatedRollbackWriteCount) || 0)), c = Math.max(0, Math.floor(Number(e.estimatedWorstCaseWriteCount) || 0));
   return `KV 配额预算：${t} 计划 · ${r}，预计 put ${Se(o)} 次，delete ${Se(s)} 次，最坏回滚写回 ${Se(i)} 次，最坏写入 ${Se(c)} / ${Se(a)}。`;
 }
-function Qf(n = "free", e = /* @__PURE__ */ new Date()) {
+function Zf(n = "free", e = /* @__PURE__ */ new Date()) {
   const t = String(n || "").trim().toLowerCase() === "paid" ? "paid" : "free", r = e instanceof Date ? new Date(e.getTime()) : new Date(e || Date.now()), a = r.toISOString();
   if (t === "paid") {
     const i = new Date(Date.UTC(r.getUTCFullYear(), r.getUTCMonth(), 1, 0, 0, 0, 0)), c = new Date(Date.UTC(r.getUTCFullYear(), r.getUTCMonth() + 1, 1, 0, 0, 0, 0));
@@ -6374,7 +6384,7 @@ function Rr({ key: n = "", label: e = "", used: t = 0, limit: r = 0, kind: a = "
     limitText: Os(s, a),
     percent: c,
     percentText: `${c % 1 === 0 ? Math.round(c) : c}%`,
-    tone: qf(i),
+    tone: Xf(i),
     rawPercent: i
   };
 }
@@ -6419,7 +6429,7 @@ function wr(n = "", e = "", t = "") {
     detail: t
   });
 }
-function Zf(n = "", e = {}, t = 0, r = []) {
+function em(n = "", e = {}, t = 0, r = []) {
   const a = Math.max(1, Math.min(100, Math.round(Number(t) || 0))), o = e && typeof e == "object" ? e : {}, s = (Array.isArray(r) ? r : []).map((p) => ({
     label: String(p?.label || "").trim(),
     percentText: String(p?.percentText || `${wa(p?.percent)}%`).trim()
@@ -6439,7 +6449,7 @@ function Kn(n = [], e = []) {
   }
   return "暂不可用";
 }
-function em(n = {}, e = {}) {
+function tm(n = {}, e = {}) {
   const t = n && typeof n == "object" ? n : {}, r = e && typeof e == "object" ? e : {}, a = String(t.requestCountDisplay || "").trim() || (t.todayRequests === null || t.todayRequests === void 0 ? "暂不可用" : String(Number(t.todayRequests) || 0)), o = String(t.todayTraffic || "").trim() || "暂不可用", s = String(t.monthlyTraffic || "").trim() || "暂不可用", i = Math.max(0, Number(t.playCount) || 0), c = Math.max(0, Number(t.infoCount) || 0);
   return [
     `📊 EMBY-PROXY每日报表${r.dateKey ? ` (${r.dateKey})` : ""}`,
@@ -6452,9 +6462,9 @@ function em(n = {}, e = {}) {
   ].map((l) => String(l || "").trim()).filter((l, d, u) => !(l === "" && (d === 0 || u[d - 1] === ""))).join(`
 `);
 }
-function tm(n = "", e = {}, t = {}) {
+function rm(n = "", e = {}, t = {}) {
   const r = uc(n);
-  if (r === "summary") return em(e, t);
+  if (r === "summary") return tm(e, t);
   const a = r === "d1" ? "d1" : "kv", o = e && typeof e == "object" ? e : {}, s = t && typeof t == "object" ? t : {}, i = a === "d1" ? "D1 数据库每日消耗报告" : "KV 数据库每日消耗报告", c = a === "d1" ? "#D1" : "#KV", l = Array.isArray(o.metrics) ? o.metrics : [], d = s.dateKey ? ` (${s.dateKey})` : "", u = String(o.planLabel || "").trim(), f = String(o.periodLabel || "").trim(), m = u || f ? `${u || "未知"} 计划 X ${f || "当前"}配额` : String(o.summary || "").trim() || "暂不可用", p = Kn(l, a === "d1" ? ["rowsRead", "read"] : ["read", "rowsRead"]), h = Kn(l, a === "d1" ? ["rowsWritten", "write"] : ["write", "rowsWritten"]), g = Kn(l, ["storage"]);
   return [
     `📊 ${i}${d}`,
@@ -6568,7 +6578,7 @@ async function zc(n, e) {
   const t = String(n || "").trim(), r = String(e || "").trim();
   return !t || !r ? "" : La((await Re(`https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(t)}/workers/account-settings`, r))?.result?.default_usage_model);
 }
-async function rm(n, e, t) {
+async function am(n, e, t) {
   const r = String(n || "").trim(), a = String(e || "").trim(), o = String(t || "").trim();
   return !r || !a || !o ? null : (await Re(`https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(r)}/storage/kv/namespaces/${encodeURIComponent(a)}`, o))?.result || null;
 }
@@ -6576,7 +6586,7 @@ async function Hs(n, e, t) {
   const r = String(n || "").trim(), a = String(e || "").trim(), o = String(t || "").trim();
   return !r || !a || !o ? null : (await Re(`https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(r)}/d1/database/${encodeURIComponent(a)}`, o))?.result || null;
 }
-async function am({ accountId: n, apiToken: e, namespaceId: t, startIso: r, endIso: a }) {
+async function nm({ accountId: n, apiToken: e, namespaceId: t, startIso: r, endIso: a }) {
   const o = String(n || "").trim(), s = String(e || "").trim(), i = String(t || "").trim();
   if (!o || !s || !i) return null;
   const c = await Ln(o, s, `
@@ -6622,7 +6632,7 @@ async function am({ accountId: n, apiToken: e, namespaceId: t, startIso: r, endI
   for (const f of d) u.storageBytes = Math.max(u.storageBytes, Math.max(0, Number(f?.max?.byteCount) || 0));
   return u;
 }
-async function nm({ accountId: n, apiToken: e, databaseId: t, startIso: r, endIso: a }) {
+async function om({ accountId: n, apiToken: e, databaseId: t, startIso: r, endIso: a }) {
   const o = String(n || "").trim(), s = String(e || "").trim(), i = String(t || "").trim();
   if (!o || !s || !i) return null;
   const c = await Ln(o, s, `
@@ -6655,7 +6665,7 @@ async function nm({ accountId: n, apiToken: e, databaseId: t, startIso: r, endIs
     writeQueries: 0
   });
 }
-async function om({ accountId: n, apiToken: e, databaseId: t, startIso: r, endIso: a, utcOffsetMinutes: o = B.Defaults.ScheduleUtcOffsetMinutes }) {
+async function sm({ accountId: n, apiToken: e, databaseId: t, startIso: r, endIso: a, utcOffsetMinutes: o = B.Defaults.ScheduleUtcOffsetMinutes }) {
   const s = String(n || "").trim(), i = String(e || "").trim(), c = String(t || "").trim();
   if (!s || !i || !c) return [];
   const l = await Ln(s, i, `
@@ -6693,7 +6703,7 @@ async function om({ accountId: n, apiToken: e, databaseId: t, startIso: r, endIs
   }
   return [...u.values()].sort((f, m) => f.dateKey !== m.dateKey ? String(f.dateKey).localeCompare(String(m.dateKey)) : Number(f.hour) - Number(m.hour));
 }
-async function sm({ cfAccountId: n, cfZoneId: e, cfApiToken: t, startIso: r, endIso: a, utcOffsetMinutes: o = B.Defaults.ScheduleUtcOffsetMinutes }) {
+async function im({ cfAccountId: n, cfZoneId: e, cfApiToken: t, startIso: r, endIso: a, utcOffsetMinutes: o = B.Defaults.ScheduleUtcOffsetMinutes }) {
   if (!n || !t) return null;
   const s = await Ln(n, t, `
   query {
@@ -6725,7 +6735,7 @@ async function sm({ cfAccountId: n, cfZoneId: e, cfApiToken: t, startIso: r, end
     hourlySeries: c
   };
 }
-async function im({ cfAccountId: n, cfZoneId: e, cfApiToken: t, zoneNameFallback: r = "" }) {
+async function cm({ cfAccountId: n, cfZoneId: e, cfApiToken: t, zoneNameFallback: r = "" }) {
   const a = [], o = (s, i = {}) => {
     const c = Co(s);
     if (!c) return;
@@ -6805,11 +6815,11 @@ function Be(n, e = [], t = {}) {
   }
   return "";
 }
-function cm(n = "") {
+function lm(n = "") {
   const e = String(n || "").trim().toLowerCase();
   return e ? e === "aws" ? "AWS" : e === "gcp" || e === "google" ? "GCP" : e === "azure" ? "Azure" : e.toUpperCase() : "";
 }
-function lm(n = "", e = "") {
+function um(n = "", e = "") {
   const t = String(n || "").trim().toLowerCase().replace(/_/g, "-"), r = String(e || "").trim().toLowerCase(), a = `${r}:${t}`;
   if (!t && !r) return {
     key: "other",
@@ -6926,22 +6936,22 @@ function lm(n = "", e = "") {
     sortOrder: 9
   };
 }
-function um(n) {
+function dm(n) {
   return Array.isArray(n) ? n : n && typeof n == "object" ? [n] : typeof n == "string" && n.trim() ? [{ value: n }] : [];
 }
-function dm(n = []) {
+function fm(n = []) {
   const e = [], t = /* @__PURE__ */ new Set();
   for (const r of Array.isArray(n) ? n : []) {
     const a = String(r?.id || r?.provider || r?.providerId || "").trim().toLowerCase();
     if (!a) continue;
-    const o = cm(a);
+    const o = lm(a);
     for (const s of Array.isArray(r?.regions) ? r.regions : []) {
       const i = String(s?.id || s?.region || s?.value || "").trim();
       if (!i) continue;
       const c = `${a}:${i}`;
       if (t.has(c)) continue;
       t.add(c);
-      const l = lm(i, a);
+      const l = um(i, a);
       e.push({
         provider: a,
         region: i,
@@ -6975,7 +6985,7 @@ function Hr(n, e = "", t = []) {
   return o.length === 1 ? String(o[0]?.value || "").trim() : r;
 }
 function Da(n = {}, e = []) {
-  const t = n && typeof n == "object" ? n : {}, r = String(t?.mode || "").trim().toLowerCase(), a = um(t?.target), o = Hr(t?.region, t?.provider || t?.providerId || "", e), s = a.find((_) => !!Hr(Be(_, [
+  const t = n && typeof n == "object" ? n : {}, r = String(t?.mode || "").trim().toLowerCase(), a = dm(t?.target), o = Hr(t?.region, t?.provider || t?.providerId || "", e), s = a.find((_) => !!Hr(Be(_, [
     "region",
     "value",
     "id"
@@ -7033,12 +7043,12 @@ function Gc(n = "", e = {}) {
     note: "用于写入 Worker Settings / Placement"
   }] : [];
 }
-function fm(n = "", e = "读取", t = {}) {
+function mm(n = "", e = "读取", t = {}) {
   const r = Wc(Gc(n, t));
   return r.length <= 0 ? `Cloudflare Worker 放置${e}失败：API Token 权限不足` : `Cloudflare Worker 放置${e}失败：API Token 权限不足。至少需要：${r.join("；")}`;
 }
 function Dn(n = "WORKER_PLACEMENT_FORBIDDEN", e = "", t = "读取", r = {}) {
-  return Ie(n, fm(e, t, r), 403, {
+  return Ie(n, mm(e, t, r), 403, {
     permissionKind: String(e || "").trim(),
     requiredPermissions: Gc(e, r)
   });
@@ -7059,15 +7069,15 @@ function fo(n = {}) {
     error: String(e.error || "").trim()
   };
 }
-function mm(n = "", e = "", t = !1) {
+function pm(n = "", e = "", t = !1) {
   const r = oe(n), a = oe(e);
   return !r || !a ? !1 : t ? r === a || r.endsWith(`.${a}`) : r === a;
 }
-function pm(n = "", e = "/") {
+function gm(n = "", e = "/") {
   const t = String(n || "").trim(), r = String(e || "/").trim() || "/";
   return !t || t === "/" || t === "/*" ? !0 : t.endsWith("*") ? r.startsWith(t.slice(0, -1)) : r === t;
 }
-function gm(n = {}) {
+function hm(n = {}) {
   const e = oe(n?.hostname || ""), t = Qt(n?.service || n?.script || n?.name || "");
   return !e || !t ? null : {
     source: "domains",
@@ -7081,7 +7091,7 @@ function gm(n = {}) {
     })
   };
 }
-function hm(n = {}) {
+function ym(n = {}) {
   const e = Bi(n?.pattern), t = Qt(n?.script || n?.service || n?.name || "");
   return !e || !t ? null : {
     source: "routes",
@@ -7099,7 +7109,7 @@ function hm(n = {}) {
 function $s(n = [], e = "", t = "/") {
   const r = oe(e), a = String(t || "/").trim() || "/", o = [];
   for (const s of Array.isArray(n) ? n : [])
-    !s?.scriptName || !s?.hostname || mm(r, s.hostname, s.wildcard === !0) && pm(s.path || "/", a) && o.push({
+    !s?.scriptName || !s?.hostname || pm(r, s.hostname, s.wildcard === !0) && gm(s.path || "/", a) && o.push({
       ...s,
       exactHostname: r === oe(s.hostname),
       exactPath: String(s.path || "/") === a
@@ -7115,9 +7125,9 @@ async function Vc(n, e) {
   } catch (o) {
     throw Number(o?.status) === 403 ? Dn("WORKER_PLACEMENT_REGIONS_FORBIDDEN", "regions_read", "读取") : o;
   }
-  return dm(a?.result?.providers);
+  return fm(a?.result?.providers);
 }
-async function ym(n, e, t = {}) {
+async function Sm(n, e, t = {}) {
   const r = String(n || "").trim(), a = String(e || "").trim();
   if (!r || !a) return [];
   const o = new URL(`https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(r)}/workers/domains`), s = String(t?.zoneId || "").trim(), i = oe(t?.hostname || ""), c = Qt(t?.service || "");
@@ -7125,7 +7135,7 @@ async function ym(n, e, t = {}) {
   const l = await Re(o.toString(), a);
   return Array.isArray(l?.result) ? l.result : [];
 }
-async function Sm(n, e) {
+async function _m(n, e) {
   const t = String(n || "").trim(), r = String(e || "").trim();
   if (!t || !r) return [];
   const a = [];
@@ -7153,9 +7163,9 @@ async function Zo({ cfAccountId: n, cfZoneId: e, cfApiToken: t, request: r }) {
     if (!c.has(`query:${p}`)) {
       c.add(`query:${p}`);
       try {
-        const h = await ym(n, t, m);
+        const h = await Sm(n, t, m);
         for (const y of h) {
-          const _ = gm(y);
+          const _ = hm(y);
           if (!_) continue;
           const S = `${_.source}|${_.scriptName}|${_.hostname}|${_.path}`;
           c.has(S) || (c.add(S), i.push(_));
@@ -7178,7 +7188,7 @@ async function Zo({ cfAccountId: n, cfZoneId: e, cfApiToken: t, request: r }) {
     }
   }
   try {
-    const m = $s(await Sm(e, t).then((p) => p.map((h) => hm(h)).filter(Boolean)), o, s);
+    const m = $s(await _m(e, t).then((p) => p.map((h) => ym(h)).filter(Boolean)), o, s);
     if (m?.scriptName) return {
       requestHost: o,
       requestPath: s,
@@ -7203,7 +7213,7 @@ async function ln(n, e, t) {
   }
   return k(r?.result) ? r.result : {};
 }
-async function Zr(n, e, t, r = {}) {
+async function ea(n, e, t, r = {}) {
   const a = new FormData();
   a.append("settings", new Blob([JSON.stringify(r && typeof r == "object" ? r : {})], { type: "application/json" }), "settings.json");
   let o = null;
@@ -7237,7 +7247,7 @@ function ts(n = "") {
 function Vt(n = "WORKER_PLACEMENT_KV_FAILED", e = "Worker 放置 KV 持久化失败", t = null) {
   return Ie(n, e, 503, t);
 }
-function _m(n) {
+function bm(n) {
   return _n(n) && String(n?.code || "").trim().toUpperCase().startsWith("WORKER_PLACEMENT_") && String(n?.details?.dependency || "").trim().toUpperCase() === "KV";
 }
 function jc(n = {}, e = "") {
@@ -7310,14 +7320,14 @@ async function Bs(n, e = "") {
   }
   return !0;
 }
-function bm(n = "") {
+function Em(n = "") {
   const e = String(n || "").trim();
   return e ? `当前已保存的 Worker Placement Region（${e}）已不在 Cloudflare 可选区域列表中，请重新选择并保存` : "当前已保存的 Worker Placement Region 已不在 Cloudflare 可选区域列表中，请重新选择并保存";
 }
 function Ks(n = "", e = "", t = "", r = [], a = {}) {
   const o = Hr(t, "", r), s = Array.isArray(r) ? r : [], i = s.find((d) => String(d?.value || "").trim() === o) || null, c = a?.regionError || null;
   let l = String(a?.error || "").trim();
-  return !l && c ? l = un(c, "read") : !l && o && s.length > 0 && !i && (l = bm(o)), fo({
+  return !l && c ? l = un(c, "read") : !l && o && s.length > 0 && !i && (l = Em(o)), fo({
     configured: a?.configured !== !1,
     scriptName: n,
     requestHost: e,
@@ -7336,12 +7346,12 @@ async function zn(n, e, t, r = {}) {
   try {
     const i = jc(r?.previousOverride, e), c = r?.originalState && typeof r.originalState == "object" ? r.originalState : Da(r?.originalPlacement, r?.regionOptions);
     if (i?.region)
-      return a = !0, await Zr(n, e, t, { placement: { region: i.region } }), o = !0, {
+      return a = !0, await ea(n, e, t, { placement: { region: i.region } }), o = !0, {
         rollbackAttempted: a,
         rollbackSucceeded: o,
         rollbackError: s
       };
-    a = !0, String(c?.currentMode || "").trim().toLowerCase() === "default" ? await Yc(n, e, t, r?.regionOptions) : await Zr(n, e, t, { placement: Nn(r?.originalPlacement) }), o = !0;
+    a = !0, String(c?.currentMode || "").trim().toLowerCase() === "default" ? await Yc(n, e, t, r?.regionOptions) : await ea(n, e, t, { placement: Nn(r?.originalPlacement) }), o = !0;
   } catch (i) {
     o = !1, s = ue(i);
   }
@@ -7388,7 +7398,7 @@ async function zs(n = {}, e, t = {}) {
       error: l ? un(l, "read") : ""
     });
   } catch (o) {
-    if (Io(o) || _m(o) || t?.softFail !== !0) throw o;
+    if (Io(o) || bm(o) || t?.softFail !== !0) throw o;
     return fo({
       configured: !1,
       scriptName: r,
@@ -7414,7 +7424,7 @@ async function Yc(n, e, t, r = []) {
     tag: "null",
     patch: { placement: null }
   }]) {
-    await Zr(n, e, t, d.patch);
+    await ea(n, e, t, d.patch);
     const u = await ln(n, e, t), f = Da(u?.placement, r);
     if (f.currentMode === "default") return {
       settings: u,
@@ -7426,7 +7436,7 @@ async function Yc(n, e, t, r = []) {
   if (o !== void 0) {
     i = !0;
     try {
-      await Zr(n, e, t, { placement: o }), c = !0;
+      await ea(n, e, t, { placement: o }), c = !0;
     } catch (d) {
       c = !1, l = ue(d);
     }
@@ -7438,7 +7448,7 @@ async function Yc(n, e, t, r = []) {
     rollbackError: l
   });
 }
-function Em(n = {}, e = {}) {
+function Tm(n = {}, e = {}) {
   const { kernel: t } = n, { CacheManager: r, buildAdminShellState: a, buildAdminUiContract: o, withAdminShellRuntimeStatus: s } = n;
   return {
     async getDashboardSnapshot(i, { env: c, ctx: l, kv: d, db: u }) {
@@ -7505,7 +7515,7 @@ function Em(n = {}, e = {}) {
           initHealth: m,
           config: Dt(f),
           hostDomain: Ge(c),
-          legacyHost: jr(c),
+          legacyHost: qr(c),
           contract: o(),
           nodes: p,
           shell: a(c, m, f),
@@ -7557,7 +7567,7 @@ function Em(n = {}, e = {}) {
       return ne({
         config: Dt(f),
         hostDomain: Ge(c),
-        legacyHost: jr(c),
+        legacyHost: qr(c),
         contract: o(),
         nodes: m,
         runtimeStatus: s(p, c, f, Ke(c)),
@@ -7592,7 +7602,7 @@ function Em(n = {}, e = {}) {
         if (f === "region") {
           const S = String(i?.region || "").trim(), T = g.find((b) => String(b?.value || "").trim() === S);
           if (!T) return z("WORKER_PLACEMENT_REGION_INVALID", "所选 Placement 区域已失效，请刷新后重试");
-          await Zr(m.cfAccountId, p.scriptName, m.cfApiToken, { placement: { region: T.value } });
+          await ea(m.cfAccountId, p.scriptName, m.cfApiToken, { placement: { region: T.value } });
           try {
             await Xc(d, p.scriptName, T.value);
           } catch (b) {
@@ -7613,7 +7623,7 @@ function Em(n = {}, e = {}) {
             });
           }
         } else if (f === "smart") {
-          if (await Zr(m.cfAccountId, p.scriptName, m.cfApiToken, { placement: { mode: "smart" } }), h) try {
+          if (await ea(m.cfAccountId, p.scriptName, m.cfApiToken, { placement: { mode: "smart" } }), h) try {
             await Bs(d, p.scriptName);
           } catch (S) {
             const T = await zn(m.cfAccountId, p.scriptName, m.cfApiToken, {
@@ -7659,12 +7669,12 @@ function Em(n = {}, e = {}) {
     }
   };
 }
-var Jc = 600 * 1e3, Tm = Jc;
+var Jc = 600 * 1e3, Am = Jc;
 function ct(n = "", e = "manual") {
   const t = String(e || "manual").trim().toLowerCase() === "scheduled" ? "scheduled" : "manual", r = String(n || "").trim().toLowerCase();
   return t !== "manual" ? "smart" : r === "full" ? "full" : "smart";
 }
-function Am(n = "", e = "manual") {
+function Rm(n = "", e = "manual") {
   return ct(n, e) === "full";
 }
 function rs(n = "worker.js") {
@@ -7675,14 +7685,14 @@ function Qc(n = "") {
   const e = String(n || "");
   return e && (/(^|\n)\s*export\s+/m.test(e) || /(^|\n)\s*import\s+(?:[\w*{]|["'])/m.test(e)) ? "module" : "service-worker";
 }
-function Rm(n = "", e = "worker.js") {
+function Cm(n = "", e = "worker.js") {
   const t = rs(e);
   if (t.toLowerCase() !== "worker.js") throw Ie("WORKER_UPLOAD_FILE_NAME_INVALID", "Worker 文件名必须是 worker.js", 400, { fileName: t || String(e || "").trim() });
   const r = String(n || ""), a = new TextEncoder().encode(r).length;
   if (!r.trim()) throw Ie("WORKER_UPLOAD_EMPTY", "worker.js 不能为空", 400);
   if (a > 3145728) throw Ie("WORKER_UPLOAD_TOO_LARGE", `worker.js 体积超过限制（${a} bytes）`, 400, {
     contentLength: a,
-    maxBytes: Dm
+    maxBytes: Im
   });
   return {
     fileName: t,
@@ -7691,11 +7701,11 @@ function Rm(n = "", e = "worker.js") {
     syntax: Qc(r)
   };
 }
-function Cm(n = "", e = "module") {
+function wm(n = "", e = "module") {
   const t = rs(n) || "worker.js";
   return e === "module" ? { main_module: t } : { body_part: t };
 }
-function wm(n = "module") {
+function Lm(n = "module") {
   return n === "module" ? "application/javascript+module" : "application/javascript";
 }
 function Zc() {
@@ -7710,12 +7720,12 @@ function el(n = "更新") {
   const e = Wc(Zc());
   return e.length > 0 ? `Cloudflare Worker 脚本${n}失败：API Token 权限不足。至少需要：${e.join("；")}` : `Cloudflare Worker 脚本${n}失败：API Token 权限不足`;
 }
-function Lm(n = "WORKER_SCRIPT_UPDATE_FORBIDDEN", e = "更新") {
+function Nm(n = "WORKER_SCRIPT_UPDATE_FORBIDDEN", e = "更新") {
   return Ie(n, el(e), 403, { requiredPermissions: Zc() });
 }
-async function Nm(n, e, t, r, a = {}) {
+async function Dm(n, e, t, r, a = {}) {
   const o = String(n || "").trim(), s = Qt(e), i = String(t || "").trim(), c = rs(a?.fileName) || "worker.js", l = String(r || ""), d = Qc(l), u = new FormData();
-  u.append("metadata", new Blob([JSON.stringify(Cm(c, d))], { type: "application/json" }), "metadata.json"), u.append("files", new Blob([l], { type: wm(d) }), c);
+  u.append("metadata", new Blob([JSON.stringify(wm(c, d))], { type: "application/json" }), "metadata.json"), u.append("files", new Blob([l], { type: Lm(d) }), c);
   let f = null;
   try {
     f = await Re(`https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(o)}/workers/scripts/${encodeURIComponent(s)}/content`, i, {
@@ -7723,7 +7733,7 @@ async function Nm(n, e, t, r, a = {}) {
       body: u
     });
   } catch (m) {
-    throw Number(m?.status) === 403 ? Lm("WORKER_SCRIPT_UPDATE_FORBIDDEN", "更新") : m;
+    throw Number(m?.status) === 403 ? Nm("WORKER_SCRIPT_UPDATE_FORBIDDEN", "更新") : m;
   }
   return {
     syntax: d,
@@ -7735,8 +7745,8 @@ function Ws(n) {
   const e = String(n?.message || n || "").trim() || "Worker 脚本更新失败", t = Number(n?.status) || Number(/cf_api_http_(\d+)/i.exec(e)?.[1] || 0), r = String(n?.code || "").trim().toUpperCase();
   return r === "WORKER_SCRIPT_UPDATE_FORBIDDEN" && String(n?.message || "").trim() ? n.message : r === "WORKER_PLACEMENT_SCRIPT_DISCOVERY_FORBIDDEN" ? String(n?.message || "").replace("Cloudflare Worker 放置读取失败", "Cloudflare Worker 脚本定位失败").trim() : r === "WORKER_PLACEMENT_SCRIPT_UNRESOLVED" || r === "WORKER_PLACEMENT_HOST_INVALID" || r === "WORKER_PLACEMENT_CONFIG_REQUIRED" ? e : t === 401 ? "Cloudflare Worker 和 HTML 更新失败：API Token 无效" : t === 403 ? el("更新") : t === 404 ? "Cloudflare Worker 和 HTML 更新失败：未找到目标 Worker 脚本" : e;
 }
-var Dm = 3 * 1024 * 1024;
-function Im(n = {}, e = {}) {
+var Im = 3 * 1024 * 1024;
+function Mm(n = {}, e = {}) {
   const { kernel: t } = n, { buildAdminLocalIndexUploadRecord: r } = n;
   return {
     async loadConfig(a, { env: o, kv: s, db: i, ctx: c }) {
@@ -7785,7 +7795,7 @@ function Im(n = {}, e = {}) {
             scope: "d1",
             planHash: f ? "" : u.planHash,
             planToken: m,
-            planExpiresAt: m ? new Date($() + Tm).toISOString() : "",
+            planExpiresAt: m ? new Date($() + Am).toISOString() : "",
             requiresSchemaInitialization: f,
             summary: u.summary,
             ...u.preview
@@ -7828,7 +7838,7 @@ function Im(n = {}, e = {}) {
       });
       let f, m;
       try {
-        f = Rm(d, a?.workerFileName);
+        f = Cm(d, a?.workerFileName);
         const S = String(a?.indexFileName || "").trim().split(/[\\/]+/).pop() || "";
         if (S.toLowerCase() !== "index.html") return z("ADMIN_INDEX_UPLOAD_FILE_NAME_INVALID", "HTML 文件名必须是 index.html", 400, { fileName: S || String(a?.indexFileName || "").trim() });
         m = await r(u, S);
@@ -7856,7 +7866,7 @@ function Im(n = {}, e = {}) {
       }
       let y;
       try {
-        y = await Nm(p.cfAccountId, h.scriptName, p.cfApiToken, f.scriptContent, { fileName: f.fileName });
+        y = await Dm(p.cfAccountId, h.scriptName, p.cfApiToken, f.scriptContent, { fileName: f.fileName });
       } catch (S) {
         let T = !1, b = !1, A = "", C = "";
         try {
@@ -7976,7 +7986,7 @@ function Im(n = {}, e = {}) {
       }, h = JSON.stringify(p), g = Fe(h) + 23 - 1;
       return g > 12517376 ? z("FULL_BACKUP_TOO_LARGE", "完整备份超过安全回导上限，请先分别导出节点与设置并精简超大节点字段", 413, {
         importRequestBytes: g,
-        maxBytes: md,
+        maxBytes: pd,
         nodeCount: p.nodes.length,
         adminIndexBytes: Number(f?.bytes) || 0
       }) : new Response(h, { headers: ic() });
@@ -8016,7 +8026,7 @@ function Im(n = {}, e = {}) {
     }
   };
 }
-function Mm(n = {}, e = {}) {
+function Pm(n = {}, e = {}) {
   const { kernel: t } = n, { CacheManager: r } = n;
   return {
     async list(a, { env: o, ctx: s, kv: i, db: c }) {
@@ -8069,7 +8079,7 @@ function Mm(n = {}, e = {}) {
       const u = {
         name: l.toLowerCase(),
         ...d
-      }, f = Lp(l, d);
+      }, f = Np(l, d);
       return ne({
         success: !0,
         node: u,
@@ -8098,7 +8108,7 @@ function mo(n = [], e = {}) {
   }
   return i;
 }
-function Pm(n, e = null, t = "") {
+function xm(n, e = null, t = "") {
   const r = String(n?.proxyMode || n?.mode || "").trim().toLowerCase();
   if ([
     "direct",
@@ -8106,12 +8116,12 @@ function Pm(n, e = null, t = "") {
     "origin-direct",
     "node-direct"
   ].includes(r) || n?.direct === !0 || n?.sourceDirect === !0 || n?.directSource === !0 || n?.direct2xx === !0) return !0;
-  const a = `${Gr(n?.tags, n?.tag).join(" ")} ${n?.remark || ""}`;
+  const a = `${Vr(n?.tags, n?.tag).join(" ")} ${n?.remark || ""}`;
   return /(?:^|[\s[(【])(?:直连|source-direct|origin-direct|node-direct)(?:$|[\s\])】])/i.test(a);
 }
-function xm(n, e = null, t = "") {
-  const r = Wr(n);
-  return r === "direct" ? !0 : r === "proxy" ? !1 : Pm(n, e, t);
+function Om(n, e = null, t = "") {
+  const r = Gr(n);
+  return r === "direct" ? !0 : r === "proxy" ? !1 : xm(n, e, t);
 }
 function Ia(n, e) {
   if (!n) return null;
@@ -8125,7 +8135,7 @@ function Ia(n, e) {
 function tl(n) {
   return n === 301 || n === 302 || n === 303 || n === 307 || n === 308;
 }
-function Om(n, e) {
+function vm(n, e) {
   if (!n || !/^https?:\/\//i.test(n)) return !1;
   try {
     const t = new URL(n);
@@ -8144,22 +8154,22 @@ function Gs(n, e = null) {
     return n;
   }
 }
-function vm(n, e) {
+function Fm(n, e) {
   const t = n?.requestTraits || {};
   if (t.isPlaybackCriticalRequest !== !0 && t.isImage !== !0 && t.isSubtitle !== !0) return null;
-  const r = e?.clientRedirectAuthPolicy || ta(e?.newHeaders || n.request.headers);
+  const r = e?.clientRedirectAuthPolicy || ra(e?.newHeaders || n.request.headers);
   return e && typeof e == "object" && (e.clientRedirectAuthPolicy = r), {
     policy: r,
     mode: n.effectiveMediaAuthMode,
     canDirect: r.canDirect === !0
   };
 }
-function Fm(n, e = "GET") {
+function Um(n, e = "GET") {
   const t = String(e || "GET").toUpperCase();
   return n === 303 && t !== "GET" && t !== "HEAD" || (n === 301 || n === 302) && t === "POST" ? "GET" : t;
 }
-function Um(n = {}, e = {}) {
-  const t = cc(Sa(n, "protocolStrategy") ? n?.protocolStrategy : Go(n)), r = Number.isFinite(Number(e.hourUtc8)) ? Number(e.hourUtc8) : (/* @__PURE__ */ (/* @__PURE__ */ new Date()).getUTCHours() + 8) % 24, a = r >= 20 && r < 24;
+function km(n = {}, e = {}) {
+  const t = cc(_a(n, "protocolStrategy") ? n?.protocolStrategy : Go(n)), r = Number.isFinite(Number(e.hourUtc8)) ? Number(e.hourUtc8) : (/* @__PURE__ */ (/* @__PURE__ */ new Date()).getUTCHours() + 8) % 24, a = r >= 20 && r < 24;
   return t === "aggressive" ? {
     strategy: t,
     enableH2: !0,
@@ -8183,7 +8193,7 @@ function Um(n = {}, e = {}) {
     isPeakHour: a
   };
 }
-function km(n = {}, e = {}) {
+function Hm(n = {}, e = {}) {
   const { kernel: t } = n, { CacheManager: r, buildAdminLocalIndexUploadRecord: a } = n;
   return {
     async saveOrImport(o, { action: s, ctx: i, kv: c, env: l }) {
@@ -8291,7 +8301,7 @@ function km(n = {}, e = {}) {
           if (!k(A)) continue;
           const C = String(A.name || "").trim().toLowerCase();
           if (!C) continue;
-          const N = Wr(A);
+          const N = Gr(A);
           let P = N;
           if (f.has(C) ? P = "direct" : N === "direct" && (P = "inherit"), P !== N) {
             const { name: E, ...w } = A, R = {
@@ -8561,7 +8571,7 @@ function km(n = {}, e = {}) {
     }
   };
 }
-function Hm(n = {}, e = {}) {
+function $m(n = {}, e = {}) {
   const { kernel: t } = n;
   return {
     async tidyKvData(r, { env: a, ctx: o, kv: s, db: i }) {
@@ -8633,7 +8643,7 @@ function Hm(n = {}, e = {}) {
     }
   };
 }
-function $m(n = "") {
+function Bm(n = "") {
   return String(n || "").trim().toLowerCase() === "a" ? "a" : "cname";
 }
 function jt(n = {}) {
@@ -8660,7 +8670,7 @@ async function $r(n, e, t = {}) {
   } while (a <= o && a <= 20);
   return r;
 }
-function ga(n = {}, e = {}) {
+function ha(n = {}, e = {}) {
   const t = {
     type: String(e.type || n?.type || "A").trim().toUpperCase(),
     name: oe(e.host || n?.name),
@@ -8670,15 +8680,15 @@ function ga(n = {}, e = {}) {
   };
   return typeof n?.comment == "string" && (t.comment = n.comment), Array.isArray(n?.tags) && (t.tags = n.tags.map((r) => String(r))), t;
 }
-function Bm(n = "", e = "") {
+function Km(n = "", e = "") {
   const t = String(n || "").trim().toUpperCase(), r = String(e || "").trim();
   return r ? t === "A" ? r : r.toLowerCase() : "";
 }
 function Br(n = "", e = "") {
-  const t = String(n || "").trim().toUpperCase(), r = Bm(t, e);
+  const t = String(n || "").trim().toUpperCase(), r = Km(t, e);
   return !t || !r ? "" : `${t}|${r}`;
 }
-function Km(n = []) {
+function zm(n = []) {
   const e = [], t = /* @__PURE__ */ new Set();
   let r = 0;
   for (const a of Array.isArray(n) ? n : []) {
@@ -8713,7 +8723,7 @@ function Vs(n = "", e = 0) {
     deletedCount: 0
   };
 }
-function zm(n = "a", e = {}, t = {}) {
+function Wm(n = "a", e = {}, t = {}) {
   const r = {};
   let a = 0, o = 0, s = 0, i = 0, c = 0;
   for (const d of [
@@ -8745,7 +8755,7 @@ function zm(n = "a", e = {}, t = {}) {
     unchangedOnly: l === 0 && o > 0
   };
 }
-async function Wm(n = {}, e) {
+async function Gm(n = {}, e) {
   const t = String(n?.cfZoneId || "").trim(), r = String(n?.cfApiToken || "").trim();
   if (!t || !r) throw new Error("cf_api_missing");
   const a = oe(new URL(e.url).hostname), o = await Kc(t, r, {
@@ -8753,7 +8763,7 @@ async function Wm(n = {}, e) {
     context: { requestHost: a }
   }), s = await $r(t, r), i = String(o?.name || "").trim() || "", c = i || oe(s[0]?.name || "");
   let l = a;
-  Ea(l, c || i) || (l = oe(await im({
+  Ea(l, c || i) || (l = oe(await cm({
     cfAccountId: n.cfAccountId,
     cfZoneId: t,
     cfApiToken: r,
@@ -8772,7 +8782,7 @@ async function Wm(n = {}, e) {
     currentHostRecords: u
   };
 }
-function Gm(n = {}) {
+function Vm(n = {}) {
   const e = ce(n), t = String(e.cfZoneId || "").trim(), r = String(e.cfApiToken || "").trim();
   if (!t || !r) {
     const a = /* @__PURE__ */ new Error("请在账号设置中完善 Zone ID 和 API 令牌");
@@ -8783,13 +8793,13 @@ function Gm(n = {}) {
     cfApiToken: r
   };
 }
-function Vm(n = []) {
+function jm(n = []) {
   return {
     A: Vs("A", n.filter((e) => e.type === "A").length),
     AAAA: Vs("AAAA", n.filter((e) => e.type === "AAAA").length)
   };
 }
-function jm(n = "", e = [], t = []) {
+function qm(n = "", e = [], t = []) {
   const r = /* @__PURE__ */ new Map(), a = [];
   let o = 0;
   for (const i of e) {
@@ -8822,7 +8832,7 @@ function rl(n = "", e = "", t = "", r = "", a = {}) {
       s?.id && await Re(`${r}/${encodeURIComponent(s.id)}`, e, { method: "DELETE" });
     },
     async updateRecord(s, i, c) {
-      const l = ga(s, {
+      const l = ha(s, {
         host: t,
         type: i,
         content: c
@@ -8836,7 +8846,7 @@ function rl(n = "", e = "", t = "", r = "", a = {}) {
       });
     },
     async createRecord(s, i, c = a) {
-      const l = ga(c, {
+      const l = ha(c, {
         host: t,
         type: s,
         content: i
@@ -8866,7 +8876,7 @@ function rl(n = "", e = "", t = "", r = "", a = {}) {
   };
 }
 async function js(n = "", e = [], t = [], r = {}, a = {}) {
-  const o = jm(n, e, t);
+  const o = qm(n, e, t);
   r.identicalCount += o.identicalCount;
   const { reusableCurrentRecords: s, pendingDesiredRecords: i } = o;
   for (let c = 0; c < i.length; c += 1) {
@@ -8880,10 +8890,10 @@ async function js(n = "", e = [], t = [], r = {}, a = {}) {
   for (let c = i.length; c < s.length; c += 1)
     await a.deleteRecord(s[c]), r.deletedCount += 1;
 }
-async function qm({ env: n, kv: e, dnsHistoryRepository: t, config: r, host: a, mode: o = "a", desiredRecords: s = [], requestHost: i = "", skipHistory: c = !1, includeAllRecords: l = !0, includeHistory: d = !0 }) {
-  const { cfZoneId: u, cfApiToken: f } = Gm(r || await we(n));
+async function Xm({ env: n, kv: e, dnsHistoryRepository: t, config: r, host: a, mode: o = "a", desiredRecords: s = [], requestHost: i = "", skipHistory: c = !1, includeAllRecords: l = !0, includeHistory: d = !0 }) {
+  const { cfZoneId: u, cfApiToken: f } = Vm(r || await we(n));
   let m = !1, p = !1, h = "";
-  const g = Km(s), y = g.records, _ = Vm(y);
+  const g = zm(s), y = g.records, _ = jm(y);
   try {
     const S = await Qo(u, f, { scope: "dns.persist_records.zone_lookup" }), T = String(S?.name || "").trim() || "";
     if (T && !Ea(a, T)) {
@@ -8958,7 +8968,7 @@ async function qm({ env: n, kv: e, dnsHistoryRepository: t, config: r, host: a, 
       }
       throw I;
     }
-    const D = w.filter((I) => _r(I.type)), x = D.filter((I) => oe(I.name) === a), L = d === !0 ? R || await t.getDnsHostHistory(e, u, a) : [], F = o === "a" ? zm(o, _, { dedupedDesiredCount: g.duplicateCount }) : null;
+    const D = w.filter((I) => _r(I.type)), x = D.filter((I) => oe(I.name) === a), L = d === !0 ? R || await t.getDnsHostHistory(e, u, a) : [], F = o === "a" ? Wm(o, _, { dedupedDesiredCount: g.duplicateCount }) : null;
     return {
       ok: !0,
       zoneId: u,
@@ -8986,14 +8996,14 @@ async function qm({ env: n, kv: e, dnsHistoryRepository: t, config: r, host: a, 
     }, S;
   }
 }
-function Xm(n = {}, e = {}) {
+function Ym(n = {}, e = {}) {
   const { kernel: t } = n, { persistCloudflareDnsRecordsForHost: r } = n;
   return {
     async listDnsRecords(a, { env: o, kv: s, request: i }) {
       const c = ce(await we(o)), l = String(c.cfZoneId || "").trim(), d = String(c.cfApiToken || "").trim(), u = a?.includeAllRecords !== !1;
       if (!l || !d) return z("CF_API_ERROR", "请在账号设置中完善 Zone ID 和 API 令牌");
       try {
-        const f = await Wm(c, i), m = f.currentHostRecords, p = f.currentHost ? await t.getDnsHostHistory(s, l, f.currentHost) : [];
+        const f = await Gm(c, i), m = f.currentHostRecords, p = f.currentHost ? await t.getDnsHostHistory(s, l, f.currentHost) : [];
         return ne({
           ok: !0,
           zoneId: l,
@@ -9053,7 +9063,7 @@ function Xm(n = {}, e = {}) {
           const x = d || R.name;
           if (!x) return z("MISSING_PARAMS", "host 不能为空");
           if (C && !Ea(x, C)) return z("INVALID_HOST", "记录名称必须位于当前 Zone 下");
-          const L = ga(R, {
+          const L = ha(R, {
             host: x,
             type: u,
             content: f
@@ -9065,7 +9075,7 @@ function Xm(n = {}, e = {}) {
             id: l,
             ...L
           }), _ = async () => {
-            const F = ga(R, {
+            const F = ha(R, {
               host: R.name,
               type: R.type,
               content: R.content
@@ -9077,7 +9087,7 @@ function Xm(n = {}, e = {}) {
           };
         } else {
           if (C && !Ea(d, C)) return z("INVALID_HOST", "记录名称必须位于当前 Zone 下");
-          const w = `https://api.cloudflare.com/client/v4/zones/${encodeURIComponent(g)}/dns_records`, R = ga({
+          const w = `https://api.cloudflare.com/client/v4/zones/${encodeURIComponent(g)}/dns_records`, R = ha({
             name: d,
             ttl: 1,
             proxied: !1
@@ -9130,7 +9140,7 @@ function Xm(n = {}, e = {}) {
     },
     async saveDnsRecords(a, { env: o, kv: s, request: i }) {
       if (i.headers.get("X-Admin-Confirm") !== "saveDnsRecords") return z("CONFIRMATION_REQUIRED", "敏感 DNS 操作需要显式确认头", 428);
-      const c = $m(a?.mode), l = oe(a?.host || ""), d = a?.includeAllRecords === !0, u = Array.isArray(a?.records) ? a.records : [];
+      const c = Bm(a?.mode), l = oe(a?.host || ""), d = a?.includeAllRecords === !0, u = Array.isArray(a?.records) ? a.records : [];
       if (!l) return z("MISSING_PARAMS", "host 不能为空");
       const f = [];
       if (c === "cname") {
@@ -9180,7 +9190,7 @@ function Xm(n = {}, e = {}) {
     }
   };
 }
-async function ea(n, e, t) {
+async function ta(n, e, t) {
   const r = Array.isArray(n) ? n : [];
   if (r.length === 0) return [];
   if (typeof t != "function") throw new TypeError("worker must be a function");
@@ -9197,12 +9207,12 @@ async function ea(n, e, t) {
   });
   return await Promise.all(c), Promise.all(s);
 }
-var Ym = Object.freeze([{
+var Jm = Object.freeze([{
   id: "cloudflare",
   label: "Cloudflare",
   endpoint: "https://cloudflare-dns.com/dns-query"
-}]), al = 30 * 1e3, Jm = al, Qm = "emby-proxy-ui-dns-probe/1.0", Zm = 2400 * 1e3, ep = 35 * 1e3, tp = "dns_ip_pool_fetch_lock:", rp = "sys:dns_ip_pool_fetch_lock:v1:";
-function ap(n = {}, e = [], t = {}) {
+}]), al = 30 * 1e3, Qm = al, Zm = "emby-proxy-ui-dns-probe/1.0", ep = 2400 * 1e3, tp = 35 * 1e3, rp = "dns_ip_pool_fetch_lock:", ap = "sys:dns_ip_pool_fetch_lock:v1:";
+function np(n = {}, e = [], t = {}) {
   const r = /* @__PURE__ */ new Set(), a = [];
   for (const s of Array.isArray(e) ? e : []) {
     const i = gr(s);
@@ -9210,7 +9220,7 @@ function ap(n = {}, e = [], t = {}) {
     const c = String(i.ip || "").trim().toLowerCase();
     !c || r.has(c) || (r.add(c), a.push(i));
   }
-  const o = a.slice(0, zr(n?.ipLimit));
+  const o = a.slice(0, Wr(n?.ipLimit));
   return {
     id: String(n?.id || ""),
     name: String(n?.name || ""),
@@ -9221,13 +9231,13 @@ function ap(n = {}, e = [], t = {}) {
     lastFetchAt: String(t.lastFetchAt || /* @__PURE__ */ (/* @__PURE__ */ new Date()).toISOString())
   };
 }
-async function np(n = {}, e = B.Defaults.DnsIpSourceFetchMaxBytes) {
+async function op(n = {}, e = B.Defaults.DnsIpSourceFetchMaxBytes) {
   const t = String(n?.url || "").trim();
   if (!t) throw new Error("empty_source_url");
   const r = new AbortController(), a = setTimeout(() => r.abort(), al);
   try {
     const o = await ze(t, {
-      headers: { "User-Agent": sd },
+      headers: { "User-Agent": id },
       redirect: "follow",
       signal: r.signal
     });
@@ -9235,7 +9245,7 @@ async function np(n = {}, e = B.Defaults.DnsIpSourceFetchMaxBytes) {
     const s = await Pe(o, e);
     if (s.exceeded) throw new Error("SOURCE_TOO_LARGE");
     const i = s.text, c = Oi(n?.builtinId || n?.builtin_id || "");
-    return (c === "all" ? Nu(i) : c === "preferred" ? Du(i, { limit: zr(n?.ipLimit) }) : xo(i, { limit: zr(n?.ipLimit) })).map((l) => ({
+    return (c === "all" ? Du(i) : c === "preferred" ? Iu(i, { limit: Wr(n?.ipLimit) }) : xo(i, { limit: Wr(n?.ipLimit) })).map((l) => ({
       ...l,
       sourceKind: "api",
       sourceLabel: n?.name || t
@@ -9246,21 +9256,21 @@ async function np(n = {}, e = B.Defaults.DnsIpSourceFetchMaxBytes) {
     clearTimeout(a);
   }
 }
-function op(n = {}, e = "", t = "A") {
+function sp(n = {}, e = "", t = "A") {
   const r = new URL(String(n?.endpoint || ""));
   return r.searchParams.set("name", oe(e)), r.searchParams.set("type", String(t || "A").toUpperCase()), r;
 }
-async function sp(n = {}, e = "", t = "A") {
-  const r = new AbortController(), a = setTimeout(() => r.abort(), Jm);
+async function ip(n = {}, e = "", t = "A") {
+  const r = new AbortController(), a = setTimeout(() => r.abort(), Qm);
   try {
-    const o = await ze(op(n, e, t).toString(), {
+    const o = await ze(sp(n, e, t).toString(), {
       headers: { accept: "application/dns-json" },
       redirect: "follow",
       signal: r.signal
     });
     if (!o.ok) throw new Error(`DOH_HTTP_${o.status}`);
     const s = await Pe(o, bn);
-    return Cu(s.exceeded ? null : JSON.parse(s.text || "null")).map((i) => ({
+    return wu(s.exceeded ? null : JSON.parse(s.text || "null")).map((i) => ({
       ...i,
       sourceKind: "domain",
       sourceLabel: String(e || "").trim()
@@ -9271,7 +9281,7 @@ async function sp(n = {}, e = "", t = "A") {
     clearTimeout(a);
   }
 }
-function ip(n = []) {
+function cp(n = []) {
   const e = (Array.isArray(n) ? n : []).map((o) => Array.isArray(o) ? [...o] : []).filter((o) => o.length > 0), t = [], r = /* @__PURE__ */ new Set();
   let a = e.length > 0;
   for (; a; ) {
@@ -9289,20 +9299,20 @@ function ip(n = []) {
   }
   return t;
 }
-async function cp(n = {}) {
+async function lp(n = {}) {
   const e = oe(n?.domain || "");
   if (!e) throw new Error("empty_source_domain");
   const t = [], r = [], a = [];
-  for (const i of ["A", "AAAA"]) for (const c of Ym) a.push({
+  for (const i of ["A", "AAAA"]) for (const c of Jm) a.push({
     resolver: c,
     recordType: i
   });
-  const o = await ea(a, Math.min(2, Math.max(1, a.length)), async ({ resolver: i, recordType: c }) => {
+  const o = await ta(a, Math.min(2, Math.max(1, a.length)), async ({ resolver: i, recordType: c }) => {
     try {
       return {
         resolver: i,
         recordType: c,
-        items: await sp(i, e, c),
+        items: await ip(i, e, c),
         error: ""
       };
     } catch (l) {
@@ -9322,7 +9332,7 @@ async function cp(n = {}) {
     }
     String(i?.error || "").trim() && r.push(`${String(i?.resolver?.id || "resolver")}:${String(i?.recordType || "A")}=${String(i?.error || "unknown_doh_error")}`);
   }
-  const s = ip(t);
+  const s = cp(t);
   if (!s.length && o.length > 0 && r.length === o.length) {
     const i = r.every((c) => String(c || "").includes("DOH_TIMEOUT"));
     throw new Error(i ? "DOH_TIMEOUT" : r.join("; "));
@@ -9333,10 +9343,10 @@ async function cp(n = {}) {
     sourceLabel: n?.name || e
   }));
 }
-async function lp(n = {}, e = B.Defaults.DnsIpSourceFetchMaxBytes) {
+async function up(n = {}, e = B.Defaults.DnsIpSourceFetchMaxBytes) {
   const t = /* @__PURE__ */ (/* @__PURE__ */ new Date()).toISOString(), r = Ot(n);
   try {
-    return ap(r, r.sourceType === "domain" ? await cp(r) : await np(r, e), { lastFetchAt: t });
+    return np(r, r.sourceType === "domain" ? await lp(r) : await op(r, e), { lastFetchAt: t });
   } catch (a) {
     return {
       id: String(r?.id || ""),
@@ -9372,11 +9382,11 @@ async function qs(n, e = "", t = "UNKNOWN", r = {}) {
   const c = new AbortController(), l = setTimeout(() => c.abort(), fe(r.probeTimeoutMs ?? r.timeoutMs, B.Defaults.DnsIpProbeTimeoutMs, 250, 3e4)), d = $(), u = s === "IPv6" ? `http://[${o}]/` : `http://${o}/`, f = /* @__PURE__ */ (/* @__PURE__ */ new Date()).toISOString();
   try {
     const m = await ze(u, {
-      headers: ko(Qm),
+      headers: ko(Zm),
       method: "HEAD",
       redirect: "manual",
       signal: c.signal
-    }), p = Math.max(0, $() - d), h = String(m.headers.get("CF-RAY") || m.headers.get("cf-ray") || "").trim(), g = String(m.headers.get("Server") || m.headers.get("server") || "").trim(), y = Mi(h), _ = y ? "ok" : /cloudflare/i.test(g) ? "cf_header_missing" : "non_cloudflare", S = Iu(y), T = {
+    }), p = Math.max(0, $() - d), h = String(m.headers.get("CF-RAY") || m.headers.get("cf-ray") || "").trim(), g = String(m.headers.get("Server") || m.headers.get("server") || "").trim(), y = Mi(h), _ = y ? "ok" : /cloudflare/i.test(g) ? "cf_header_missing" : "non_cloudflare", S = Mu(y), T = {
       ip: o,
       entryColo: i,
       probeStatus: _,
@@ -9422,7 +9432,7 @@ async function nl(n = [], e, t = "UNKNOWN", r = {}) {
       host: String(S?.host || S?.name || r.host || ""),
       sourceKind: String(S?.sourceKind || S?.source_kind || r.scope || "shared_pool"),
       sourceLabel: String(S?.sourceLabel || S?.source_label || r.sourceLabel || ""),
-      lineLabel: Vr(S?.lineLabel || S?.line_label || ""),
+      lineLabel: jr(S?.lineLabel || S?.line_label || ""),
       remark: String(S?.remark || ""),
       createdAt: String(S?.createdAt || S?.created_at || ""),
       updatedAt: String(S?.updatedAt || S?.updated_at || ""),
@@ -9452,7 +9462,7 @@ async function nl(n = [], e, t = "UNKNOWN", r = {}) {
   const f = r.deferProbe === !0 && !!r.ctx?.waitUntil, m = fe(r.syncProbeLimit, B.Defaults.DnsIpWorkspaceSyncProbeLimit, 0, 64), p = f && l.length > m ? l.slice(0, m) : l, h = f && l.length > m ? l.slice(m) : [], g = fe(r.probeConcurrency, B.Defaults.DnsIpProbeConcurrency, 1, 4);
   let y = "cache";
   p.length > 0 && (y = "live_sync"), h.length > 0 && (y = "live_deferred");
-  const _ = await ea(p, g, async (S) => {
+  const _ = await ta(p, g, async (S) => {
     const T = await qs(e, S, t, {
       ...r,
       skipCacheRead: !0,
@@ -9461,7 +9471,7 @@ async function nl(n = [], e, t = "UNKNOWN", r = {}) {
     return c.set(String(S || "").toLowerCase(), T), T;
   });
   return e && _.length && await r.probeRepository.upsertDnsIpProbeCacheEntries(e, _), h.length && (h.forEach((S) => s.add(String(S || "").toLowerCase())), r.ctx.waitUntil((async () => {
-    const S = await ea(h, g, (T) => qs(e, T, t, {
+    const S = await ta(h, g, (T) => qs(e, T, t, {
       ...r,
       skipCacheRead: !0,
       skipCacheWrite: !0
@@ -9491,7 +9501,7 @@ async function nl(n = [], e, t = "UNKNOWN", r = {}) {
     probeDataSource: po(y)
   };
 }
-function up(n = {}) {
+function dp(n = {}) {
   const e = Oo(n?.items || []);
   return {
     sourceResults: ki(n?.sourceResults || []),
@@ -9502,7 +9512,7 @@ function up(n = {}) {
     expiresAt: en(n?.expiresAtMs)
   };
 }
-async function dp(n = [], e, t = "UNKNOWN", r = null, a = {}) {
+async function fp(n = [], e, t = "UNKNOWN", r = null, a = {}) {
   const o = r && typeof r.waitUntil == "function" ? r : { waitUntil() {
   } }, s = await nl(n, e, t, {
     probeRepository: a.probeRepository,
@@ -9519,7 +9529,7 @@ function po(n = "") {
   const e = String(n || "").trim().toLowerCase();
   return e === "live_deferred" ? "live_deferred" : e === "live_sync" ? "live_sync" : "cache";
 }
-function fp(n = "", e = "") {
+function mp(n = "", e = "") {
   const t = po(n), r = po(e), a = {
     cache: 0,
     live_sync: 1,
@@ -9527,7 +9537,7 @@ function fp(n = "", e = "") {
   };
   return (a[r] || 0) > (a[t] || 0) ? r : t;
 }
-function mp(n = {}) {
+function pp(n = {}) {
   const e = [];
   Array.isArray(n?.localPoolItems) && e.push(...n.localPoolItems), Array.isArray(n?.poolItems) && e.push(...n.poolItems), Array.isArray(n?.sharedPoolItems) && e.push(...n.sharedPoolItems);
   const t = [], r = /* @__PURE__ */ new Set();
@@ -9542,7 +9552,7 @@ function mp(n = {}) {
   }
   return t;
 }
-function pp(n = [], e = []) {
+function gp(n = [], e = []) {
   const t = /* @__PURE__ */ new Map(), r = (a) => {
     for (const o of Array.isArray(a) ? a : []) {
       const s = gr(o);
@@ -9554,11 +9564,11 @@ function pp(n = [], e = []) {
   };
   return r(n), r(e), [...t.values()];
 }
-function gp(n = "") {
-  return `${tp}${String(n || "").trim()}`;
+function hp(n = "") {
+  return `${rp}${String(n || "").trim()}`;
 }
-async function hp({ kv: n = null, db: e = null, leaseRepository: t = null } = {}, r = "") {
-  const a = gp(r);
+async function yp({ kv: n = null, db: e = null, leaseRepository: t = null } = {}, r = "") {
+  const a = hp(r);
   if (!a || a === "dns_ip_pool_fetch_lock:") return {
     acquired: !1,
     reason: "empty_signature"
@@ -9569,7 +9579,7 @@ async function hp({ kv: n = null, db: e = null, leaseRepository: t = null } = {}
       scope: a,
       token: o,
       owner: "dns_ip_pool_fetch",
-      leaseMs: ep
+      leaseMs: tp
     }),
     token: o,
     key: a
@@ -9581,13 +9591,13 @@ async function hp({ kv: n = null, db: e = null, leaseRepository: t = null } = {}
     key: a
   };
 }
-async function yp({ kv: n = null, db: e = null, leaseRepository: t = null } = {}, r = null) {
+async function Sp({ kv: n = null, db: e = null, leaseRepository: t = null } = {}, r = null) {
   if (!r?.token) return !1;
   const a = String(r?.key || "").trim();
   return e && a ? await t.releaseScheduledLeaseWithDb(e, r.token, { scope: a }) : !1;
 }
-async function Sp({ kv: n = null, db: e = null, ctx: t = null, sourceList: r = [], maxBytes: a = B.Defaults.DnsIpSourceFetchMaxBytes, poolRepository: o = null } = {}) {
-  const s = (Array.isArray(r) ? r : []).map((S, T) => Ot(S, T)), i = s.filter((S) => S.enabled === !0 && cr(S)), c = fe(B.Defaults.DnsIpSourceConcurrency, B.Defaults.DnsIpSourceConcurrency, 1, 4), l = await ea(i, i.some((S) => Rt(S?.sourceType) === "domain") ? Math.min(c, 2) : c, async (S) => lp(S, a)), d = [], u = /* @__PURE__ */ new Map();
+async function _p({ kv: n = null, db: e = null, ctx: t = null, sourceList: r = [], maxBytes: a = B.Defaults.DnsIpSourceFetchMaxBytes, poolRepository: o = null } = {}) {
+  const s = (Array.isArray(r) ? r : []).map((S, T) => Ot(S, T)), i = s.filter((S) => S.enabled === !0 && cr(S)), c = fe(B.Defaults.DnsIpSourceConcurrency, B.Defaults.DnsIpSourceConcurrency, 1, 4), l = await ta(i, i.some((S) => Rt(S?.sourceType) === "domain") ? Math.min(c, 2) : c, async (S) => up(S, a)), d = [], u = /* @__PURE__ */ new Map();
   for (const S of l)
     u.set(String(S?.id || ""), S), Array.isArray(S?.items) && d.push(...S.items);
   const f = s.map((S, T) => {
@@ -9608,8 +9618,8 @@ async function Sp({ kv: n = null, db: e = null, ctx: t = null, sourceList: r = [
   let y = "", _ = "";
   if (e) {
     const S = Va(s, a);
-    if (S && $u(l)) {
-      const T = $(), b = T + Zm, A = await o.upsertDnsIpPoolFetchCacheEntry(e, {
+    if (S && Bu(l)) {
+      const T = $(), b = T + ep, A = await o.upsertDnsIpPoolFetchCacheEntry(e, {
         signature: S,
         items: p,
         sourceResults: l,
@@ -9643,19 +9653,19 @@ async function Sp({ kv: n = null, db: e = null, ctx: t = null, sourceList: r = [
     expiresAt: _
   };
 }
-function _p(n = {}, e = {}) {
+function bp(n = {}, e = {}) {
   const { kernel: t } = n, { buildDnsIpPoolWorkspacePreviewItems: r, buildDnsIpWorkspaceItems: a, releaseDnsIpPoolFetchRefreshLock: o, runDnsIpPoolSourcesLiveRefresh: s, tryAcquireDnsIpPoolFetchRefreshLock: i } = n;
   return {
     async getDnsIpWorkspace(c, { env: l, kv: d, db: u, request: f, ctx: m }) {
       try {
         const p = c?.forceRefresh === !0;
         u && await t.ensureDnsIpWorkspaceSchema(u);
-        const h = await me(l), g = da(f), y = Md(f);
+        const h = await me(l), g = fa(f), y = Pd(f);
         let _ = await t.getDnsIpPoolSourcesForRead({
           kv: d,
           db: u
         });
-        const S = mp(c), T = B.Defaults.DnsIpSourceFetchMaxBytes, b = _.filter((L) => L.enabled === !0 && cr(L));
+        const S = pp(c), T = B.Defaults.DnsIpSourceFetchMaxBytes, b = _.filter((L) => L.enabled === !0 && cr(L));
         let A = [], C = "empty", N = !1;
         if (p && b.length > 0) {
           const L = await s({
@@ -9694,7 +9704,7 @@ function _p(n = {}, e = {}) {
             })()));
           }
         }
-        const P = pp(A, S), E = await a(P, u, g, {
+        const P = gp(A, S), E = await a(P, u, g, {
           forceRefresh: p,
           scope: "shared_pool",
           ctx: m,
@@ -9721,7 +9731,7 @@ function _p(n = {}, e = {}) {
           host: "",
           requestColo: g,
           probeEntryColo: g,
-          probeDataSource: fp("cache", E?.probeDataSource),
+          probeDataSource: mp("cache", E?.probeDataSource),
           sourceSnapshotStatus: C,
           backgroundRefreshQueued: N,
           requestCountryCode: y.countryCode,
@@ -9730,7 +9740,7 @@ function _p(n = {}, e = {}) {
           sharedPoolItems: R,
           sourceList: _,
           availableCountries: [...x.values()].sort((L, F) => String(L.code || "").localeCompare(String(F.code || ""))),
-          summary: zu(w, R),
+          summary: Wu(w, R),
           dnsIpPoolRevision: t.getDnsIpPoolRevisionFromStatus(D),
           generatedAt: /* @__PURE__ */ (/* @__PURE__ */ new Date()).toISOString(),
           ...Tr(),
@@ -9754,7 +9764,7 @@ function _p(n = {}, e = {}) {
         ...S,
         sourceKind: p,
         sourceLabel: h
-      })), y = await a(g, u, da(f), {
+      })), y = await a(g, u, fa(f), {
         scope: "shared_pool",
         forceRefresh: !1
       }), _ = Array.isArray(y?.items) ? y.items : [];
@@ -9869,7 +9879,7 @@ function _p(n = {}, e = {}) {
               }
             })()));
           }
-          const b = up(y), A = await r(b.items, u, da(m), f, { syncProbeLimit: 0 });
+          const b = dp(y), A = await r(b.items, u, fa(m), f, { syncProbeLimit: 0 });
           return ne({
             success: !0,
             sourceResults: b.sourceResults,
@@ -9898,7 +9908,7 @@ function _p(n = {}, e = {}) {
           ctx: f,
           sourceList: h,
           maxBytes: p
-        }), S = await r(_.items, u, da(m), f, {
+        }), S = await r(_.items, u, fa(m), f, {
           syncProbeLimit: 0,
           probeTimeoutMs: 500
         });
@@ -9931,13 +9941,13 @@ function _p(n = {}, e = {}) {
     },
     async deleteDnsIpPoolItems(c, { env: l, kv: d, db: u, ctx: f }) {
       u && await t.ensureDnsIpWorkspaceSchema(u);
-      const m = Bu(c?.target);
+      const m = Ku(c?.target);
       if (m === "shared_snapshot") {
         if (!u) return z("D1_NOT_CONFIGURED", "请先绑定 D1 / PROXY_LOGS 数据库");
         const h = await t.getDnsIpPoolSourcesForRead({
           kv: d,
           db: u
-        }), g = Va(h, B.Defaults.DnsIpSourceFetchMaxBytes), y = g ? await t.getDnsIpPoolFetchCacheEntry(u, g) : null, _ = Ku(y, c?.ips || []);
+        }), g = Va(h, B.Defaults.DnsIpSourceFetchMaxBytes), y = g ? await t.getDnsIpPoolFetchCacheEntry(u, g) : null, _ = zu(y, c?.ips || []);
         if (y && g && _.deletedCount > 0) {
           const S = /* @__PURE__ */ (/* @__PURE__ */ new Date()).toISOString(), T = Math.max(0, Number(y?.cachedAtMs) || 0), b = Math.max(T, Number(y?.expiresAtMs) || T), A = Math.max(0, Number(y?.enabledSourceCount) || (Array.isArray(h) ? h.filter((C) => C?.enabled === !0 && cr(C)).length : 0));
           await t.upsertDnsIpPoolFetchCacheEntry(u, {
@@ -10005,7 +10015,7 @@ function _p(n = {}, e = {}) {
     }
   };
 }
-function bp(n = {}, e = {}) {
+function Ep(n = {}, e = {}) {
   const { kernel: t } = n;
   return {
     async testTelegram(r) {
@@ -10052,7 +10062,7 @@ function bp(n = {}, e = {}) {
       }
     },
     async pingNode(r, { env: a, ctx: o, request: s }) {
-      const i = String(s?.headers?.get("User-Agent") || "").trim(), c = await we(a), l = fe(r.timeout, c.pingTimeout ?? td, 1e3, 18e4);
+      const i = String(s?.headers?.get("User-Agent") || "").trim(), c = await we(a), l = fe(r.timeout, c.pingTimeout ?? rd, 1e3, 18e4);
       if (r.target) {
         const T = t.normalizeSingleTarget(r.target);
         if (!T) return z("INVALID_TARGET", "目标源站必须是有效的 http/https URL");
@@ -10115,7 +10125,7 @@ function bp(n = {}, e = {}) {
     }
   };
 }
-function Ep(n = {}, e = {}) {
+function Tp(n = {}, e = {}) {
   const { kernel: t } = n, { LogQueryPlanner: r } = n;
   return {
     async getLogs(a, { db: o, env: s }) {
@@ -10243,67 +10253,67 @@ function Ep(n = {}, e = {}) {
     }
   };
 }
-function Tp(n = {}) {
+function Ap(n = {}) {
   const { kernel: e } = n, t = {}, r = Kl([
     {
       name: "dashboard",
-      handlers: Em({
+      handlers: Tm({
         ...n,
         kernel: e
       }, t)
     },
     {
       name: "config",
-      handlers: Im({
-        ...n,
-        kernel: e
-      }, t)
-    },
-    {
-      name: "backup",
       handlers: Mm({
         ...n,
         kernel: e
       }, t)
     },
     {
-      name: "nodes",
-      handlers: km({
+      name: "backup",
+      handlers: Pm({
         ...n,
         kernel: e
       }, t)
     },
     {
-      name: "maintenance",
+      name: "nodes",
       handlers: Hm({
         ...n,
         kernel: e
       }, t)
     },
     {
+      name: "maintenance",
+      handlers: $m({
+        ...n,
+        kernel: e
+      }, t)
+    },
+    {
       name: "dns-records",
-      handlers: Xm({
+      handlers: Ym({
         ...n,
         kernel: e
       }, t)
     },
     {
       name: "dns-pool",
-      handlers: _p({
-        ...n,
-        kernel: e
-      }, t)
-    },
-    {
-      name: "notifications",
       handlers: bp({
         ...n,
         kernel: e
       }, t)
     },
     {
-      name: "database",
+      name: "notifications",
       handlers: Ep({
+        ...n,
+        kernel: e
+      }, t)
+    },
+    {
+      name: "database",
+      handlers: Tp({
         ...n,
         kernel: e
       }, t)
@@ -10315,8 +10325,8 @@ function Tp(n = {}) {
   for (const [a, o] of Object.entries(r.handlers)) t[a] = o;
   return r;
 }
-function Ap(n = {}) {
-  const e = Tp(n);
+function Rp(n = {}) {
+  const e = Ap(n);
   return {
     adminActionHandlers: e.handlers,
     adminActionNames: e.names,
@@ -10360,7 +10370,7 @@ function Oe(n, e = Tt.current()) {
   const t = String(n || "").trim().toLowerCase(), r = t && Number(e.NodeCacheGenerations.get(t)) || 0, a = r ? `node:${r}` : `missing:${e.NodeCacheGenerationEvictionEpoch}`;
   return `${e.NodeCacheResetGeneration}:${a}`;
 }
-function Rp(n = [], e = Tt.current()) {
+function Cp(n = [], e = Tt.current()) {
   for (const t of Array.isArray(n) ? n : [n]) {
     const r = String(t || "").trim().toLowerCase();
     if (!r) continue;
@@ -10372,9 +10382,9 @@ function Rp(n = [], e = Tt.current()) {
 function Ys(n = Tt.current()) {
   n.NodeCacheResetGeneration += 1, n.NodeCacheGenerations.clear();
 }
-var Cp = new TextEncoder();
+var wp = new TextEncoder();
 function Fe(n) {
-  return Cp.encode(String(n ?? "")).byteLength;
+  return wp.encode(String(n ?? "")).byteLength;
 }
 function ol(n, e, t = {}) {
   const r = Fe(e), a = Math.max(1, Number(t.limitBytes) || Yt), o = /* @__PURE__ */ new Error(`D1 value exceeds the ${a}-byte compatibility budget`);
@@ -10382,7 +10392,7 @@ function ol(n, e, t = {}) {
     field: String(n || "value"),
     actualBytes: r,
     limitBytes: a,
-    platformLimitBytes: pd
+    platformLimitBytes: gd
   }, o;
 }
 function Xa(n, e, t = {}) {
@@ -10396,13 +10406,13 @@ function rt(n, e = {}) {
     const o = Js.get(e);
     if (o && o.name === t) return o.violation;
   }
-  const a = wp(n, e);
+  const a = Lp(n, e);
   return r && Js.set(e, {
     name: t,
     violation: a
   }), a;
 }
-function wp(n, e = {}) {
+function Lp(n, e = {}) {
   const t = String(n || "").trim().toLowerCase(), r = k(e) ? e : {}, a = Array.isArray(r.lines) ? r.lines : [];
   if (a.length > ao) return {
     nodeName: t,
@@ -10440,7 +10450,7 @@ function wp(n, e = {}) {
     actual: i,
     limit: Es
   };
-  for (const l of hd) {
+  for (const l of yd) {
     const d = Fe(r[l]);
     if (d > Ar) return {
       nodeName: t,
@@ -10489,7 +10499,7 @@ function wp(n, e = {}) {
     limit: kn
   } : null;
 }
-function Lp(n, e = {}) {
+function Np(n, e = {}) {
   const t = rt(n, e);
   return t ? {
     code: "NODE_RESOURCE_LIMIT_EXCEEDED",
@@ -10507,9 +10517,9 @@ async function Ir(n, e = null) {
   });
   return t.NodeIndexMutationChain = r.catch(() => null), await r;
 }
-var Np = "cf_dashboard_cache:", sl = "sys:cf_dash_cache", Dp = 1800 * 1e3, Qs = 1440 * 60 * 1e3, Ip = "sys:cf_daily_traffic", Ya = 7, Mp = 1080 * 60 * 60, Pp = Ya;
+var Dp = "cf_dashboard_cache:", sl = "sys:cf_dash_cache", Ip = 1800 * 1e3, Qs = 1440 * 60 * 1e3, Mp = "sys:cf_daily_traffic", Ya = 7, Pp = 1080 * 60 * 60, xp = Ya;
 function go(n, e = "") {
-  return `${Np}${encodeURIComponent(String(n || "default").trim() || "default")}:${encodeURIComponent(String(e || "current").trim() || "current")}`;
+  return `${Dp}${encodeURIComponent(String(n || "default").trim() || "default")}:${encodeURIComponent(String(e || "current").trim() || "current")}`;
 }
 function Zs(n, e = "") {
   return `${sl}:${encodeURIComponent(String(n || "default").trim() || "default")}:${encodeURIComponent(String(e || "current").trim() || "current")}`;
@@ -10525,7 +10535,7 @@ function ei(n = /* @__PURE__ */ new Date(), e = B.Defaults.ScheduleUtcOffsetMinu
     nextMonthTs: s
   };
 }
-function xp(n = "", e = "", t = 0) {
+function Op(n = "", e = "", t = 0) {
   return [
     "dashboard_monthly_traffic",
     1,
@@ -10534,12 +10544,12 @@ function xp(n = "", e = "", t = 0) {
     Ue(t)
   ].join(":");
 }
-function Op(n = "") {
+function vp(n = "") {
   const e = String(n || "").trim();
   return e ? new Request(`https://dashboard-monthly-traffic-cache.invalid/${encodeURIComponent(e)}`) : null;
 }
 function il(n = "", e = "") {
-  return `${Ip}:${encodeURIComponent(String(n || "default").trim() || "default")}:${encodeURIComponent(String(e || "current").trim() || "current")}`;
+  return `${Mp}:${encodeURIComponent(String(n || "default").trim() || "default")}:${encodeURIComponent(String(e || "current").trim() || "current")}`;
 }
 async function ti(n, e, t) {
   if (!n || typeof n.get != "function" || !t) return null;
@@ -10559,7 +10569,7 @@ async function ri(n, e, { dateKey: t = "", bytes: r = 0, dayEndTs: a = 0 } = {})
       bytes: Math.max(0, Number(r) || 0),
       dateKey: t,
       dayEndTs: Math.max(0, Number(a) || 0)
-    }), { expirationTtl: Mp }), !0;
+    }), { expirationTtl: Pp }), !0;
   } catch (s) {
     return Le("dashboard.daily_traffic_archive_write_failed", s, { cacheKey: o }), !1;
   }
@@ -10582,21 +10592,21 @@ function tr(n = {}) {
     warning: String(e.warning || "").trim()
   };
 }
-function vp(n = "", e = "") {
+function Fp(n = "", e = "") {
   const t = String(n || "").trim();
   return t ? String(e || "").trim().toLowerCase() === "workers_usage" && t.includes("Cloudflare Workers Usage") ? "今日请求量口径：Cloudflare Workers Usage" : t : "";
 }
-function Fp(n = "") {
+function Up(n = "") {
   const e = String(n || "").trim();
   return e ? e.includes("请求数已对齐 Workers Usage") ? "Cloudflare 统计正常" : e : "";
 }
-function Up(n = "", e = "") {
+function kp(n = "", e = "") {
   const t = String(n || "").trim();
   if (!t) return "";
   const r = String(e || "").trim().toLowerCase();
   return t.includes("已对齐脚本") || r === "workers_usage" && t.includes("脚本:") ? "" : t;
 }
-var kp = [
+var Hp = [
   "周日",
   "周一",
   "周二",
@@ -10611,7 +10621,7 @@ function cl() {
 function ho(n = "") {
   const e = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(n || "").trim());
   if (!e) return String(n || "").trim() || "-";
-  const t = kp[new Date(Date.UTC(Number(e[1]), Number(e[2]) - 1, Number(e[3]))).getUTCDay()] || "";
+  const t = Hp[new Date(Date.UTC(Number(e[1]), Number(e[2]) - 1, Number(e[3]))).getUTCDay()] || "";
   return `${e[2]}-${e[3]}${t ? ` ${t}` : ""}`;
 }
 function ll(n = "", e = 0, t = 0, r = 0, a = 0) {
@@ -10654,7 +10664,7 @@ function fn(n = {}) {
     legendMaxLabel: "0"
   };
 }
-function Hp(n = {}) {
+function $p(n = {}) {
   const e = n && typeof n == "object" ? { ...n } : {}, t = fn({ status: "idle" });
   return {
     ...t,
@@ -10676,7 +10686,7 @@ function Hp(n = {}) {
 }
 function as(n = {}) {
   const e = n && typeof n == "object" ? { ...n } : {}, t = String(e.requestSource || "").trim().toLowerCase();
-  return e.requestSourceText = vp(e.requestSourceText, t), e.cfAnalyticsStatus = Fp(e.cfAnalyticsStatus), e.cfAnalyticsDetail = Up(e.cfAnalyticsDetail, t), e.d1WriteHotspot = Hp(e.d1WriteHotspot), e;
+  return e.requestSourceText = Fp(e.requestSourceText, t), e.cfAnalyticsStatus = Up(e.cfAnalyticsStatus), e.cfAnalyticsDetail = kp(e.cfAnalyticsDetail, t), e.d1WriteHotspot = $p(e.d1WriteHotspot), e;
 }
 function ns(n = "") {
   const e = String(n || "").trim().toLowerCase();
@@ -10714,7 +10724,7 @@ function yo(n = {}) {
     cacheMeta: o
   };
 }
-function ia(n = {}, e = "live", t = {}) {
+function ca(n = {}, e = "live", t = {}) {
   const r = yo(n), a = ns(e || r.cacheMeta.cacheStatus);
   return {
     stats: as({
@@ -10764,49 +10774,49 @@ function lt(n, e = "/") {
   const t = Qe(n) ? new URL(n.targetUrl.toString()) : n instanceof URL ? new URL(n.toString()) : new URL(String(n || "")), r = Qe(n) ? n.normalizedBasePath : Ct(t.pathname), a = Z(e);
   return t.pathname = (a === "/" ? r ? `${r}/` : "/" : `${r}${a}`) || "/", t.search = "", t.hash = "", t;
 }
-var $p = /* @__PURE__ */ new Set(["emby", "mediabrowser"]);
+var Bp = /* @__PURE__ */ new Set(["emby", "mediabrowser"]);
 function ni(n = "/") {
   return Z(n).split("/").filter(Boolean);
 }
-function Bp(n = "/", e = "") {
+function Kp(n = "/", e = "") {
   const t = Z(n), r = String(e || "").trim();
   if (!r || r === "/") return null;
   const a = t.toLowerCase(), o = r.toLowerCase();
   return a !== o && !a.startsWith(`${o}/`) ? null : Z(t.slice(r.length) || "/");
 }
-function Kp(n = "/", e = "") {
+function zp(n = "/", e = "") {
   const t = ni(e), r = ni(n);
   if (!t.length || !r.length) return null;
   const a = String(t[t.length - 1] || "").toLowerCase(), o = String(r[0] || "").toLowerCase();
-  return !a || a !== o || !$p.has(a) ? null : Z(`/${r.slice(1).join("/")}`);
+  return !a || a !== o || !Bp.has(a) ? null : Z(`/${r.slice(1).join("/")}`);
 }
-function zp(n, e = "/") {
+function Wp(n, e = "/") {
   const t = Qe(n) ? n : Ua(n);
   if (!t) return null;
   const r = Z(e), a = t.normalizedBasePath;
   let o = r;
   if (a) {
-    const s = Bp(r, a);
+    const s = Kp(r, a);
     if (s !== null) o = s;
     else {
-      const i = Kp(r, a);
+      const i = zp(r, a);
       i !== null && (o = i);
     }
   }
   return lt(t, o);
 }
-var Wp = /^\/(?:emby|mediabrowser)(?=\/)/i, Gp = /^\/(?:emby|mediabrowser)$/i;
-function Vp(n = "/") {
+var Gp = /^\/(?:emby|mediabrowser)(?=\/)/i, Vp = /^\/(?:emby|mediabrowser)$/i;
+function jp(n = "/") {
   const e = Z(n);
   if (!e || e === "/") return [e || "/"];
-  if (Gp.test(e)) return [e, "/"];
-  const t = e.replace(Wp, "");
+  if (Vp.test(e)) return [e, "/"];
+  const t = e.replace(Gp, "");
   return t && t !== e ? [e, t] : [e, `/emby${e}`];
 }
 function dl(n, e = []) {
   const t = /* @__PURE__ */ new Set(), r = [];
-  for (const a of Array.isArray(e) ? e : [e]) for (const o of Vp(a)) {
-    const s = zp(n, o);
+  for (const a of Array.isArray(e) ? e : [e]) for (const o of jp(a)) {
+    const s = Wp(n, o);
     if (!s) continue;
     const i = s.toString();
     t.has(i) || (t.add(i), r.push({
@@ -10816,7 +10826,7 @@ function dl(n, e = []) {
   }
   return r;
 }
-function jp(n, e = "/", t = "") {
+function qp(n, e = "/", t = "") {
   if (!Qe(n)) {
     const s = lt(n, e);
     return s.search = Is(t), s.toString();
@@ -10824,14 +10834,14 @@ function jp(n, e = "/", t = "") {
   const r = Z(e), a = Is(t), o = n.absoluteBasePrefix || n.originText;
   return `${(r === "/" ? `${o}/` : `${o}${r}`) || `${n.originText}/`}${a}`;
 }
-var qp = /* @__PURE__ */ new Set(["emby", "mediabrowser"]);
-function Xp(n = "") {
+var Xp = /* @__PURE__ */ new Set(["emby", "mediabrowser"]);
+function Yp(n = "") {
   const e = String(n || "").split("/").filter(Boolean);
-  if (!e.length || !qp.has(e[e.length - 1].toLowerCase())) return null;
+  if (!e.length || !Xp.has(e[e.length - 1].toLowerCase())) return null;
   const t = e.slice(0, -1);
   return t.length ? `/${t.join("/")}` : "";
 }
-function Yp(n = "/", e = "", t = {}) {
+function Jp(n = "/", e = "", t = {}) {
   const r = Z(n || "/"), a = Ct(String(e || "")), o = (c, l) => {
     if (!l) return c;
     const d = c.toLowerCase(), u = l.toLowerCase();
@@ -10839,7 +10849,7 @@ function Yp(n = "/", e = "", t = {}) {
   }, s = o(r, a);
   if (s !== null) return s;
   if (t.allowLegacyRootFallback !== !0) return null;
-  const i = Xp(a);
+  const i = Yp(a);
   return i === null ? null : o(r, i);
 }
 function Ha(n, e, t = {}) {
@@ -10849,7 +10859,7 @@ function Ha(n, e, t = {}) {
       resolvedUrl: r,
       proxyPath: null
     };
-    const o = Ct(a.pathname), s = Yp(r.pathname || "/", o, t);
+    const o = Ct(a.pathname), s = Jp(r.pathname || "/", o, t);
     return s === null ? {
       resolvedUrl: r,
       proxyPath: null
@@ -10902,11 +10912,11 @@ function _o(n = "", e = "") {
     r = Z(r.slice(t.length) || "/");
   }
 }
-function Jp(n = "", e = null, t = "") {
+function Qp(n = "", e = null, t = "") {
   let r = Z(n);
   return r = _o(r, t), r = _o(r, e instanceof URL ? e.pathname : "/"), r;
 }
-function Qp(n = "", e = "", t = null, r = null, a = "") {
+function Zp(n = "", e = "", t = null, r = null, a = "") {
   const o = String(n || "").trim();
   if (!o) return null;
   let s = null;
@@ -10917,7 +10927,7 @@ function Qp(n = "", e = "", t = null, r = null, a = "") {
   }
   let i;
   try {
-    if ($f(o)) {
+    if (Bf(o)) {
       i = new URL(o, s || "https://playback-info.local/");
       const d = String(i.protocol || "").toLowerCase(), u = String(s?.origin || "").trim().toLowerCase();
       if (!["http:", "https:"].includes(d) || !u || i.origin.toLowerCase() !== u) return null;
@@ -10925,14 +10935,14 @@ function Qp(n = "", e = "", t = null, r = null, a = "") {
   } catch {
     return null;
   }
-  const c = Jp(i.pathname || "/", t, a), l = ss(c, fl(c));
+  const c = Qp(i.pathname || "/", t, a), l = ss(c, fl(c));
   return Ca(l) ? {
     proxyPath: Z(l),
     search: i.search || "",
     hash: i.hash || ""
   } : null;
 }
-function Zp(n = "", e = "", t = null) {
+function eg(n = "", e = "", t = null) {
   let r = Z(n);
   const a = fl(e);
   if (a) {
@@ -10946,7 +10956,7 @@ function Zp(n = "", e = "", t = null) {
   const l = Z(`${a}${r.slice(s.length) || "/"}`);
   return Ca(l) ? l : r;
 }
-function eg(n = "") {
+function tg(n = "") {
   return qt(n) === "rewrite" ? "relative" : "";
 }
 function ml(n) {
@@ -10967,14 +10977,14 @@ function ml(n) {
     "Transfer-Encoding"
   ].forEach((e) => n.delete(e));
 }
-function tg(n = "/", e = null) {
+function rg(n = "/", e = null) {
   const t = Z(e instanceof URL ? e.pathname : n), r = new URLSearchParams(e instanceof URL ? e.search : String(e || ""));
   for (; r.has(io); ) r.delete(io);
   const a = r.toString();
   return `${t}${a ? `?${a}` : ""}`;
 }
 function nt(n, e, t = {}) {
-  const r = cf(t?.linkVariant), a = r ? "/" + encodeURIComponent(r) : "";
+  const r = lf(t?.linkVariant), a = r ? "/" + encodeURIComponent(r) : "";
   if (et(t?.entryMode)) return a;
   const o = encodeURIComponent(String(n || "")), s = e ? "/" + encodeURIComponent(String(e)) : "";
   return "/" + o + s + a;
@@ -10986,14 +10996,14 @@ function pl(n, e, t, r = "/", a = {}) {
     entryMode: a.entryMode
   })}${s === "/" ? "/" : s}`, i.search = String(a.search || ""), i.hash = String(a.hash || ""), i;
 }
-function rg(n, e, t, r, a = {}) {
+function ag(n, e, t, r, a = {}) {
   const o = r instanceof URL ? new URL(r.toString()) : new URL(String(r || "")), s = new URL(n instanceof URL ? n.origin : String(n || ""));
   return s.pathname = `${nt(e, t, {
     linkVariant: a.linkVariant,
     entryMode: a.entryMode
-  })}/${mc}${o.pathname || "/"}`, s.search = o.search || "", s.searchParams.append(pc, Jr(o.toString())), s.hash = "", s;
+  })}/${mc}${o.pathname || "/"}`, s.search = o.search || "", s.searchParams.append(pc, Qr(o.toString())), s.hash = "", s;
 }
-function ag(n, e, t, r) {
+function ng(n, e, t, r) {
   try {
     const a = new URL(String(r || "")), o = new URL(n instanceof URL ? n.origin : String(n || ""));
     return o.pathname = `${nt(e, t)}${Z(a.pathname || "/")}`, o.search = a.search || "", o.hash = "", o.toString();
@@ -11001,7 +11011,7 @@ function ag(n, e, t, r) {
     return "";
   }
 }
-function ng(n = "", e = "", t = "", r = {}) {
+function og(n = "", e = "", t = "", r = {}) {
   let a = Z(n);
   const o = String(e || "").trim();
   if (!o && !et(r?.entryMode)) return a;
@@ -11027,20 +11037,20 @@ function ng(n = "", e = "", t = "", r = {}) {
   }
   return a;
 }
-function og(n = null) {
+function sg(n = null) {
   const e = String(n?.routeContextDiagnostics?.routeKind || "").trim();
   return e !== "host_prefix_path_compat" && e !== "legacy_host_prefix_path_compat" ? "" : nt(n?.nodeName, n?.nodeKey, {
     linkVariant: n?.linkVariant,
     entryMode: "kv_route"
   });
 }
-function sg(n = "", e = "") {
+function ig(n = "", e = "") {
   const t = Z(n), r = Ct(e);
   if (!r || r === "/") return t;
   const a = t.toLowerCase(), o = r.toLowerCase();
   return a === o || a.startsWith(`${o}/`) ? t : `${r}${t === "/" ? "/" : t}`;
 }
-function ig(n = "", e = null) {
+function cg(n = "", e = null) {
   const t = Z(n), r = `/${mc}`;
   if (!t.startsWith(r)) return null;
   const a = e instanceof URL && [...e.searchParams.getAll("__pb_target")].pop() || "";
@@ -11123,12 +11133,12 @@ function ci(n = "") {
   const e = Z(n).split("/").filter(Boolean);
   if (e.length === 0) return !1;
   const t = at(e[0]).toLowerCase();
-  return Cd.has(t);
+  return wd.has(t);
 }
-async function cg(n = "", e = "", t = null, r = {}) {
+async function lg(n = "", e = "", t = null, r = {}) {
   const a = String(n || "").trim().toLowerCase(), o = oe(e), s = String(t?.JWT_SECRET || "").trim();
   if (!a || !o || !s) return "";
-  const i = Math.max(0, Math.floor(Number(r.nowMs ?? $()) / 1e3)), c = Math.max(1, Math.trunc(Number(r.maxAgeSec) || 86400)), l = Jr(JSON.stringify({
+  const i = Math.max(0, Math.floor(Number(r.nowMs ?? $()) / 1e3)), c = Math.max(1, Math.trunc(Number(r.maxAgeSec) || 86400)), l = Qr(JSON.stringify({
     v: 1,
     node: a,
     host: o,
@@ -11139,7 +11149,7 @@ async function cg(n = "", e = "", t = null, r = {}) {
   const d = await _t(s, l);
   return d ? `${l}.${d}` : "";
 }
-async function lg(n = "", e = null, t = {}) {
+async function ug(n = "", e = null, t = {}) {
   const r = String(n || "").trim(), a = String(e?.JWT_SECRET || "").trim();
   if (!r) return {
     ok: !1,
@@ -11196,16 +11206,16 @@ async function lg(n = "", e = null, t = {}) {
     payload: d
   };
 }
-function ug(n = "") {
+function dg(n = "") {
   const e = String(n || "").trim();
-  return e ? `${Ko}=${e}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${Rd}` : hl();
+  return e ? `${Ko}=${e}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${Cd}` : hl();
 }
 function hl() {
   return `${Ko}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT`;
 }
 function In(n = "GET", e = null) {
   const t = e ? new Headers(e) : new Headers();
-  return t.set("Content-Type", "text/plain; charset=utf-8"), t.set("Cache-Control", "no-store, max-age=0"), De(t), t.get("Access-Control-Allow-Origin") !== "*" && Kr(t, "Origin"), new Response(n === "HEAD" ? null : "Not Found", {
+  return t.set("Content-Type", "text/plain; charset=utf-8"), t.set("Cache-Control", "no-store, max-age=0"), De(t), t.get("Access-Control-Allow-Origin") !== "*" && zr(t, "Origin"), new Response(n === "HEAD" ? null : "Not Found", {
     status: 404,
     headers: t
   });
@@ -11217,10 +11227,10 @@ var yl = /* @__PURE__ */ new Set([
   "authorization",
   "x-emby-authorization",
   "x-mediabrowser-authorization"
-]), dg = /* @__PURE__ */ new Set(["x-emby-token", "x-mediabrowser-token"]), fg = /* @__PURE__ */ new Set(["x-emby-device-id", "x-mediabrowser-device-id"]), Sl = /* @__PURE__ */ new Set([
+]), fg = /* @__PURE__ */ new Set(["x-emby-token", "x-mediabrowser-token"]), mg = /* @__PURE__ */ new Set(["x-emby-device-id", "x-mediabrowser-device-id"]), Sl = /* @__PURE__ */ new Set([
   ...yl,
-  ...dg,
-  ...fg
+  ...fg,
+  ...mg
 ]);
 function Mn(n) {
   if (n instanceof Headers) return [...n.entries()];
@@ -11248,19 +11258,19 @@ var _l = [
   "secret",
   "auth",
   "token"
-], mg = [
+], pg = [
   "emby",
   "jellyfin",
   "mediabrowser",
   "api_key",
   ..._l
-], pg = new RegExp(_l.join("|"));
+], gg = new RegExp(_l.join("|"));
 function bl(n = "") {
-  return !n || Sl.has(n) || n === "cookie" ? !1 : pg.test(n);
+  return !n || Sl.has(n) || n === "cookie" ? !1 : gg.test(n);
 }
-function gg(n = "") {
+function hg(n = "") {
   const e = String(n || "").trim().toLowerCase();
-  return e ? mg.some((t) => e.includes(t)) : !1;
+  return e ? pg.some((t) => e.includes(t)) : !1;
 }
 var El = /* @__PURE__ */ new Set([
   "apikey",
@@ -11286,15 +11296,15 @@ var El = /* @__PURE__ */ new Set([
   "userid",
   "playsessionid",
   "sessionid"
-]), Tl = "identity-http-v2", hg = Object.freeze([
+]), Tl = "identity-http-v2", yg = Object.freeze([
   "Range",
   "If-None-Match",
   "If-Modified-Since"
-]), yg = [
+]), Sg = [
   /^\/Videos\/[^/]+\/(?:main|master|stream)\.m3u8$/i,
   /^\/Videos\/[^/]+\/(?:manifest|main|master|stream)\.mpd$/i,
   /^\/Audio\/[^/]+\/(?:main|master|stream)\.m3u8$/i
-], Sg = /* @__PURE__ */ new Set([
+], _g = /* @__PURE__ */ new Set([
   "mediasourceid",
   "static",
   "tag",
@@ -11306,7 +11316,7 @@ var El = /* @__PURE__ */ new Set([
 function Al(n = "") {
   return El.has($a(n));
 }
-function _g(n) {
+function bg(n) {
   const e = n instanceof URL ? new URL(n.toString()) : new URL(String(n || ""));
   e.hash = "";
   const t = [];
@@ -11326,10 +11336,10 @@ function Rl(n) {
     const r = li.get(n);
     if (r) return r;
   }
-  const t = bg(n);
+  const t = Eg(n);
   return e && li.set(n, t), t;
 }
-function bg(n) {
+function Eg(n) {
   const e = n instanceof Request ? new URL(n.url) : new URL(String(n || "")), t = [];
   for (const [s, i] of e.searchParams.entries()) {
     const c = $a(s);
@@ -11353,7 +11363,7 @@ function bg(n) {
     headerEntries: a
   };
 }
-function Eg(n) {
+function Tg(n) {
   const e = Rl(n);
   return e.queryEntries.length > 0 || e.headerEntries.length > 0;
 }
@@ -11361,17 +11371,17 @@ async function Cl(n) {
   const e = Rl(n), t = await Yn().digest("SHA-256", new TextEncoder().encode(ae(e)));
   return [...new Uint8Array(t)].map((r) => r.toString(16).padStart(2, "0")).join("");
 }
-async function Tg(n, e) {
+async function Ag(n, e) {
   return await Cl(new Request(e instanceof URL ? e.toString() : String(e || ""), { headers: n.headers }));
 }
 function wl(n = "", e = {}) {
   const t = At.test(String(n || ""));
   return ie(`${Tl}:${t ? "manifest" : "asset"}:${t ? Math.max(0, Number(e.prewarmCacheTtl) || 0) : Math.max(0, Number(e.imageCacheMaxAge) || 0)}`);
 }
-function Ag(n, e) {
+function Rg(n, e) {
   if (!(n instanceof Request) || !(e instanceof Request) || e.headers.has("If-Range")) return null;
   const t = new Headers();
-  for (const r of hg) {
+  for (const r of yg) {
     const a = e.headers.get(r);
     a && t.set(r, a);
   }
@@ -11380,18 +11390,18 @@ function Ag(n, e) {
     headers: t
   });
 }
-function Rg(n = "") {
+function Cg(n = "") {
   const e = String(n || ""), t = /\/(?:Videos|Audio)\/.+$/i.exec(e);
   return t ? t[0] : e;
 }
-function Cg(n) {
+function wg(n) {
   try {
-    return new Request(_g(n).toString(), { method: "GET" });
+    return new Request(bg(n).toString(), { method: "GET" });
   } catch {
     return null;
   }
 }
-function wg(n = {}) {
+function Lg(n = {}) {
   const e = Array.isArray(n?.lines) ? n.lines.slice() : [];
   if (e.length > 1) {
     const t = String(n?.activeLineId || "").trim();
@@ -11414,10 +11424,10 @@ function bo(n = "", e = {}) {
     nodeName: t,
     entryMode: r,
     secret: r === "host_prefix" ? "" : String(e?.secret || "").trim(),
-    tags: Gr(e?.tags, e?.tag),
+    tags: Vr(e?.tags, e?.tag),
     remark: String(e?.remark || "").trim(),
     activeLineId: String(e?.activeLineId || "").trim(),
-    orderedTargets: wg(e),
+    orderedTargets: Lg(e),
     headers: a,
     playbackInfoMode: String(e?.playbackInfoMode || "").trim().toLowerCase(),
     mediaAuthMode: String(e?.mediaAuthMode || "").trim().toLowerCase(),
@@ -11464,12 +11474,12 @@ function Il(n, e, t, r = "/", a = {}) {
       entryMode: a.entryMode
     })}${c === "/" ? "/" : c}`, l.search = String(a.search || "");
     const d = String(a.nodeCacheRevision || "").trim();
-    return d && l.searchParams.set("__proxyrev", d), l.searchParams.set("__metadatarev", Tl), l.searchParams.set("__identity", o), l.searchParams.set("__policy", s), l.hash = "", Cg(l);
+    return d && l.searchParams.set("__proxyrev", d), l.searchParams.set("__metadatarev", Tl), l.searchParams.set("__identity", o), l.searchParams.set("__policy", s), l.hash = "", wg(l);
   } catch {
     return null;
   }
 }
-function Lg(n) {
+function Ng(n) {
   try {
     const e = n instanceof URL ? new URL(n.toString()) : new URL(String(n || ""));
     for (const [t, r] of e.searchParams.entries()) {
@@ -11481,12 +11491,12 @@ function Lg(n) {
     return !0;
   }
 }
-function Ng(n) {
+function Dg(n) {
   try {
-    const e = n instanceof URL ? new URL(n.toString()) : new URL(String(n || "")), t = Rg(e.pathname || "");
-    if (!At.test(t) || Lg(e) || !yg.some((r) => r.test(t))) return !1;
+    const e = n instanceof URL ? new URL(n.toString()) : new URL(String(n || "")), t = Cg(e.pathname || "");
+    if (!At.test(t) || Ng(e) || !Sg.some((r) => r.test(t))) return !1;
     for (const [r] of e.searchParams.entries())
-      if (!Al(r) && !Sg.has($a(r)))
+      if (!Al(r) && !_g.has($a(r)))
         return !1;
     return !0;
   } catch {
@@ -11496,12 +11506,12 @@ function Ng(n) {
 function Eo(n) {
   try {
     const e = n instanceof URL ? new URL(n.toString()) : new URL(String(n || "")), t = e.pathname || "";
-    return Yr.test(t) || Xr.test(t) || yr.test(t) ? !0 : At.test(t) ? Ng(e) : !1;
+    return Jr.test(t) || Yr.test(t) || yr.test(t) ? !0 : At.test(t) ? Dg(e) : !1;
   } catch {
     return !1;
   }
 }
-function Dg(n = "") {
+function Ig(n = "") {
   const e = String(n || "").toLowerCase();
   return e ? /\.(?:mp4|m4v|mkv|mov|avi|wmv|flv|ts|m4s)(?:$|[?#])/.test(e) ? !0 : At.test(e) || yr.test(e) ? !1 : /\/videos\/[^/]+\/(?:stream|original|download|file)\b/.test(e) || /\/items\/[^/]+\/download\b/.test(e) : !1;
 }
@@ -11511,7 +11521,7 @@ function To(n, e = /* @__PURE__ */ new Set(), t = 0) {
     const r = n.trim();
     if (r && /^(?:https?:\/\/|\/)/i.test(r)) {
       const a = r.toLowerCase(), o = a.split(/[?#]/, 1)[0] || a;
-      (At.test(o) || yr.test(o) || Yr.test(a) || Xr.test(o)) && e.add(r);
+      (At.test(o) || yr.test(o) || Jr.test(a) || Yr.test(o)) && e.add(r);
     }
     return e;
   }
@@ -11523,9 +11533,9 @@ function Pa(n = "") {
 }
 function ui(n = "") {
   const e = String(n || "").toLowerCase();
-  return Yr.test(e) || Xr.test(e) ? 0 : At.test(e) ? 1 : yr.test(e) ? 2 : 3;
+  return Jr.test(e) || Yr.test(e) ? 0 : At.test(e) ? 1 : yr.test(e) ? 2 : 3;
 }
-function Ig(n = {}, e = {}) {
+function Mg(n = {}, e = {}) {
   return {
     async createKvTidyPlanToken(t, r = {}, a = {}) {
       const o = String(t?.JWT_SECRET || "").trim();
@@ -11533,7 +11543,7 @@ function Ig(n = {}, e = {}) {
         const l = /* @__PURE__ */ new Error("JWT_SECRET is required to sign the KV tidy plan");
         throw l.code = "SERVER_MISCONFIGURED", l.status = 503, l;
       }
-      const s = Math.max(0, Math.floor(Number(a.nowMs ?? $()) / 1e3)), i = s + Math.max(60, Math.floor(Number(a.ttlMs) || 6e5) / 1e3), c = Jr(JSON.stringify({
+      const s = Math.max(0, Math.floor(Number(a.nowMs ?? $()) / 1e3)), i = s + Math.max(60, Math.floor(Number(a.ttlMs) || 6e5) / 1e3), c = Qr(JSON.stringify({
         version: 1,
         scope: "kv",
         planHash: String(r?.planHash || e.buildKvTidyPlanHash(r)).trim(),
@@ -11615,7 +11625,7 @@ function Ig(n = {}, e = {}) {
         const l = /* @__PURE__ */ new Error("JWT_SECRET is required to sign the D1 tidy plan");
         throw l.code = "SERVER_MISCONFIGURED", l.status = 503, l;
       }
-      const s = Math.max(0, Math.floor(Number(a.issuedAtMs ?? $()) / 1e3)), i = s + Math.max(60, Math.floor(Number(a.ttlMs) || 6e5) / 1e3), c = Jr(JSON.stringify({
+      const s = Math.max(0, Math.floor(Number(a.issuedAtMs ?? $()) / 1e3)), i = s + Math.max(60, Math.floor(Number(a.ttlMs) || 6e5) / 1e3), c = Qr(JSON.stringify({
         version: 1,
         scope: "d1",
         planHash: String(r?.planHash || e.buildD1TidyPlanHash(r)).trim(),
@@ -11668,7 +11678,7 @@ function Ig(n = {}, e = {}) {
       return l;
     },
     async resolveKvTidyQuotaBudget(t, r = [], a = {}) {
-      const o = a.kv || e.getKV(t), s = await Xf(ce(a.config || {})), i = Math.max(1, Math.floor(Number(s?.kv?.write) || 0)), c = (Array.isArray(r) ? r : []).map((g) => ({
+      const o = a.kv || e.getKV(t), s = await Yf(ce(a.config || {})), i = Math.max(1, Math.floor(Number(s?.kv?.write) || 0)), c = (Array.isArray(r) ? r : []).map((g) => ({
         type: String(g?.type || "put").trim().toLowerCase() === "delete" ? "delete" : "put",
         key: String(g?.key || "").trim()
       })).filter((g) => g.key), l = c.filter((g) => g.type === "put").length, d = c.filter((g) => g.type === "delete").length, u = o ? await e.captureRawKvEntries(o, c.map((g) => g.key)) : [], f = u.filter((g) => g?.exists === !0).length, m = u.filter((g) => g?.exists !== !0).length, p = l + d + f + m, h = {
@@ -11684,12 +11694,12 @@ function Ig(n = {}, e = {}) {
         blocked: p > i,
         reason: ""
       };
-      return h.reason = h.blocked === !0 ? Yf(h) : "", h;
+      return h.reason = h.blocked === !0 ? Jf(h) : "", h;
     },
     async buildKvTidyPlan(t, r = {}) {
       const a = r.kv || e.getKV(t);
       if (!a) throw new Error("KV not configured");
-      const o = (await e.listKvKeysStrict(a)).sort(), s = o.filter((W) => W.startsWith(e.ADMIN_INDEX_UPLOAD_PREFIX)), { rawStoredSummaryIndexText: i, storedSummaryIndexState: c, previousFullIndexBytes: l } = await e.readStoredNodesSummaryState(a), { nodeNames: d, removableKeys: u, untouchedOtherKeyCount: f, opsStatusKeyCount: m, dnsRecordHistoryKeyCount: p, dnsIpPoolSourceKeyCount: h, configMetaKeyCount: g, snapshotMetaKeyCount: y, nodeIndexMetaKeyCount: _, telegramAlertStateKeyCount: S, loginFailureKeyCount: T, dnsFetchLockKeyCount: b } = await e.classifyKvTidyKeys(a, o), A = await e.readRepairableRuntimeConfig(a), C = k(A.rawConfig) ? A.rawConfig : {}, N = Pf(C);
+      const o = (await e.listKvKeysStrict(a)).sort(), s = o.filter((W) => W.startsWith(e.ADMIN_INDEX_UPLOAD_PREFIX)), { rawStoredSummaryIndexText: i, storedSummaryIndexState: c, previousFullIndexBytes: l } = await e.readStoredNodesSummaryState(a), { nodeNames: d, removableKeys: u, untouchedOtherKeyCount: f, opsStatusKeyCount: m, dnsRecordHistoryKeyCount: p, dnsIpPoolSourceKeyCount: h, configMetaKeyCount: g, snapshotMetaKeyCount: y, nodeIndexMetaKeyCount: _, telegramAlertStateKeyCount: S, loginFailureKeyCount: T, dnsFetchLockKeyCount: b } = await e.classifyKvTidyKeys(a, o), A = await e.readRepairableRuntimeConfig(a), C = k(A.rawConfig) ? A.rawConfig : {}, N = xf(C);
       let P = N.cleanedConfig;
       const E = [...N.migratedConfigKeys], w = await e.captureRawKvEntries(a, [
         e.CONFIG_KEY,
@@ -11700,10 +11710,10 @@ function Ig(n = {}, e = {}) {
       const M = await e.readRevisionMetaForRead(a, e.CONFIG_META_KEY), H = {
         configRevision: String(M?.revision || ""),
         configContentHash: ie(ae(C))
-      }, j = o.includes(e.CONFIG_SNAPSHOTS_KEY), q = A.hadMalformedValue || ae(C) !== ae(P), J = xf(A.config, P), Q = e.collectUnreferencedAdminIndexUploadKeys(P, [], s);
+      }, j = o.includes(e.CONFIG_SNAPSHOTS_KEY), q = A.hadMalformedValue || ae(C) !== ae(P), J = Of(A.config, P), Q = e.collectUnreferencedAdminIndexUploadKeys(P, [], s);
       for (const W of Q) u.add(W);
       o.includes(e.CONFIG_SNAPSHOTS_KEY) && u.add(e.CONFIG_SNAPSHOTS_KEY), o.includes(e.CONFIG_SNAPSHOTS_META_KEY) && u.add(e.CONFIG_SNAPSHOTS_META_KEY);
-      const se = e.normalizeNodeSummaryIndex(L).nodes, pe = e.normalizeNodeIndex(se.map((W) => W?.name)), _e = JSON.stringify(pe), ye = JSON.stringify(se), Ae = new TextEncoder().encode(ye).length, ke = l - Ae, Ft = e.buildLegacyConfigCacheKeys(A.config, P), Me = [...u].sort(), aa = [.../* @__PURE__ */ new Set([...Ft, ...Me])].filter(Boolean).sort(), ot = [];
+      const se = e.normalizeNodeSummaryIndex(L).nodes, pe = e.normalizeNodeIndex(se.map((W) => W?.name)), _e = JSON.stringify(pe), ye = JSON.stringify(se), Ae = new TextEncoder().encode(ye).length, ke = l - Ae, Ft = e.buildLegacyConfigCacheKeys(A.config, P), Me = [...u].sort(), na = [.../* @__PURE__ */ new Set([...Ft, ...Me])].filter(Boolean).sort(), ot = [];
       q && ot.push({
         type: "put",
         key: e.CONFIG_KEY,
@@ -11723,7 +11733,7 @@ function Ig(n = {}, e = {}) {
         key: e.NODES_SUMMARY_INDEX_KEY,
         value: ye
       });
-      for (const W of aa) ot.push({
+      for (const W of na) ot.push({
         type: "delete",
         key: W,
         value: ""
@@ -11760,14 +11770,14 @@ function Ig(n = {}, e = {}) {
         previousFullIndexBytes: l,
         nextSummaryIndexBytes: Ae,
         savedBytes: ke
-      }, na = vf({
+      }, oa = Ff({
         configFieldTargets: br.migratedConfigKeys,
         sourceDirectNodesFromLegacyNodes: O,
         migratedTopLevelPortNodeCount: U,
         migratedLinePortCount: V,
         migratedDefaultPortNodeCount: X,
         migratedDefaultPortLineCount: v
-      }), $e = [], Zt = Me.filter((W) => W === "sys:cf_dash_cache" || W.startsWith("sys:cf_dash_cache:")), mt = Me.filter((W) => W.startsWith("fail:")), pt = Me.filter((W) => W === e.LEGACY_DNS_IP_POOL_SOURCES_KEY), Ut = Me.filter((W) => W === e.LEGACY_OPS_STATUS_KEY || Object.values(e.LEGACY_OPS_STATUS_SECTION_KEYS).includes(W)), wt = Me.filter((W) => W === e.LEGACY_TELEGRAM_ALERT_STATE_KEY), kt = Me.filter((W) => W === e.LEGACY_SCHEDULED_LOCK_KEY), er = Me.filter((W) => W.startsWith(rp)), Lt = Me.filter((W) => W.startsWith(e.ADMIN_INDEX_UPLOAD_PREFIX)), Er = x.map((W) => W.name);
+      }), $e = [], Zt = Me.filter((W) => W === "sys:cf_dash_cache" || W.startsWith("sys:cf_dash_cache:")), mt = Me.filter((W) => W.startsWith("fail:")), pt = Me.filter((W) => W === e.LEGACY_DNS_IP_POOL_SOURCES_KEY), Ut = Me.filter((W) => W === e.LEGACY_OPS_STATUS_KEY || Object.values(e.LEGACY_OPS_STATUS_SECTION_KEYS).includes(W)), wt = Me.filter((W) => W === e.LEGACY_TELEGRAM_ALERT_STATE_KEY), kt = Me.filter((W) => W === e.LEGACY_SCHEDULED_LOCK_KEY), er = Me.filter((W) => W.startsWith(ap)), Lt = Me.filter((W) => W.startsWith(e.ADMIN_INDEX_UPLOAD_PREFIX)), Er = x.map((W) => W.name);
       Te($e, Zt.length > 0, "cf_dash_cache", "Cloudflare 仪表盘缓存", Zt, Zt.length, "会删除遗留的 sys:cf_dash_cache 及其按日期 / Zone 生成的缓存键。"), Te($e, mt.length > 0, "login_failures", "旧版登录失败计数", mt, mt.length, "会删除旧版 fail:* 登录失败计数键，后续仅保留 D1 auth_failures。"), Te($e, pt.length > 0, "dns_ip_pool_sources", "旧版 DNS IP 池源配置", pt, pt.length, "会删除旧版 sys:dns_ip_pool_sources:v1，后续只保留 D1 dns_ip_pool_sources。"), Te($e, Ut.length > 0, "ops_status", "旧版运维状态键", Ut, Ut.length, "会删除 sys:ops_status:v1 与 sys:ops_status:*，后续只保留 D1 sys_status。"), Te($e, wt.length > 0, "telegram_alert_state", "旧版 Telegram 告警冷却状态", wt, wt.length, "会删除 sys:telegram_alert_state:v1，后续只保留 D1 sys_status scope。"), Te($e, kt.length > 0, "scheduled_lock", "旧版定时租约键", kt, kt.length, "会删除 sys:scheduled_lock:v1，后续只保留 D1 sys_locks。"), Te($e, er.length > 0, "dns_fetch_lock", "旧版 DNS 抓取锁键", er, er.length, "会删除 sys:dns_ip_pool_fetch_lock:v1:*，后续只保留 D1 sys_locks。"), Te($e, j || y > 0, "legacy_config_snapshot_keys", "停用的设置历史键", [e.CONFIG_SNAPSHOTS_KEY, e.CONFIG_SNAPSHOTS_META_KEY], Number(j) + +(y > 0), "会删除已停用的设置历史键及其元数据。"), Te($e, Lt.length > 0, "admin_index_uploads", "未引用的本地 HTML 版本", Lt, Lt.length, "只保留当前配置引用的内容寻址 index.html。");
       const Ht = [];
       if (q && Te(Ht, !0, "runtime_config", "全局设置 sys:theme", [...N.legacyKeysPresent, ...J.map((W) => W.key)], 1, "会把旧版设置字段吸收到当前 schema，并以后端 sanitizeRuntimeConfig() 结果回写。"), F > 0) {
@@ -11783,7 +11793,7 @@ function Ig(n = {}, e = {}) {
       const K = g + _;
       K > 0 && Te($t, !0, "meta_keys", "配置 / 索引元信息", [e.CONFIG_META_KEY, e.NODES_INDEX_META_KEY], K, "不会删除这些 revision / meta 键。");
       const G = [];
-      A.hadMalformedValue && G.push(`检测到异常 sys:theme（来源: ${A.source}），整理时会按当前 schema 修复。`), U > 0 && G.push(`检测到 ${U} 个旧节点仍使用顶层 node.port；整理后会把端口并入 lines[].target。`), V > 0 && G.push(`检测到 ${V} 条旧线路仍使用独立 lines[].port；整理后会把端口并入 lines[].target。`), (X > 0 || v > 0) && G.push(`检测到 ${X} 个节点 / ${v} 条线路仍未显式写端口；整理后会按协议补齐为 :443 / :80。`), c?.legacyMirrorDetected === !0 && G.push(`检测到旧版 sys:nodes_index_full:v2 仍保存完整节点镜像；本次会按 node:* 重建并收敛为摘要索引（${l} -> ${Ae} bytes）。`), f > 0 && G.push(`发现 ${f} 个未列入整理白名单的 KV 键，本次不会自动删除。`), $e.length === 0 && !q && F === 0 && G.push("当前没有检测到需要执行的 KV 清理动作；本次更多是一轮一致性巡检。"), G.push(Jf(st)), st.blocked === !0 && st.reason && G.push(st.reason);
+      A.hadMalformedValue && G.push(`检测到异常 sys:theme（来源: ${A.source}），整理时会按当前 schema 修复。`), U > 0 && G.push(`检测到 ${U} 个旧节点仍使用顶层 node.port；整理后会把端口并入 lines[].target。`), V > 0 && G.push(`检测到 ${V} 条旧线路仍使用独立 lines[].port；整理后会把端口并入 lines[].target。`), (X > 0 || v > 0) && G.push(`检测到 ${X} 个节点 / ${v} 条线路仍未显式写端口；整理后会按协议补齐为 :443 / :80。`), c?.legacyMirrorDetected === !0 && G.push(`检测到旧版 sys:nodes_index_full:v2 仍保存完整节点镜像；本次会按 node:* 重建并收敛为摘要索引（${l} -> ${Ae} bytes）。`), f > 0 && G.push(`发现 ${f} 个未列入整理白名单的 KV 键，本次不会自动删除。`), $e.length === 0 && !q && F === 0 && G.push("当前没有检测到需要执行的 KV 清理动作；本次更多是一轮一致性巡检。"), G.push(Qf(st)), st.blocked === !0 && st.reason && G.push(st.reason);
       const Y = {
         scope: "kv",
         scannedKeys: o,
@@ -11797,7 +11807,7 @@ function Ig(n = {}, e = {}) {
         preview: {
           scope: "kv",
           quotaBudget: st,
-          fieldGroups: na,
+          fieldGroups: oa,
           deleteGroups: $e,
           rewriteGroups: Ht,
           preserveGroups: $t,
@@ -11824,7 +11834,7 @@ function Ig(n = {}, e = {}) {
       });
     },
     async tidyKvData(t, r = {}) {
-      return await ou(r.kv || e.getKV(t))(async () => {
+      return await su(r.kv || e.getKV(t))(async () => {
         const a = await e.verifyKvTidyPlanToken(t, r.planToken), o = await e.buildKvTidyPlan(t, r);
         if (String(o.planHash || "") !== String(a.planHash || "")) {
           const s = /* @__PURE__ */ new Error("KV tidy data changed after preview");
@@ -11846,7 +11856,7 @@ function Ig(n = {}, e = {}) {
     }
   };
 }
-function Mg(n = {}, e = {}) {
+function Pg(n = {}, e = {}) {
   const { D1TidyExecutor: t, D1TidyPlanner: r } = n;
   return {
     async readD1Count(a, o, s = []) {
@@ -12150,7 +12160,7 @@ function Mg(n = {}, e = {}) {
     }
   };
 }
-function Pg(n = {}, e = {}) {
+function xg(n = {}, e = {}) {
   const { buildAdminReleaseVendorManifest: t, normalizeAdminReleaseVendorManifestRecord: r, validateAdminShellHtmlSource: a } = n;
   return {
     async readLegacyConfigSnapshotRecordsStrict(o) {
@@ -12169,7 +12179,7 @@ function Pg(n = {}, e = {}) {
       if (!k(o)) return null;
       const i = Mt(o.revision), c = Mt(s);
       if (!i || c && i !== c) return null;
-      const l = qr(i), d = Uo(i), u = String(o.html || "");
+      const l = Xr(i), d = Uo(i), u = String(o.html || "");
       return u ? {
         version: Number(o.version) || 1,
         revision: i,
@@ -12284,7 +12294,7 @@ function Pg(n = {}, e = {}) {
           return {
             config: await e.commitRuntimeConfig({
               ...u,
-              indexUrl: p ? qr(p) : ""
+              indexUrl: p ? Xr(p) : ""
             }, {
               env: c,
               kv: l,
@@ -12361,7 +12371,7 @@ function Pg(n = {}, e = {}) {
     }
   };
 }
-function xg(n = {}, e = {}) {
+function Og(n = {}, e = {}) {
   return {
     async persistRuntimeConfig(t, r = {}) {
       return await nr(r.kv || Sr(r.env))(() => e.commitRuntimeConfig(t, {
@@ -12375,11 +12385,11 @@ function xg(n = {}, e = {}) {
         const u = /* @__PURE__ */ new Error("KV namespace is required to persist runtime config");
         throw u.code = "KV_NOT_CONFIGURED", u.status = 503, u;
       }
-      Vu(t?.defaultHostPrefixCnameTarget);
+      ju(t?.defaultHostPrefixCnameTarget);
       const i = a ? await me(a) : ce(await ve(o, e.CONFIG_KEY, { type: "json" }) || {}), c = ce(t);
-      Zu(t), ed(c, a);
+      ed(t), td(c, a);
       const l = Ge(a), d = tn(null, i, l) !== tn(null, c, l) ? (await e.loadAllNodeEntitiesFromKvStrict(o, { ctx: s })).filter((u) => et(u?.entryMode) && !Xt(u?.hostPrefixCnameTarget)) : [];
-      return d.length > 0 && ma(c, a), {
+      return d.length > 0 && pa(c, a), {
         prevConfig: i,
         nextConfig: c,
         configuredHost: l,
@@ -12431,7 +12441,7 @@ function xg(n = {}, e = {}) {
     },
     async commitRuntimeConfig(t, r = {}) {
       const { prevConfig: a, nextConfig: o, configuredHost: s, dnsPlans: i, ctx: c, kv: l, env: d } = await e.prepareRuntimeConfigPersistence(t, r);
-      if (Mf(r.expectedConfigRevision, a), ae(a) === ae(o))
+      if (Pf(r.expectedConfigRevision, a), ae(a) === ae(o))
         return await e.ensureConfigMeta(l, o, { ctx: c }), o;
       const u = [];
       let f = null, m = !1;
@@ -12446,7 +12456,7 @@ function xg(n = {}, e = {}) {
           }), u.push(h), f = null;
         m = !0;
         const p = await e.buildRuntimeConfigMutationPlan(l, a, o);
-        return await e.applyKvMutationsWithRollback(l, p), d ? Od(d, o) : an(), await e.invalidateDashboardSnapshotCacheForConfigChange(d, {
+        return await e.applyKvMutationsWithRollback(l, p), d ? vd(d, o) : an(), await e.invalidateDashboardSnapshotCacheForConfigChange(d, {
           prevConfig: a,
           nextConfig: o
         }), o;
@@ -12511,7 +12521,7 @@ function xg(n = {}, e = {}) {
     }
   };
 }
-function Og(n = {}, e = {}) {
+function vg(n = {}, e = {}) {
   return {
     async sendTelegramMessage({ tgBotToken: t, tgChatId: r, text: a }) {
       const o = String(t || "").trim(), s = String(r || "").trim();
@@ -12572,7 +12582,7 @@ function Og(n = {}, e = {}) {
         db: a
       }) : null, h = [];
       for (const g of f) {
-        const y = tm(g, g === "summary" ? m : p?.[g], u);
+        const y = rm(g, g === "summary" ? m : p?.[g], u);
         await e.sendTelegramMessage({
           tgBotToken: c,
           tgChatId: l,
@@ -12666,7 +12676,7 @@ function Og(n = {}, e = {}) {
           const v = X.map((O) => `${String(O?.key || "").trim()}:${String(O?.percentText || "").trim()}`).filter(Boolean).join(",");
           b.push({
             code: I.code,
-            message: Zf(I.title, U, I.threshold, X),
+            message: em(I.title, U, I.threshold, X),
             eventAt: `${String(U.resourceLabel || I.title || "").trim()}|${String(U.planLabel || "").trim()}|${String(U.periodLabel || "").trim()}|${v}|${V}`
           });
         }
@@ -12684,7 +12694,7 @@ function Og(n = {}, e = {}) {
         sent: !1,
         reason: "cooldown_active"
       };
-      const D = Eu(/* @__PURE__ */ new Date(), s.scheduleUtcOffsetMinutes), x = [
+      const D = Tu(/* @__PURE__ */ new Date(), s.scheduleUtcOffsetMinutes), x = [
         "⚠️ Emby Proxy 运行时异常告警",
         "",
         ...b.map((L) => `- ${L.message}`),
@@ -12710,16 +12720,16 @@ function Og(n = {}, e = {}) {
     }
   };
 }
-function vg(n = {}, e = {}) {
+function Fg(n = {}, e = {}) {
   return {
-    ...Ig(n, e),
     ...Mg(n, e),
     ...Pg(n, e),
     ...xg(n, e),
-    ...Og(n, e)
+    ...Og(n, e),
+    ...vg(n, e)
   };
 }
-var Fg = class {
+var Ug = class {
   constructor({ logger: n, service: e }) {
     this.logger = n, this.service = e;
   }
@@ -13012,7 +13022,7 @@ var Fg = class {
         lastAutoSkipAt: A(),
         autoSkipReason: "manual_only"
       };
-      const { tgBotToken: P, tgChatId: E } = C, w = this.#t(N, "tgDailyReport", "report"), R = this.#t(N, "alerts"), D = xt(C.tgDailyReportClockTimes, B.Defaults.TgDailyReportClockTimes), x = Au(w, D, i, c), L = fc(C, C), F = {
+      const { tgBotToken: P, tgChatId: E } = C, w = this.#t(N, "tgDailyReport", "report"), R = this.#t(N, "alerts"), D = xt(C.tgDailyReportClockTimes, B.Defaults.TgDailyReportClockTimes), x = Ru(w, D, i, c), L = fc(C, C), F = {
         ...w,
         clockTimes: D,
         reportKinds: L
@@ -13078,7 +13088,7 @@ var Fg = class {
     }
   }
 };
-function Ug(n = {}, e = {}) {
+function kg(n = {}, e = {}) {
   return {
     sanitizeHeaders(t) {
       if (!t || typeof t != "object" || Array.isArray(t)) return {};
@@ -13206,7 +13216,7 @@ function Wn(n = "") {
   const e = String(n || "").trim().toLowerCase();
   return e.startsWith("emby ") ? "emby" : e.startsWith("mediabrowser ") ? "mediabrowser" : "";
 }
-function kg(n = "", e = "") {
+function Hg(n = "", e = "") {
   const t = String(n || "").trim();
   if (!t) return "";
   const r = t.replace(/^[^\s]+\s+/i, "").trim();
@@ -13225,7 +13235,7 @@ function cs(n = "") {
   }
   return r;
 }
-var Hg = /* @__PURE__ */ new Set([
+var $g = /* @__PURE__ */ new Set([
   "apikey",
   "accesstoken",
   "token",
@@ -13239,7 +13249,7 @@ var Hg = /* @__PURE__ */ new Set([
   "xembydeviceid",
   "xmediabrowserdeviceid"
 ]);
-function $g(n, e) {
+function Bg(n, e) {
   const t = n instanceof URL ? n : null;
   if (!t || !(e instanceof Set)) return !1;
   for (const r of t.searchParams.keys()) if (e.has($a(r))) return !0;
@@ -13253,7 +13263,7 @@ function He(n, e = "") {
       return String(a ?? "");
   return "";
 }
-function Bg(n = "") {
+function Kg(n = "") {
   const e = String(n ?? "").replace(/[\r\n]+/g, " ").trim();
   if (!e) return "";
   let t = "";
@@ -13267,7 +13277,7 @@ function Bg(n = "") {
   }
   return t;
 }
-function Kg(n) {
+function zg(n) {
   const e = new Headers();
   for (const [t, r] of Mn(n)) {
     const a = String(t || "").trim();
@@ -13276,7 +13286,7 @@ function Kg(n) {
     try {
       e.set(a, o);
     } catch {
-      const s = Bg(o);
+      const s = Kg(o);
       if (!s) continue;
       try {
         e.set(a, s);
@@ -13320,24 +13330,24 @@ function ls(n) {
   }
   return e;
 }
-function zg(n = "") {
+function Wg(n = "") {
   const e = String(n || "").trim();
   if (!e || /^Bearer\s+.+$/i.test(e)) return !0;
   const t = cs(e);
   return !!String(t.token || "").trim();
 }
-function ta(n) {
+function ra(n) {
   const e = ls(n), t = [], r = [], a = is(He(n, "Cookie"), Aa);
   if (a) {
     for (const u of Ma(a).keys())
-      if (gg(u)) {
+      if (hg(u)) {
         r.push("cookie");
         break;
       }
   }
   for (const u of yl) {
     const f = He(n, u).trim();
-    f && (zg(f) || t.push(u));
+    f && (Wg(f) || t.push(u));
   }
   for (const [u, f] of Mn(n)) {
     const m = String(u || "").trim().toLowerCase(), p = String(f || "").trim();
@@ -13359,30 +13369,30 @@ function mn(n, e, t = "") {
   const r = n instanceof URL ? new URL(n.toString()) : new URL(String(n || "")), a = (e && typeof e == "object" && "auth" in e ? e : { auth: ls(e) }).auth || {}, o = Gt(t), s = o === "jellyfin" ? ["ApiKey"] : o === "emby" ? ["api_key"] : ["api_key", "ApiKey"];
   if (a.token)
     for (const i of s) r.searchParams.has(i) || r.searchParams.set(i, a.token);
-  return a.deviceId && !$g(r, Ml) && r.searchParams.set("DeviceId", a.deviceId), r;
+  return a.deviceId && !Bg(r, Ml) && r.searchParams.set("DeviceId", a.deviceId), r;
 }
-function Wg(n, e = "") {
+function Gg(n, e = "") {
   const t = String(e || "").trim().replace(/["\\]/g, "");
   return t ? `${n === "emby" ? "Emby" : "MediaBrowser"} Token="${t}"` : "";
 }
-var Gg = [
+var Vg = [
   "api_key",
   "ApiKey",
   "X-Emby-Token",
   "X-MediaBrowser-Token"
 ];
-function Vg(n = "") {
+function jg(n = "") {
   for (const e of n) {
     const t = e.codePointAt(0);
     if (t < 32 || t > 255) return !1;
   }
   return !0;
 }
-function jg(n) {
+function qg(n) {
   if (!(n instanceof URL)) return "";
-  for (const e of Gg) {
+  for (const e of Vg) {
     const t = String(n.searchParams.get(e) || "").trim();
-    if (t && Vg(t)) return t;
+    if (t && jg(t)) return t;
   }
   return "";
 }
@@ -13402,11 +13412,11 @@ function di(n, e = "auto", t = "") {
     }
   } else {
     const h = /^Bearer\s+(.+)$/i.exec(a);
-    f = Wg(u, m || (h ? h[1] : "") || String(t || "").trim());
+    f = Gg(u, m || (h ? h[1] : "") || String(t || "").trim());
   }
   if (!f) return n;
   const p = i || c || l || "";
-  return f = kg(f, d || (p === "emby" ? "mediabrowser" : p)), n.set("Authorization", f), n.set("X-Emby-Authorization", f), n.delete("X-MediaBrowser-Authorization"), n;
+  return f = Hg(f, d || (p === "emby" ? "mediabrowser" : p)), n.set("Authorization", f), n.set("X-Emby-Authorization", f), n.delete("X-MediaBrowser-Authorization"), n;
 }
 function fi(n, e = {}) {
   if (!(n instanceof Headers)) return n;
@@ -13422,7 +13432,7 @@ function fi(n, e = {}) {
     "X-MediaBrowser-Auth-Token"
   ].forEach((r) => n.delete(r)), n;
 }
-function qg() {
+function Xg() {
   const n = {};
   for (const e of ["direct", "proxy"]) {
     n[e] = {};
@@ -13449,7 +13459,7 @@ function qg() {
   }
   return Object.freeze(n);
 }
-var Xg = qg();
+var Yg = Xg();
 function mi(n = {}) {
   const e = n && typeof n == "object" ? n : null, t = String(n?.corsOrigins || ""), r = String(n?.ipBlacklist || ""), a = String(n?.geoAllowlist || ""), o = String(n?.geoBlocklist || ""), s = e ? ee.ProxyAccessRuleProfileCache.get(e) : null;
   if (s && s.corsOriginsRaw === t && s.ipBlacklistRaw === r && s.geoAllowlistRaw === a && s.geoBlocklistRaw === o) return s;
@@ -13476,7 +13486,7 @@ function mi(n = {}) {
   };
   return e && ee.ProxyAccessRuleProfileCache.set(e, l), l;
 }
-function Yg(n = {}, e = {}) {
+function Jg(n = {}, e = {}) {
   const { persistCloudflareDnsRecordsForHost: t } = n;
   return {
     normalizeNode(r, a, o = {}) {
@@ -13484,7 +13494,7 @@ function Yg(n = {}, e = {}) {
       let i = !1;
       const c = e.normalizeTargetPort(s.port), l = e.normalizeLines(s.lines, s.target, c || ""), d = e.resolveActiveLineId(s.activeLineId, l, Array.isArray(s.lines) ? s.lines : [], c || ""), u = e.buildLegacyTargetFromLines(l);
       JSON.stringify(l) !== JSON.stringify(Array.isArray(s.lines) ? s.lines : []) && (i = !0), String(s.activeLineId || "") !== d && (i = !0), String(s.target || "") !== u && (i = !0), s.lines = l, s.activeLineId = d, s.target = u, Object.prototype.hasOwnProperty.call(s, "port") && (delete s.port, i = !0), s.secret === void 0 && (s.secret = "", i = !0);
-      const f = Gr(s.tags, s.tag), m = f[0] || "";
+      const f = Vr(s.tags, s.tag), m = f[0] || "";
       JSON.stringify(f) !== JSON.stringify(Array.isArray(s.tags) ? s.tags : []) && (i = !0), String(s.tag || "") !== m && (i = !0), s.tags = f, s.tag = m;
       const p = [["server", "Record"].join(""), ["media", "Aggregation"].join("")];
       for (const E of Object.keys(s).filter((w) => p.some((R) => w.startsWith(R))))
@@ -13504,9 +13514,9 @@ function Yg(n = {}, e = {}) {
       String(s.mediaAuthMode || "") !== T && (i = !0), s.mediaAuthMode = T;
       const b = Pr(s.realClientIpMode);
       String(s.realClientIpMode || "") !== b && (i = !0), s.realClientIpMode = b;
-      const A = pa(s.hedgeProbePath);
+      const A = ga(s.hedgeProbePath);
       String(s.hedgeProbePath || "") !== A && (i = !0), s.hedgeProbePath = A;
-      const C = Wr(s);
+      const C = Gr(s);
       String(s.mainVideoStreamMode || "") !== C && (i = !0), s.mainVideoStreamMode = C;
       const N = kr(s.routingDecisionMode);
       if (String(s.routingDecisionMode || "") !== N && (i = !0), s.routingDecisionMode = N, Object.prototype.hasOwnProperty.call(s, "wangpanDirectMode") && (delete s.wangpanDirectMode, i = !0), Object.prototype.hasOwnProperty.call(s, "wangpanMode") && (delete s.wangpanMode, i = !0), o && typeof o == "object" && "dropLegacyDirectRouting" in o && o.dropLegacyDirectRouting === !0) for (const E of [...Vo, ...jo])
@@ -13566,7 +13576,7 @@ function Yg(n = {}, e = {}) {
         hostPrefixCnameTarget: a?.hostPrefixCnameTarget !== void 0 ? a.hostPrefixCnameTarget : o.hostPrefixCnameTarget,
         secret: a?.secret !== void 0 ? a.secret : o.secret || "",
         tag: a?.tag !== void 0 ? a.tag : o.tag || "",
-        tags: a?.tags !== void 0 ? a.tags : a?.tag !== void 0 ? [a.tag, ...Gr(o.tags, o.tag).filter((p) => p.toLowerCase() !== String(o.tag || "").trim().toLowerCase())] : o.tags,
+        tags: a?.tags !== void 0 ? a.tags : a?.tag !== void 0 ? [a.tag, ...Vr(o.tags, o.tag).filter((p) => p.toLowerCase() !== String(o.tag || "").trim().toLowerCase())] : o.tags,
         remark: a?.remark !== void 0 ? a.remark : o.remark || "",
         tagColor: a?.tagColor !== void 0 ? String(a.tagColor || "").trim() : o.tagColor || "",
         remarkColor: a?.remarkColor !== void 0 ? String(a.remarkColor || "").trim() : o.remarkColor || "",
@@ -13576,9 +13586,9 @@ function Yg(n = {}, e = {}) {
         playbackInfoMode: a?.playbackInfoMode !== void 0 ? xr(a.playbackInfoMode) : xr(o.playbackInfoMode),
         mediaAuthMode: a?.mediaAuthMode !== void 0 ? Gt(a.mediaAuthMode) : Gt(o.mediaAuthMode),
         realClientIpMode: a?.realClientIpMode !== void 0 ? Pr(a.realClientIpMode) : Pr(o.realClientIpMode),
-        hedgeProbePath: a?.hedgeProbePath !== void 0 ? pa(a.hedgeProbePath) : pa(o.hedgeProbePath),
+        hedgeProbePath: a?.hedgeProbePath !== void 0 ? ga(a.hedgeProbePath) : ga(o.hedgeProbePath),
         routingDecisionMode: a?.routingDecisionMode !== void 0 ? kr(a.routingDecisionMode) : kr(o.routingDecisionMode),
-        mainVideoStreamMode: m !== void 0 ? En(m) : Wr(o),
+        mainVideoStreamMode: m !== void 0 ? En(m) : Gr(o),
         headers: e.sanitizeHeaders(s),
         schemaVersion: 6
       }).data;
@@ -13638,7 +13648,7 @@ function Yg(n = {}, e = {}) {
     async upsertHostPrefixDnsRecord(r = "", a = {}) {
       const o = oe(r);
       if (!o) return null;
-      const s = a.config || await we(a.env), i = ma(s, a.env), c = Xt(a.cnameTarget) || oe(i.host);
+      const s = a.config || await we(a.env), i = pa(s, a.env), c = Xt(a.cnameTarget) || oe(i.host);
       return await t({
         env: a.env,
         kv: a.kv,
@@ -13659,7 +13669,7 @@ function Yg(n = {}, e = {}) {
     async deleteHostPrefixDnsRecord(r = "", a = {}) {
       const o = oe(r);
       if (!o) return null;
-      const s = ma(a.config || await we(a.env), a.env), i = String(s.cfZoneId || "").trim(), c = String(s.cfApiToken || "").trim(), l = await Qo(i, c, { scope: "node.host_prefix_dns_delete.zone_lookup" }), d = String(l?.name || "").trim();
+      const s = pa(a.config || await we(a.env), a.env), i = String(s.cfZoneId || "").trim(), c = String(s.cfApiToken || "").trim(), l = await Qo(i, c, { scope: "node.host_prefix_dns_delete.zone_lookup" }), d = String(l?.name || "").trim();
       if (d && !Ea(o, d)) throw Ie("INVALID_HOST", "当前子域不在 Cloudflare Zone 下", 400, {
         host: o,
         zoneName: d
@@ -13685,7 +13695,7 @@ function Yg(n = {}, e = {}) {
     async persistHostPrefixDnsSyncPlan(r = {}, a = {}) {
       const o = Array.isArray(r?.steps) ? r.steps : [];
       if (!o.length) return null;
-      ma(a.config || await we(a.env), a.env);
+      pa(a.config || await we(a.env), a.env);
       for (const s of o) {
         if (String(s?.type || "").trim().toLowerCase() === "delete") {
           await e.deleteHostPrefixDnsRecord(s.host, a);
@@ -13791,7 +13801,7 @@ function Yg(n = {}, e = {}) {
     }
   };
 }
-function Jg(n = {}, e = {}) {
+function Qg(n = {}, e = {}) {
   return {
     async pingTarget(t, r, a = {}) {
       const o = $(), s = "GET", i = (f = {}) => ({
@@ -13804,7 +13814,7 @@ function Jg(n = {}, e = {}) {
       }), c = Ua(String(t || "").trim());
       if (!c) return i({ reason: "invalid_target" });
       let l = null, d = null;
-      const u = dl(c, [Ss, ad]);
+      const u = dl(c, [Ss, nd]);
       if (!u.length) return i({ reason: "invalid_target" });
       for (const { probePath: f, probeUrl: m } of u) {
         const p = $(), h = new AbortController();
@@ -13964,15 +13974,15 @@ function Jg(n = {}, e = {}) {
     }
   };
 }
-function Qg(n = {}, e = {}) {
+function Zg(n = {}, e = {}) {
   return {
-    ...Ug(n, e),
-    ...Yg(n, e),
-    ...Jg(n, e)
+    ...kg(n, e),
+    ...Jg(n, e),
+    ...Qg(n, e)
   };
 }
 var Gn = "proxy_logs_fts";
-function Zg(n = {}) {
+function eh(n = {}) {
   const e = {
     buildResponse(t = {}) {
       return ne(t);
@@ -14069,7 +14079,7 @@ function Zg(n = {}) {
       };
     },
     buildSqlPlan(t = {}, r = {}, a = {}, o = "") {
-      const { startTs: s, endTs: i } = r, c = e.buildDisplayState(a), l = pf(t.requestGroup), d = gf(t.statusGroup), u = ["proxy_logs.timestamp >= ?", "proxy_logs.timestamp <= ?"], f = [s, i], m = (b, ...A) => {
+      const { startTs: s, endTs: i } = r, c = e.buildDisplayState(a), l = gf(t.requestGroup), d = hf(t.statusGroup), u = ["proxy_logs.timestamp >= ?", "proxy_logs.timestamp <= ?"], f = [s, i], m = (b, ...A) => {
         u.push(b), A.length > 0 && f.push(...A);
       }, p = "LOWER(proxy_logs.request_path)", h = String(t.keyword || "").trim();
       let g = !1;
@@ -14085,7 +14095,7 @@ function Zg(n = {}) {
           }
           m(A.length ? `(${A.join(" OR ")})` : "1 = 0", ...C);
         } else if (o === "fts")
-          m(`${Gn} MATCH ?`, Tf(h)), g = !0;
+          m(`${Gn} MATCH ?`, Af(h)), g = !0;
         else {
           const A = `%${Ba(h)}%`;
           if (Fe(A) > _s) return { errorResponse: z("LOG_QUERY_KEYWORD_TOO_LONG", "LIKE 搜索关键词过长", 400, { maxPatternBytes: _s }) };
@@ -14113,7 +14123,7 @@ function Zg(n = {}) {
           )
         )`, y, ...A.map((C) => `%${Ba(C)}%`));
       }
-      const _ = hf(t.protocolFailureReason || "");
+      const _ = yf(t.protocolFailureReason || "");
       if (_ && m(`(
           LOWER(COALESCE(CAST(json_extract(proxy_logs.detail_json, '$.protocolFailureReason') AS TEXT), '')) = ?
           OR (
@@ -14149,7 +14159,7 @@ function Zg(n = {}) {
           const N = d.slice(), P = u.slice();
           i && (N.push("(proxy_logs.timestamp < ? OR (proxy_logs.timestamp = ? AND proxy_logs.id < ?))"), P.push(i.timestamp, i.timestamp, i.id));
           const E = "WHERE " + N.join(" AND "), w = await t.prepare(`${m} ${f} ${E} ${p} LIMIT ?`).bind(...P, s + 1).all(), R = Array.isArray(w?.results) ? w.results : [];
-          b = R.length > s, C = b ? R.slice(0, s) : R, A = b ? Af(C[C.length - 1]) : null, _ = null, S = b ? o + 1 : o;
+          b = R.length > s, C = b ? R.slice(0, s) : R, A = b ? Rf(C[C.length - 1]) : null, _ = null, S = b ? o + 1 : o;
         } else {
           _ = (await t.prepare(`SELECT COUNT(*) as total ${f} ${y}`).bind(...u).first())?.total || 0;
           const N = await t.prepare(`${m} ${f} ${y} ${p} LIMIT ? OFFSET ?`).bind(...u, s, l).all();
@@ -14174,8 +14184,8 @@ function Zg(n = {}) {
   };
   return e;
 }
-var eh = "sys_status";
-function th(n = {}) {
+var th = "sys_status";
+function rh(n = {}) {
   const { logRepository: e } = n, t = {
     error(r, a, o = null) {
       Le(r, a, o, "error");
@@ -14311,7 +14321,7 @@ function th(n = {}) {
 						FROM json_each(?) AS entry
 						WHERE CAST(json_extract(entry.value, '$.timestamp') AS INTEGER) > COALESCE((
 							SELECT CAST(json_extract(payload, '$.clearEpochMs') AS INTEGER)
-							FROM ${eh}
+							FROM ${th}
 							WHERE scope = ?
 							LIMIT 1
 						), 0)`).bind(P, h);
@@ -14365,12 +14375,12 @@ function th(n = {}) {
   };
   return t;
 }
-var Vn = "sys_status", rr = "sys_locks", ca = "scheduled", pi = Object.freeze({
+var Vn = "sys_status", rr = "sys_locks", la = "scheduled", pi = Object.freeze({
   log: "ops_status:log",
   scheduled: "ops_status:scheduled",
   dnsIpPool: "ops_status:dns_ip_pool"
 });
-function rh(n = {}) {
+function ah(n = {}) {
   const { bindingPort: e, schemaReadinessPort: t, statusPersistence: r } = n, a = {
     async getOpsStatusPayloadFromDb(o, s) {
       if (!o || !s) return null;
@@ -14511,10 +14521,10 @@ function rh(n = {}) {
         backend: s || String(o.backend || "").trim() || ""
       };
     },
-    async getScheduledLeaseLockFromDb(o, s = ca) {
+    async getScheduledLeaseLockFromDb(o, s = la) {
       if (!o || !await a.ensureScheduledLeaseTable(o)) return null;
       try {
-        const i = await o.prepare(`SELECT token, owner, acquired_at, renewed_at, expires_at FROM ${rr} WHERE scope = ? LIMIT 1`).bind(String(s || ca)).first();
+        const i = await o.prepare(`SELECT token, owner, acquired_at, renewed_at, expires_at FROM ${rr} WHERE scope = ? LIMIT 1`).bind(String(s || la)).first();
         return a.normalizeScheduledLeaseLock(i, "d1");
       } catch {
         return null;
@@ -14531,7 +14541,7 @@ function rh(n = {}) {
         reason: "db_init_failed",
         backend: "d1"
       };
-      const i = $(), c = Math.max(B.Defaults.ScheduledLeaseMinMs, Number(s.leaseMs) || B.Defaults.ScheduledLeaseMs), l = String(s.token || `${i}-${Math.random().toString(36).slice(2, 10)}`), d = String(s.owner || "scheduled"), u = String(s.scope || ca), f = i + c;
+      const i = $(), c = Math.max(B.Defaults.ScheduledLeaseMinMs, Number(s.leaseMs) || B.Defaults.ScheduledLeaseMs), l = String(s.token || `${i}-${Math.random().toString(36).slice(2, 10)}`), d = String(s.owner || "scheduled"), u = String(s.scope || la), f = i + c;
       try {
         await o.prepare(`INSERT INTO ${rr} (scope, token, owner, acquired_at, renewed_at, expires_at)
           VALUES (?, ?, ?, ?, NULL, ?)
@@ -14577,7 +14587,7 @@ function rh(n = {}) {
     },
     async renewScheduledLeaseWithDb(o, s, i, c = {}) {
       if (!o || !s || !await a.ensureScheduledLeaseTable(o)) return null;
-      const l = $(), d = Math.max(B.Defaults.ScheduledLeaseMinMs, Number(i) || B.Defaults.ScheduledLeaseMs), u = String(c.scope || ca);
+      const l = $(), d = Math.max(B.Defaults.ScheduledLeaseMinMs, Number(i) || B.Defaults.ScheduledLeaseMs), u = String(c.scope || la);
       try {
         await o.prepare(`UPDATE ${rr}
           SET owner = ?, renewed_at = ?, expires_at = ?
@@ -14594,7 +14604,7 @@ function rh(n = {}) {
     },
     async releaseScheduledLeaseWithDb(o, s, i = {}) {
       if (!o || !s || !await a.ensureScheduledLeaseTable(o)) return !1;
-      const c = String(i.scope || ca);
+      const c = String(i.scope || la);
       try {
         return await o.prepare(`DELETE FROM ${rr} WHERE scope = ? AND token = ?`).bind(c, String(s)).run(), !0;
       } catch {
@@ -14685,7 +14695,7 @@ function Pl(n) {
     }
   };
 }
-function ah(n = []) {
+function nh(n = []) {
   const e = new AbortController(), t = [], r = (a = "linked_abort") => {
     if (!e.signal.aborted)
       try {
@@ -14715,7 +14725,7 @@ function ah(n = []) {
     }
   };
 }
-async function nh(n, e, t = null) {
+async function oh(n, e, t = null) {
   return await new Promise((r, a) => {
     let o = !1, s = null, i = () => {
     };
@@ -14747,7 +14757,7 @@ async function nh(n, e, t = null) {
     }), l);
   });
 }
-async function oh(n, e = null) {
+async function sh(n, e = null) {
   const t = Math.max(0, Number(n) || 0);
   if (!(t <= 0))
     return await new Promise((r, a) => {
@@ -14768,12 +14778,12 @@ async function oh(n, e = null) {
       }));
     });
 }
-function sh(n = {}, e = {}) {
+function ih(n = {}, e = {}) {
   return {
     async tryServeMetadataCache(t) {
       if (!t.metadataCache || !t.metadataCacheKey) return null;
       try {
-        const r = Ag(t.metadataCacheKey, t.request);
+        const r = Rg(t.metadataCacheKey, t.request);
         if (!r) return null;
         const a = await t.metadataCache.match(r);
         if (!a) return null;
@@ -14822,7 +14832,7 @@ function sh(n = {}, e = {}) {
     },
     enforceStrictClientDirectAuthPolicy(t, r, a, o = {}) {
       if (!e.shouldGuardClientDirectForRequest(t?.requestTraits, r)) return r;
-      const s = a?.clientRedirectAuthPolicy || ta(a?.newHeaders);
+      const s = a?.clientRedirectAuthPolicy || ra(a?.newHeaders);
       return a && typeof a == "object" && (a.clientRedirectAuthPolicy = s), t.directRedirectAuthReason = s.reason || "", r;
     },
     createDirectTransportIncompatibleError(t, r = {}) {
@@ -14924,7 +14934,7 @@ function sh(n = {}, e = {}) {
       if (t.entryRoutingDecision = s, s?.phase !== "entry" || s?.action !== "DIRECT") return null;
       const i = (Qe(r[0]) ? r[0] : null)?.targetUrl || null;
       if (!(i instanceof URL)) return null;
-      const c = a?.clientRedirectAuthPolicy || ta(a?.newHeaders || t.request.headers);
+      const c = a?.clientRedirectAuthPolicy || ra(a?.newHeaders || t.request.headers);
       if (a && typeof a == "object" && (a.clientRedirectAuthPolicy = c), t?.requestTraits?.isBigStream === !0 && t?.requestTraits?.rangeHeader && c.hasQueryAuth !== !0 && c.hasHeaderAuth !== !0 && c.hasCookieAuth !== !0) {
         const f = await e.maybeProbeEntryDirectRangeRedirectResponse(t, i, o, s);
         if (f) return f;
@@ -14988,7 +14998,7 @@ function sh(n = {}, e = {}) {
     }
   };
 }
-function ih(n = {}, e = {}) {
+function ch(n = {}, e = {}) {
   return {
     async executeUpstreamFlow(t, r, a) {
       const o = /* @__PURE__ */ new Set([
@@ -15006,7 +15016,7 @@ function ih(n = {}, e = {}) {
         mode: "proxy",
         forceVideoDirect: !1,
         forceVideoProxy: !1
-      } : Qd(t.node, t.currentConfig), i = e.createRedirectTrace(t.requestUrl), c = Xd(t.requestMethod, t.requestTraits, { playbackRelayTargetUrl: t.playbackRelayTargetUrl });
+      } : Zd(t.node, t.currentConfig), i = e.createRedirectTrace(t.requestUrl), c = Yd(t.requestMethod, t.requestTraits, { playbackRelayTargetUrl: t.playbackRelayTargetUrl });
       t.redirectTrace = i;
       const l = t.playbackRelayTargetUrl ? await e.fetchAbsoluteWithRetryLoop({
         execution: t,
@@ -15099,7 +15109,7 @@ function ih(n = {}, e = {}) {
           redirectBodyMode: A
         });
         if (e.recordRedirectTraceHop(i, N, P, w), w.action === "DIRECT") {
-          const F = r.clientRedirectAuthPolicy || ta(r.newHeaders);
+          const F = r.clientRedirectAuthPolicy || ra(r.newHeaders);
           if (F.canDirect !== !0)
             throw t.directRedirectAuthReason = F.reason || "direct_transport_incompatible", e.finalizeRedirectTrace(i, {
               terminalMode: "direct_incompatible",
@@ -15259,13 +15269,13 @@ function ih(n = {}, e = {}) {
         forceH1: t.forceH1,
         proxiedExternalRedirect: s.proxiedExternalRedirect,
         imageCacheMaxAge: t.imageCacheMaxAge
-      }), h = vm(t, o);
+      }), h = Fm(t, o);
       if (e.applyProxyRedirectHeaders(p, s.response, s.activeTargetBase, t.nodeName, t.nodeKey, s.directRedirectUrl, s.finalUrl, {
         linkVariant: t.linkVariant,
         entryMode: t.entryMode,
         externalRedirectAuth: h,
         workerOrigin: t.requestUrl instanceof URL ? t.requestUrl.origin : ""
-      }), h && h.canDirect !== !0 && !s.directRedirectUrl && tl(Number(s.response.status)) && Om(p.get("Location"), t.requestUrl instanceof URL ? t.requestUrl.origin : "")) throw e.createDirectTransportIncompatibleError(t, { redirectTrace: s.redirectTrace || t.redirectTrace });
+      }), h && h.canDirect !== !0 && !s.directRedirectUrl && tl(Number(s.response.status)) && vm(p.get("Location"), t.requestUrl instanceof URL ? t.requestUrl.origin : "")) throw e.createDirectTransportIncompatibleError(t, { redirectTrace: s.redirectTrace || t.redirectTrace });
       c && (ml(p), p.set("Location", t.playbackAbsoluteFallbackLocation || "/"), p.set("Cache-Control", "no-store"));
       const g = !c && e.shouldManageProxyResponseBody(t, s), y = t.defaultOutboundColo || "", _ = c ? f : u, S = e.classifyProxyLogCategory(t.requestTraits), T = e.shouldRecordAccessLog(t, {
         statusCode: _,
@@ -15378,7 +15388,7 @@ function ih(n = {}, e = {}) {
     }
   };
 }
-function ch(n = {}, e = {}) {
+function lh(n = {}, e = {}) {
   return {
     buildErrorResponse(t, r) {
       const a = r?.message || String(r || "网关或 CF Workers 内部崩溃"), o = String(r?.code || "").toUpperCase();
@@ -15447,7 +15457,7 @@ function ch(n = {}, e = {}) {
         "Access-Control-Allow-Origin": t.finalOrigin || "*",
         "Cache-Control": "no-store"
       });
-      return t.finalOrigin !== "*" && Kr(d, "Origin"), De(d), new Response(JSON.stringify(c), {
+      return t.finalOrigin !== "*" && zr(d, "Origin"), De(d), new Response(JSON.stringify(c), {
         status: s,
         statusText: i,
         headers: d
@@ -15455,10 +15465,10 @@ function ch(n = {}, e = {}) {
     },
     async handle(t, r, a, o, s, i, c, l = {}) {
       if (Ra(a)) {
-        const y = k(l.runtimeConfig) ? l.runtimeConfig : {}, _ = ra(i, t, e.resolveCorsOrigin(y, t));
+        const y = k(l.runtimeConfig) ? l.runtimeConfig : {}, _ = aa(i, t, e.resolveCorsOrigin(y, t));
         return In(t.method, _);
       }
-      const d = await Ny(t, i, r, o, a);
+      const d = await Dy(t, i, r, o, a);
       if (d) return d;
       let u = await e.prepareExecutionContext(t, r, a, o, s, i, c, l);
       if (u.invalidResponse) return u.invalidResponse;
@@ -15489,14 +15499,14 @@ function ch(n = {}, e = {}) {
     }
   };
 }
-function lh(n = {}, e = {}) {
+function uh(n = {}, e = {}) {
   return {
-    ...sh(n, e),
     ...ih(n, e),
-    ...ch(n, e)
+    ...ch(n, e),
+    ...lh(n, e)
   };
 }
-function uh(n = {}, e = {}) {
+function dh(n = {}, e = {}) {
   return {
     resolveEntryDirectTargetUrl(t, r) {
       if (t?.playbackRelayTargetUrl instanceof URL) return new URL(t.playbackRelayTargetUrl.toString());
@@ -15600,12 +15610,12 @@ function uh(n = {}, e = {}) {
       const a = /* @__PURE__ */ new Set(), o = t?.requestUrl instanceof URL ? t.requestUrl : null;
       if (o) for (const c of o.searchParams.keys()) {
         const l = $a(c);
-        if (Hg.has(l) || Ml.has(l)) {
+        if ($g.has(l) || Ml.has(l)) {
           a.add("query");
           break;
         }
       }
-      const s = r?.newHeaders || t?.request?.headers || new Headers(), i = r?.clientRedirectAuthPolicy || ta(s);
+      const s = r?.newHeaders || t?.request?.headers || new Headers(), i = r?.clientRedirectAuthPolicy || ra(s);
       return i.hasQueryAuth && a.add("query"), i.hasHeaderAuth && a.add("header"), i.hasCookieAuth && a.add("cookie"), [...a];
     },
     pickPrimaryAuthCarrier(t = []) {
@@ -15622,7 +15632,7 @@ function uh(n = {}, e = {}) {
     },
     resolveRoutingCapability(t = "proxy", r = [], a = "none") {
       const o = String(t || "").trim().toLowerCase() === "direct" ? "direct" : "proxy", s = e.pickPrimaryAuthCarrier(r), i = a === "same_origin" || a === "external" ? a : "none";
-      return Xg?.[o]?.[s]?.[i] || {
+      return Yg?.[o]?.[s]?.[i] || {
         deliveryMode: o,
         authCarrier: s,
         redirectScope: i,
@@ -15636,7 +15646,7 @@ function uh(n = {}, e = {}) {
       return String(r.abortReason || "").trim().toLowerCase() === "stream_idle_timeout" || a === "STREAM_IDLE_TIMEOUT" ? "idle_timeout" : a === "UPSTREAM_TIMEOUT" || o.includes("timed out") || o.includes("timeout") ? "connect_timeout" : o.includes("redirect loop") ? "redirect_loop" : o.includes("too many redirects") || o.includes("redirect limit") ? "redirect_limit_exceeded" : o.includes("tls") || o.includes("ssl") || o.includes("certificate") ? "tls_handshake_failed" : r.protocolFallbackRetry === !0 || o.includes("protocol_fallback") ? "http_version_fallback" : s === 416 || o.includes("range") && (o.includes("416") || o.includes("unsatisfied") || o.includes("satisfiable")) ? "range_unsatisfied" : s >= 400 && s < 500 ? "upstream_4xx" : s >= 500 ? "upstream_5xx" : "unknown_fetch_error";
     },
     buildStructuredLogDetail(t, r = {}, a = {}) {
-      const o = String(a.deliveryMode || (e.shouldLogDirectAccess(t, { directRedirectUrl: a.directRedirectUrl }) ? "direct" : "proxy")).trim().toLowerCase() === "direct" ? "direct" : "proxy", s = e.collectLogAuthKinds(t, a.transport), i = a.redirectScope || e.resolveRedirectScope(a.directRedirectUrl || a.redirectUrl || a.finalUrl, t?.requestUrl), c = e.resolveRoutingCapability(o, s, i), l = Number(a.upstreamStatus || r.statusCode || 0) || 0, d = Sf(l), u = t?.routeContextDiagnostics && typeof t.routeContextDiagnostics == "object" ? t.routeContextDiagnostics : null, f = Array.isArray(a.authKindsForwarded) ? [...new Set(a.authKindsForwarded.map((p) => String(p || "").trim().toLowerCase()).filter(Boolean))] : o === "direct" ? s.filter((p) => p === "query") : s, m = e.ensureFailoverTelemetry(t);
+      const o = String(a.deliveryMode || (e.shouldLogDirectAccess(t, { directRedirectUrl: a.directRedirectUrl }) ? "direct" : "proxy")).trim().toLowerCase() === "direct" ? "direct" : "proxy", s = e.collectLogAuthKinds(t, a.transport), i = a.redirectScope || e.resolveRedirectScope(a.directRedirectUrl || a.redirectUrl || a.finalUrl, t?.requestUrl), c = e.resolveRoutingCapability(o, s, i), l = Number(a.upstreamStatus || r.statusCode || 0) || 0, d = _f(l), u = t?.routeContextDiagnostics && typeof t.routeContextDiagnostics == "object" ? t.routeContextDiagnostics : null, f = Array.isArray(a.authKindsForwarded) ? [...new Set(a.authKindsForwarded.map((p) => String(p || "").trim().toLowerCase()).filter(Boolean))] : o === "direct" ? s.filter((p) => p === "query") : s, m = e.ensureFailoverTelemetry(t);
       return {
         routingMode: Ur(t?.routingDecisionMode),
         entryDecision: t?.entryRoutingDecision ? {
@@ -15731,7 +15741,7 @@ function uh(n = {}, e = {}) {
     }
   };
 }
-function dh(n = {}, e = {}) {
+function fh(n = {}, e = {}) {
   return {
     buildProxyErrorState: Jn,
     async guardApiResponseMime(t, r) {
@@ -15770,11 +15780,11 @@ function dh(n = {}, e = {}) {
       } catch {
         return null;
       }
-      if (Dg(i.pathname)) return null;
+      if (Ig(i.pathname)) return null;
       const { proxyPath: c } = Ha(i, r);
       if (!c) return null;
       const l = c || "/";
-      return Yr.test(l) || Xr.test(l) || At.test(l) || yr.test(l) ? {
+      return Jr.test(l) || Yr.test(l) || At.test(l) || yr.test(l) ? {
         upstreamUrl: i,
         proxyPath: l,
         proxySearch: i.search || ""
@@ -15865,7 +15875,7 @@ function dh(n = {}, e = {}) {
         joined: !0,
         result: await s
       };
-      if (a.size >= gd) return {
+      if (a.size >= hd) return {
         skipped: !0,
         result: null
       };
@@ -15902,7 +15912,7 @@ function dh(n = {}, e = {}) {
         for (const S of g) {
           if (_ <= 0) break;
           if (!Eo(S.upstreamUrl)) continue;
-          const T = await Tg(t, S.upstreamUrl), b = Il(l, i, c, S.proxyPath, {
+          const T = await Ag(t, S.upstreamUrl), b = Il(l, i, c, S.proxyPath, {
             search: S.proxySearch,
             nodeCacheRevision: u.nodeCacheRevision,
             entryMode: u.entryMode,
@@ -15922,7 +15932,7 @@ function dh(n = {}, e = {}) {
                 N.delete("Range"), N.delete("If-Modified-Since"), N.delete("If-None-Match"), N.set("X-Metadata-Prewarm", "1"), C.headers = N;
                 const P = new AbortController();
                 C.signal = P.signal;
-                const E = fe(u.prewarmTimeoutMs, id, 250, 1e4), w = setTimeout(() => P.abort(), E);
+                const E = fe(u.prewarmTimeoutMs, cd, 250, 1e4), w = setTimeout(() => P.abort(), E);
                 try {
                   const R = await ze(S.upstreamUrl.toString(), C);
                   if (R.status !== 200) {
@@ -15941,7 +15951,7 @@ function dh(n = {}, e = {}) {
                     bytes: 0
                   };
                   const x = {
-                    isImage: Yr.test(S.proxyPath) || Xr.test(S.proxyPath),
+                    isImage: Jr.test(S.proxyPath) || Yr.test(S.proxyPath),
                     isSubtitle: yr.test(S.proxyPath),
                     isManifest: At.test(S.proxyPath)
                   };
@@ -16207,7 +16217,7 @@ function dh(n = {}, e = {}) {
     }
   };
 }
-function fh(n = {}, e = {}) {
+function mh(n = {}, e = {}) {
   return {
     async performFetchWithTimeout(t, r, a = {}) {
       const o = await r(t, a), s = Math.max(0, Number(a.timeoutMs) || 0), i = a.requestLifecycle || null;
@@ -16237,7 +16247,7 @@ function fh(n = {}, e = {}) {
       }
     },
     async performUpstreamFetch(t, r, a, o, s = {}) {
-      const i = s.useFastSegmentBuilder === !0, c = i ? new URL(jp(t, r, a?.search || "")) : lt(t, r);
+      const i = s.useFastSegmentBuilder === !0, c = i ? new URL(qp(t, r, a?.search || "")) : lt(t, r);
       return i || (c.search = a.search), {
         ...await e.performFetchWithTimeout(c, o, s),
         targetRecord: t
@@ -16396,7 +16406,7 @@ function fh(n = {}, e = {}) {
     }
   };
 }
-function mh(n = {}, e = {}) {
+function ph(n = {}, e = {}) {
   const { Logger: t } = n;
   return {
     shouldRecordAccessLog(r = {}, a = {}, o = {}) {
@@ -16426,40 +16436,40 @@ function mh(n = {}, e = {}) {
     },
     buildOptionsResponse(r) {
       const a = new Headers(r.dynamicCors);
-      return De(a), r.finalOrigin !== "*" && Kr(a, "Origin"), new Response(null, { headers: a });
+      return De(a), r.finalOrigin !== "*" && zr(a, "Origin"), new Response(null, { headers: a });
     }
   };
 }
-function ph(n = {}, e = {}) {
+function gh(n = {}, e = {}) {
   return {
-    ...uh(n, e),
     ...dh(n, e),
     ...fh(n, e),
-    ...mh(n, e)
+    ...mh(n, e),
+    ...ph(n, e)
   };
 }
-var gi = 4096, gh = 1440 * 60 * 1e3, hh = 60 * 1e3;
+var gi = 4096, hh = 1440 * 60 * 1e3, yh = 60 * 1e3;
 function hi(n, e, t) {
   const r = new URL(n.toString());
   return r.searchParams.delete("AnyProviderIdEquals"), r.searchParams.set("SearchTerm", e), /^\d{4}$/.test(t) ? r.searchParams.set("Years", t) : r.searchParams.delete("Years"), r;
 }
-var yh = "https://api.theotherdb.org/video/getVideoIdByExternalId", yi = 4096, Sh = 1440 * 1e3, _h = 60 * 1e3, bh = 8e3, Eh = [
+var Sh = "https://api.theotherdb.org/video/getVideoIdByExternalId", yi = 4096, _h = 1440 * 1e3, bh = 60 * 1e3, Eh = 8e3, Th = [
   "video_id",
   "videoId",
   "video_ids",
   "videoIds"
-], Th = ["id", "value"], Ah = [
+], Ah = ["id", "value"], Rh = [
   "items",
   "data",
   "results",
   "videos",
   "list"
 ];
-function Rh(n) {
+function Ch(n) {
   const e = String(n ?? "").trim().toLowerCase();
   return e ? e === "movie" || e === "film" ? "movie" : e === "tv" || e === "series" || e === "show" ? "tv" : "" : "";
 }
-function Ch(n, e, t) {
+function wh(n, e, t) {
   if (n != null)
     for (const r of String(n).split(",")) {
       const a = r.trim();
@@ -16478,34 +16488,34 @@ function Ao(n, e, t, r = 0) {
     return;
   }
   if (!k(n)) {
-    Ch(n, e, t);
+    wh(n, e, t);
     return;
   }
-  const a = Rh(n.video_type ?? n.videoType) || e, o = (s) => {
+  const a = Ch(n.video_type ?? n.videoType) || e, o = (s) => {
     const i = s.filter((c) => Object.prototype.hasOwnProperty.call(n, c));
     if (!i.length) return !1;
     for (const c of i) Ao(n[c], a, t, r + 1);
     return !0;
   };
-  o(Eh) || o(Ah) || o(Th);
+  o(Th) || o(Rh) || o(Ah);
 }
-function wh(n) {
+function Lh(n) {
   const e = [];
   return Ao(n, "", e), e;
 }
-function Lh(n, e) {
+function Nh(n, e) {
   const t = n.filter((r) => r.videoType);
   return (e && t.length ? n.filter((r) => !r.videoType || r.videoType === e) : n).map((r) => r.videoId);
 }
-async function Nh(n, e) {
+async function Dh(n, e) {
   const t = ee.TodbVideoIdCache.get(n);
   return t && Number(t.expiresAt) > $() ? t.entries : await Et(Ye(["todb_video_id", n]), async () => {
     const r = () => Ne(ee.TodbVideoIdCache, n, {
       entries: null,
-      expiresAt: $() + _h
-    }, yi), a = new URL(yh);
+      expiresAt: $() + bh
+    }, yi), a = new URL(Sh);
     a.searchParams.set("type", "tmdb"), a.searchParams.set("value", n);
-    const o = new AbortController(), s = setTimeout(() => o.abort("todb_timeout"), bh);
+    const o = new AbortController(), s = setTimeout(() => o.abort("todb_timeout"), Eh);
     try {
       const i = await fetch(a, {
         headers: {
@@ -16516,10 +16526,10 @@ async function Nh(n, e) {
       });
       if (!i.ok)
         return console.warn(`todb video id lookup failed: ${i.status}`), r(), null;
-      const c = wh(await i.json());
+      const c = Lh(await i.json());
       return c.length ? (Ne(ee.TodbVideoIdCache, n, {
         entries: c,
-        expiresAt: $() + Sh
+        expiresAt: $() + _h
       }, yi), c) : (r(), null);
     } catch (i) {
       return console.warn("todb video id lookup failed:", i?.message || i), r(), null;
@@ -16531,12 +16541,12 @@ async function Nh(n, e) {
 async function Si(n, e = {}, t = {}, r = "", a = "") {
   const o = String(t?.todbApiKey || "").trim() || String(e?.TODB_API_KEY || "").trim();
   if (!o) return null;
-  const s = Lh(await Nh(r, o) || [], a);
+  const s = Nh(await Dh(r, o) || [], a);
   if (!s.length) return null;
   const i = new URL(n.toString());
   return i.searchParams.delete("AnyProviderIdEquals"), i.searchParams.set("todbvs", s.join(",")), i;
 }
-async function Dh(n, e = {}, t = {}, r = "auto") {
+async function Ih(n, e = {}, t = {}, r = "auto") {
   const a = n?.searchParams?.get?.("AnyProviderIdEquals")?.match(/tmdb\.(\d+)/i);
   if (!a) return null;
   const o = Or(r), s = String(n.searchParams.get("IncludeItemTypes") || "").toLowerCase(), i = s.includes("movie"), c = i ? "movie" : "tv", l = i, d = l === (s.includes("series") || s.includes("tv") || s.includes("episode") || s.includes("season")) ? "" : l ? "movie" : "tv";
@@ -16554,7 +16564,7 @@ async function Dh(n, e = {}, t = {}, r = "auto") {
     return b.failed === !0 ? await _() : hi(n, b.title, b.year);
   const A = () => Ne(ee.TmdbLookupCache, T, {
     failed: !0,
-    expiresAt: $() + hh
+    expiresAt: $() + yh
   }, gi), C = await Et(Ye(["tmdb_title", T]), async () => {
     const N = new URL(`https://api.themoviedb.org/3/${c}/${a[1]}`);
     N.searchParams.set("language", S), y && !g && N.searchParams.set("api_key", y);
@@ -16572,7 +16582,7 @@ async function Dh(n, e = {}, t = {}, r = "auto") {
       return x ? (Ne(ee.TmdbLookupCache, T, {
         title: x,
         year: L,
-        expiresAt: $() + gh
+        expiresAt: $() + hh
       }, gi), {
         title: x,
         year: L
@@ -16585,13 +16595,13 @@ async function Dh(n, e = {}, t = {}, r = "auto") {
   });
   return C ? hi(n, C.title, C.year) : await _();
 }
-function Ih(n = {}, e = {}) {
-  const { CacheManager: t } = n, r = new au({
+function Mh(n = {}, e = {}) {
+  const { CacheManager: t } = n, r = new nu({
     entries: ee.PlaybackInfoResponseCache,
     now: $,
     maxEntries: B.Defaults.PlaybackInfoCacheMax,
     maxEntryBytes: $o,
-    maxTotalBytes: ud
+    maxTotalBytes: dd
   });
   return {
     async prepareExecutionContext(a, o, s, i, c, l, d, u = {}) {
@@ -16600,13 +16610,13 @@ function Ih(n = {}, e = {}) {
         status: 502,
         headers: De(new Headers())
       }) };
-      const p = k(u.runtimeConfig) ? u.runtimeConfig : await we(l), h = u.requestUrl || new URL(a.url), g = u.runtimeRouteContext && typeof u.runtimeRouteContext == "object" ? u.runtimeRouteContext : null, y = typeof g?.requestHost == "string" ? g.requestHost : oe(h.hostname), _ = typeof g?.configuredHost == "string" ? g.configuredHost : Ge(l), S = typeof g?.configuredLegacyHost == "string" ? g.configuredLegacyHost : jr(l), T = ir(u.entryMode || o?.entryMode), b = String(u.routeKindOverride || "").trim(), A = !!(S && S !== _ && y && y === S), C = {
+      const p = k(u.runtimeConfig) ? u.runtimeConfig : await we(l), h = u.requestUrl || new URL(a.url), g = u.runtimeRouteContext && typeof u.runtimeRouteContext == "object" ? u.runtimeRouteContext : null, y = typeof g?.requestHost == "string" ? g.requestHost : oe(h.hostname), _ = typeof g?.configuredHost == "string" ? g.configuredHost : Ge(l), S = typeof g?.configuredLegacyHost == "string" ? g.configuredLegacyHost : qr(l), T = ir(u.entryMode || o?.entryMode), b = String(u.routeKindOverride || "").trim(), A = !!(S && S !== _ && y && y === S), C = {
         requestHost: y,
         configuredHost: _,
         configuredLegacyHost: S,
         isLegacyHostRequest: A,
         routeKind: b || (A ? "legacy_host_kv_route" : T === "host_prefix" ? "host_prefix" : "kv_route")
-      }, N = Z(s), P = String(u?.pathNormalizationState?.kind || "").trim(), E = a.headers.get("cf-connecting-ip") || "unknown", w = da(a), R = E, D = a.cf?.country || "UNKNOWN", x = e.resolveCorsOrigin(p, a), L = ra(l, a, x), F = gc(u.linkVariant), I = ig(N, h);
+      }, N = Z(s), P = String(u?.pathNormalizationState?.kind || "").trim(), E = a.headers.get("cf-connecting-ip") || "unknown", w = fa(a), R = E, D = a.cf?.country || "UNKNOWN", x = e.resolveCorsOrigin(p, a), L = aa(l, a, x), F = gc(u.linkVariant), I = cg(N, h);
       if (I?.error) return { invalidResponse: new Response("Invalid Playback Relay", {
         status: 400,
         headers: De(new Headers(L))
@@ -16624,14 +16634,14 @@ function Ih(n = {}, e = {}) {
         V.pathname = he.pathname;
       }
       if (U && V.searchParams.delete(io), o.tmdbAggregationEnabled === !0 && (m === "GET" || m === "HEAD")) {
-        const he = await Dh(V, l, p, o.aggregationMode);
+        const he = await Ih(V, l, p, o.aggregationMode);
         he && (V = he);
       }
-      const O = xm(o, p, i), M = e.classifyRequest(a, X, V, p, {
+      const O = Om(o, p, i), M = e.classifyRequest(a, X, V, p, {
         nodeDirectSource: O,
         directStaticAssets: p.directStaticAssets === !0,
         directHlsDash: p.directHlsDash === !0
-      }), H = af(o, p), j = eg(H), q = H === "rewrite" && I?.targetUrl instanceof URL ? "proxy" : "", J = F !== "main" ? "link_variant_force_proxy" : q ? "rewrite_playback_entry_proxy" : "", Q = !!J, se = Q ? {
+      }), H = nf(o, p), j = tg(H), q = H === "rewrite" && I?.targetUrl instanceof URL ? "proxy" : "", J = F !== "main" ? "link_variant_force_proxy" : q ? "rewrite_playback_entry_proxy" : "", Q = !!J, se = Q ? {
         ...M,
         nodeDirectMedia: !1,
         directStaticAssets: !1,
@@ -16640,7 +16650,7 @@ function Ih(n = {}, e = {}) {
         legacyEntryOffloadReason: "",
         enablePrewarm: p.enablePrewarm !== !1,
         isMetadataCacheable: m === "GET" && M.isWsUpgrade !== !0 && (M.isImage === !0 || M.isSubtitle === !0 || M.isManifest === !0)
-      } : M, pe = Um(p), _e = p.protocolFallback !== !1, ye = fe(p.upstreamTimeoutMs, rd, 0, 18e4), Ae = fe(p.upstreamRetryAttempts, to, 0, 3), ke = p.hedgeFailoverEnabled === !0, Ft = p.hedgeProbePreferGet !== !1, Me = of(o, p), aa = fe(p.hedgeProbeTimeoutMs, Ho, 250, 1e4), ot = fe(p.hedgeProbeParallelism, Gi, 1, 2), st = fe(p.hedgeWaitTimeoutMs, Vi, 250, 1e4), br = fe(p.hedgeLockTtlMs, ji, 1e3, 1e4), na = fe(p.hedgePreferredTtlSec, ua, 30, 3600), $e = fe(p.hedgeFailureCooldownSec, qi, 1, 300), Zt = fe(p.hedgeWakeJitterMs, Xi, 0, 1e3), mt = fe(p.cacheTtlImages, Qi, 0, 365) * 86400, pt = pe.enableH3 === !0, Ut = pe.forceH1 === !0, wt = p.playbackInfoCacheEnabled !== !1, kt = fe(p.playbackInfoCacheTtlSec, ld, 0, 60), er = p.videoProgressForwardEnabled !== !1, Lt = fe(p.videoProgressForwardIntervalSec, Ji, 0, 60), Er = nf(o, p), Ht = rf(o, p), $t = String(u.nodeCacheRevision || "").trim() || bo(i, o), K = se.isMetadataCacheable ? await Cl(a) : "", G = se.isMetadataCacheable ? wl(X, {
+      } : M, pe = km(p), _e = p.protocolFallback !== !1, ye = fe(p.upstreamTimeoutMs, ad, 0, 18e4), Ae = fe(p.upstreamRetryAttempts, to, 0, 3), ke = p.hedgeFailoverEnabled === !0, Ft = p.hedgeProbePreferGet !== !1, Me = sf(o, p), na = fe(p.hedgeProbeTimeoutMs, Ho, 250, 1e4), ot = fe(p.hedgeProbeParallelism, Gi, 1, 2), st = fe(p.hedgeWaitTimeoutMs, Vi, 250, 1e4), br = fe(p.hedgeLockTtlMs, ji, 1e3, 1e4), oa = fe(p.hedgePreferredTtlSec, da, 30, 3600), $e = fe(p.hedgeFailureCooldownSec, qi, 1, 300), Zt = fe(p.hedgeWakeJitterMs, Xi, 0, 1e3), mt = fe(p.cacheTtlImages, Qi, 0, 365) * 86400, pt = pe.enableH3 === !0, Ut = pe.forceH1 === !0, wt = p.playbackInfoCacheEnabled !== !1, kt = fe(p.playbackInfoCacheTtlSec, ud, 0, 60), er = p.videoProgressForwardEnabled !== !1, Lt = fe(p.videoProgressForwardIntervalSec, Ji, 0, 60), Er = of(o, p), Ht = af(o, p), $t = String(u.nodeCacheRevision || "").trim() || bo(i, o), K = se.isMetadataCacheable ? await Cl(a) : "", G = se.isMetadataCacheable ? wl(X, {
         imageCacheMaxAge: mt,
         prewarmCacheTtl: se.prewarmCacheTtl
       }) : "", Y = se.isMetadataCacheable && Eo(V) ? Il(V, i, c, X, {
@@ -16649,7 +16659,7 @@ function Ih(n = {}, e = {}) {
         entryMode: u.entryMode,
         identityPartition: K,
         cachePolicyRevision: G
-      }) : null, W = Y ? mr() : null, re = Kd(o, p), le = e.getRoutingDecision({
+      }) : null, W = Y ? mr() : null, re = zd(o, p), le = e.getRoutingDecision({
         phase: "entry",
         request: a,
         requestUrl: V,
@@ -16702,11 +16712,11 @@ function Ih(n = {}, e = {}) {
         hedgeFailoverEnabled: ke,
         hedgeProbePreferGet: Ft,
         hedgeProbePath: Me,
-        hedgeProbeTimeoutMs: aa,
+        hedgeProbeTimeoutMs: na,
         hedgeProbeParallelism: ot,
         hedgeWaitTimeoutMs: st,
         hedgeLockTtlMs: br,
-        hedgePreferredTtlSec: na,
+        hedgePreferredTtlSec: oa,
         hedgeFailureCooldownSec: $e,
         hedgeWakeJitterMs: Zt,
         playbackInfoCacheEnabled: wt,
@@ -16717,7 +16727,7 @@ function Ih(n = {}, e = {}) {
         playbackInfoCacheKey: "",
         playbackInfoRewrite: se.isPlaybackInfoRequest === !0 && H === "passthrough" ? "passthrough" : "",
         playbackAbsoluteFallbackEligible: U,
-        playbackAbsoluteFallbackLocation: U ? tg(N, h) : "",
+        playbackAbsoluteFallbackLocation: U ? rg(N, h) : "",
         playbackUrlMode: U ? "absolute" : se.isPlaybackInfoRequest === !0 && H === "rewrite" ? String(j || "relative") : "",
         playbackFallback: U ? "none" : "",
         playbackPathFix: P,
@@ -16827,15 +16837,15 @@ function Ih(n = {}, e = {}) {
     }
   };
 }
-var Mh = /^n([A-Za-z0-9_-]+)\.(.+)$/, Ph = 8, xh = "sys:nodes_index_full:v2", jn = 6e3, la = 8 * 1024 * 1024, Oh = /^\/(?:emby\/|mediabrowser\/)?(?:users\/[^/]+\/)?items(?:\/\d+)?$/i;
-function vh(n = "") {
-  return Oh.test(String(n || "").trim());
+var Ph = /^n([A-Za-z0-9_-]+)\.(.+)$/, xh = 8, Oh = "sys:nodes_index_full:v2", jn = 6e3, ua = 8 * 1024 * 1024, vh = /^\/(?:emby\/|mediabrowser\/)?(?:(?:users\/[^/]+\/)?items(?:\/\d+)?|shows\/[^/]+\/episodes)$/i;
+function Fh(n = "") {
+  return vh.test(String(n || "").trim());
 }
 function _i(n) {
-  return !n || n.requestMethod !== "GET" || n.requestTraits?.isPlaybackCriticalRequest === !0 || n.playbackRelayTargetUrl instanceof URL ? !1 : vh(n.proxyPath);
+  return !n || n.requestMethod !== "GET" || n.requestTraits?.isPlaybackCriticalRequest === !0 || n.playbackRelayTargetUrl instanceof URL ? !1 : Fh(n.proxyPath);
 }
-function Fh(n) {
-  const e = ha(n);
+function Uh(n) {
+  const e = ya(n);
   if (!e) return null;
   let t = null;
   try {
@@ -16851,7 +16861,7 @@ function Fh(n) {
     mediaSourceId: a
   };
 }
-function Uh(n) {
+function kh(n) {
   const e = n?.request?.headers;
   if (!e) return !1;
   for (const r of [
@@ -16865,8 +16875,8 @@ function Uh(n) {
   for (const r of ["api_key", "ApiKey"]) if (String(t.get(r) || "").trim()) return !0;
   return !1;
 }
-function ha(n) {
-  const e = Mh.exec(String(n ?? "").trim());
+function ya(n) {
+  const e = Ph.exec(String(n ?? "").trim());
   if (!e) return null;
   const t = Jt(e[1]);
   return t ? {
@@ -16874,8 +16884,8 @@ function ha(n) {
     itemId: e[2]
   } : null;
 }
-function kh(n, e) {
-  return `n${Jr(n)}.${String(e ?? "")}`;
+function Hh(n, e) {
+  return `n${Qr(n)}.${String(e ?? "")}`;
 }
 function Ro(n, e, t = 0) {
   if (n == null || t > 6) return n;
@@ -16884,7 +16894,7 @@ function Ro(n, e, t = 0) {
   const r = {};
   for (const [a, o] of Object.entries(n)) {
     if (typeof o == "string" && /id$/i.test(a) && o.trim()) {
-      r[a] = kh(e, o.trim());
+      r[a] = Hh(e, o.trim());
       continue;
     }
     if (Array.isArray(o) || k(o)) {
@@ -16896,7 +16906,7 @@ function Ro(n, e, t = 0) {
   return r;
 }
 async function Ga(n, e) {
-  const t = await ya(n, e);
+  const t = await Sa(n, e);
   if (t.exceeded) return null;
   try {
     return JSON.parse(xa(t.bodyBytes));
@@ -16904,25 +16914,25 @@ async function Ga(n, e) {
     return null;
   }
 }
-function Hh(n = {}, e = {}) {
+function $h(n = {}, e = {}) {
   const { fetchPort: t } = n;
   return {
     async resolvePeerAggregationNodes(r, a) {
       if (!(r?.requestTraits?.isPlaybackInfoRequest === !0 && r?.requestMethod === "GET") && !_i(r)) return [];
       if (r.node?.tmdbAggregationEnabled !== !0) return [];
-      if (!Uh(r)) return [];
+      if (!kh(r)) return [];
       const o = Sr(a);
       if (!o) return [];
       let s = null;
       try {
-        s = await o.get(xh, { type: "json" });
+        s = await o.get(Oh, { type: "json" });
       } catch {
         return [];
       }
       if (!Array.isArray(s) || !s.length) return [];
       const i = String(r.nodeName || "").trim().toLowerCase(), c = [];
       for (const l of s) {
-        if (c.length >= Ph) break;
+        if (c.length >= xh) break;
         const d = String(l?.name || "").trim().toLowerCase();
         !d || d === i || l?.tmdbAggregationEnabled === !0 && c.push({ name: d });
       }
@@ -16978,7 +16988,7 @@ function Hh(n = {}, e = {}) {
               signal: u.signal
             });
             if (!h?.ok) continue;
-            const g = await Ga(h, la);
+            const g = await Ga(h, ua);
             if (k(g) && Array.isArray(g.Items)) return g;
           } catch {
             continue;
@@ -16999,7 +17009,7 @@ function Hh(n = {}, e = {}) {
         }), null;
       const i = o?.response;
       if (!i || Number(i.status) !== 200 || !String(i.headers.get("Content-Type") || "").toLowerCase().includes("application/json")) return null;
-      const c = await ya(i.clone(), la);
+      const c = await Sa(i.clone(), ua);
       if (c.exceeded) return null;
       let l = null;
       try {
@@ -17028,7 +17038,7 @@ function Hh(n = {}, e = {}) {
     resolvePeerAggregationItemRoute(r, a) {
       const o = [...r?.requestUrl?.searchParams?.getAll?.("Ids") || [], Pa(r?.proxyPath || "")];
       for (const s of o) {
-        const i = ha(s);
+        const i = ya(s);
         if (i) return i;
       }
       return null;
@@ -17042,7 +17052,7 @@ function Hh(n = {}, e = {}) {
       const i = o?.activeTargetBase || o?.activeTargetRecord;
       if (!i) return null;
       const c = lt(i, `/Items/${encodeURIComponent(s)}`);
-      c.searchParams.set("Fields", "ProviderIds,ProductionYear");
+      c.searchParams.set("Fields", "ProviderIds,ProductionYear,SeriesName,IndexNumber,ParentIndexNumber");
       const l = new Headers({ accept: "application/json" }), d = r.request.headers.get("Authorization") || r.request.headers.get("X-Emby-Authorization") || "";
       d && l.set("Authorization", d);
       for (const m of ["X-Emby-Token", "X-MediaBrowser-Token"]) {
@@ -17057,12 +17067,15 @@ function Hh(n = {}, e = {}) {
           signal: u.signal
         });
         if (!m?.ok) return null;
-        const p = await Ga(m, la);
+        const p = await Ga(m, ua);
         return k(p) ? {
           Id: p.Id,
           Name: p.Name,
           ProductionYear: p.ProductionYear,
-          ProviderIds: p.ProviderIds
+          ProviderIds: p.ProviderIds,
+          SeriesName: p.SeriesName,
+          IndexNumber: p.IndexNumber,
+          ParentIndexNumber: p.ParentIndexNumber
         } : null;
       } catch {
         return null;
@@ -17098,7 +17111,7 @@ function Hh(n = {}, e = {}) {
               signal: f.signal
             });
             if (!_?.ok) continue;
-            const S = await Ga(_, la);
+            const S = await Ga(_, ua);
             if (k(S) && Array.isArray(S.MediaSources)) return {
               itemId: h,
               payload: S
@@ -17116,27 +17129,33 @@ function Hh(n = {}, e = {}) {
       const i = On(o);
       if (!i.size) return "";
       const c = lt(r, "/Items"), l = c.searchParams;
-      l.set("Recursive", "true"), l.set("Limit", "20"), l.set("Fields", "ProviderIds,ProductionYear");
-      let d = "";
-      for (const p of i) if (p.startsWith("tmdb:")) {
-        d = p.slice(5);
-        break;
+      l.set("Recursive", "true"), l.set("Fields", "ProviderIds,ProductionYear,SeriesName,IndexNumber,ParentIndexNumber");
+      let d = "", u = "";
+      for (const h of i) {
+        if (h.startsWith("tmdb:")) {
+          d = h.slice(5);
+          break;
+        }
+        if (h.startsWith("episode:") && !u) {
+          const g = h.slice(8), y = g.lastIndexOf(":"), _ = g.lastIndexOf(":", y - 1);
+          _ > 0 && (u = g.slice(0, _));
+        }
       }
-      d ? l.set("AnyProviderIdEquals", `tmdb.${d}`) : l.set("SearchTerm", String(o?.Name || ""));
-      const u = await t.fetchRequest(c, {
+      d ? (l.set("AnyProviderIdEquals", `tmdb.${d}`), l.set("Limit", "20")) : u ? (l.set("SearchTerm", u), l.set("IncludeItemTypes", "Episode"), l.set("Limit", "200")) : (l.set("SearchTerm", String(o?.Name || "")), l.set("Limit", "20"));
+      const f = await t.fetchRequest(c, {
         method: "GET",
         headers: a,
         signal: s
       });
-      if (!u?.ok) return "";
-      const f = await Ga(u, la), m = Array.isArray(f?.Items) ? f.Items : [];
-      for (const p of m) {
-        if (!k(p)) continue;
-        const h = On(p);
-        for (const g of h) {
-          if (!i.has(g)) continue;
-          const y = String(p.Id ?? "").trim();
-          if (y) return y;
+      if (!f?.ok) return "";
+      const m = await Ga(f, ua), p = Array.isArray(m?.Items) ? m.Items : [];
+      for (const h of p) {
+        if (!k(h)) continue;
+        const g = On(h);
+        for (const y of g) {
+          if (!i.has(y)) continue;
+          const _ = String(h.Id ?? "").trim();
+          if (_) return _;
         }
       }
       return "";
@@ -17155,9 +17174,9 @@ function Hh(n = {}, e = {}) {
         u.set(m.name, String(p?.secret || ""));
       }
       i.forEach((m, p) => {
-        d.push(...Jl(l[p]?.payload, m.name, l[p]?.itemId, (h, g) => ag(r?.requestUrl, h, u.get(h) || "", g)));
+        d.push(...Ql(l[p]?.payload, m.name, l[p]?.itemId, (h, g) => ng(r?.requestUrl, h, u.get(h) || "", g)));
       });
-      const f = Zl(s.payload, d);
+      const f = eu(s.payload, d);
       return console.log("[peer_playback_version]", {
         peers: i.length,
         versions: f ? f.addedVersionCount : 0,
@@ -17166,7 +17185,7 @@ function Hh(n = {}, e = {}) {
     }
   };
 }
-function $h(n = {}, e = {}) {
+function Bh(n = {}, e = {}) {
   return {
     parsePlaybackSessionControlPayload(t, r = null) {
       if (t?.playbackSessionControlPayload) return t.playbackSessionControlPayload;
@@ -17247,7 +17266,7 @@ function $h(n = {}, e = {}) {
     }
   };
 }
-function Bh(n = {}, e = {}) {
+function Kh(n = {}, e = {}) {
   return {
     buildPlaybackProgressRelayEntry(t = 0, r = null) {
       return {
@@ -17308,7 +17327,7 @@ function Bh(n = {}, e = {}) {
       }
     },
     buildPlaybackProgressSnapshot(t, r, a, o) {
-      if (!t || !r || typeof a != "function" || !Qe(o) || (r.preparedBodyMode === "buffered" && Number(r.preparedBody?.byteLength) || 0) > dd) return null;
+      if (!t || !r || typeof a != "function" || !Qe(o) || (r.preparedBodyMode === "buffered" && Number(r.preparedBody?.byteLength) || 0) > fd) return null;
       const s = r.preparedBodyMode === "buffered" && r.preparedBody ? r.preparedBody.slice(0) : r.preparedBody;
       return {
         ctx: t.ctx,
@@ -17330,7 +17349,7 @@ function Bh(n = {}, e = {}) {
       if (a <= 0) return;
       const o = Math.max($(), Number(r.lastForwardAt) || 0) + a;
       r.scheduledFlushAt = o, r.lastTouchedAt = $();
-      const s = uu(Math.max(0, o - $())), i = (async () => {
+      const s = du(Math.max(0, o - $())), i = (async () => {
         if (!await s.promise) return;
         const l = ee.PlaybackProgressRelay.get(t);
         !l || l !== r || Number(l.scheduledFlushAt) !== o || (l.scheduledFlushAt = 0, await e.flushPlaybackProgressRelayEntry(t, {
@@ -17474,14 +17493,14 @@ function Bh(n = {}, e = {}) {
     }
   };
 }
-function Kh(n = {}, e = {}) {
+function zh(n = {}, e = {}) {
   return {
-    ...Ih(n, e),
-    ...$h(n, e),
-    ...Bh(n, e)
+    ...Mh(n, e),
+    ...Bh(n, e),
+    ...Kh(n, e)
   };
 }
-function zh(n = {}, e = {}) {
+function Wh(n = {}, e = {}) {
   const { nodeRepository: t } = n;
   return {
     resolveCorsOrigin(r, a) {
@@ -17497,12 +17516,12 @@ function zh(n = {}, e = {}) {
       return De(o), o;
     },
     classifyRequest(r, a, o, s, i = {}) {
-      const c = r.method, l = r.headers.get("Range"), d = r.headers.get("If-Range"), u = Yr.test(a) || Xr.test(a), f = bd.test(a), m = yr.test(a), p = At.test(a), h = tc.test(a), g = Yo(a), y = r.headers.get("Upgrade")?.toLowerCase() === "websocket", _ = xc(a), S = Oc(a), T = vc(a), b = Kf(a), A = S || T || b, C = Ed.test(a) || /\/videos\/[^/]+\/(stream|original|download|file)/i.test(a) || /\/items\/[^/]+\/download/i.test(a) || o.searchParams.get("Static") === "true" || o.searchParams.get("Download") === "true", N = c === "GET" || c === "HEAD", P = C && !p && !h && !m && !u, E = _ || g || P || p || h, w = !u && !f && !m && !p && !h && !g && !P && !y, R = i.nodeDirectSource === !0 && N && P, D = i.directStaticAssets === !0 && N && f, x = i.directHlsDash === !0 && N && (p || h), L = R ? "entry_direct_media" : D ? "entry_direct_static_asset" : x ? "entry_direct_hls_dash" : "", F = !!L;
+      const c = r.method, l = r.headers.get("Range"), d = r.headers.get("If-Range"), u = Jr.test(a) || Yr.test(a), f = Ed.test(a), m = yr.test(a), p = At.test(a), h = tc.test(a), g = Yo(a), y = r.headers.get("Upgrade")?.toLowerCase() === "websocket", _ = xc(a), S = Oc(a), T = vc(a), b = zf(a), A = S || T || b, C = Td.test(a) || /\/videos\/[^/]+\/(stream|original|download|file)/i.test(a) || /\/items\/[^/]+\/download/i.test(a) || o.searchParams.get("Static") === "true" || o.searchParams.get("Download") === "true", N = c === "GET" || c === "HEAD", P = C && !p && !h && !m && !u, E = _ || g || P || p || h, w = !u && !f && !m && !p && !h && !g && !P && !y, R = i.nodeDirectSource === !0 && N && P, D = i.directStaticAssets === !0 && N && f, x = i.directHlsDash === !0 && N && (p || h), L = R ? "entry_direct_media" : D ? "entry_direct_static_asset" : x ? "entry_direct_hls_dash" : "", F = !!L;
       return {
         rangeHeader: l,
         ifRangeHeader: d,
         enablePrewarm: s.enablePrewarm !== !1 && !F,
-        prewarmCacheTtl: fe(s.prewarmCacheTtl, cd, 0, 3600),
+        prewarmCacheTtl: fe(s.prewarmCacheTtl, ld, 0, 3600),
         prewarmDepth: _c(s.prewarmDepth),
         prewarmPrefetchBytes: s.disablePrewarmPrefetch === !0 ? 0 : fe(s.prewarmPrefetchBytes, B.Defaults.PrewarmPrefetchBytes, 0, Bo),
         isImage: u,
@@ -17616,7 +17635,7 @@ function zh(n = {}, e = {}) {
       return Ur(r.routingDecisionMode) === "legacy" ? e.buildLegacyEntryRoutingDecision(r.requestTraits) : e.buildSimplifiedEntryRoutingDecision(r);
     },
     buildSimplifiedRedirectRoutingDecision(r, a, o, s, i = {}, c = {}) {
-      const l = r.origin === a.origin, d = i.forceVideoDirect === !0, u = i.forceVideoProxy === !0, f = Fm(i.currentStatus, o);
+      const l = r.origin === a.origin, d = i.forceVideoDirect === !0, u = i.forceVideoProxy === !0, f = Um(i.currentStatus, o);
       let m = s;
       if ((f === "GET" || f === "HEAD") && (m = "none"), c.forceWorkerProxy === !0) {
         const p = String(c.forceWorkerProxyReason || "").trim() || "link_variant_force_proxy";
@@ -17720,12 +17739,12 @@ function zh(n = {}, e = {}) {
     }
   };
 }
-function Wh(n) {
+function Gh(n) {
   if (!n || !n.body) return !0;
   const e = pn(n?.headers?.get("Content-Length"));
   return Number.isFinite(e) && e >= 0 && e <= Yi;
 }
-function Gh(n = {}, e = {}) {
+function Vh(n = {}, e = {}) {
   const { nodeRepository: t } = n;
   return {
     ensureFailoverTelemetry(r) {
@@ -17742,7 +17761,7 @@ function Gh(n = {}, e = {}) {
           eligible: !1,
           reason: "non_idempotent"
         };
-        if (!Wh(r.request)) return {
+        if (!Gh(r.request)) return {
           eligible: !1,
           reason: "non_replayable_body"
         };
@@ -17753,7 +17772,7 @@ function Gh(n = {}, e = {}) {
       } : r?.playbackRelayTargetUrl instanceof URL ? {
         eligible: !1,
         reason: "absolute_target"
-      } : qd(a) < 2 ? {
+      } : Xd(a) < 2 ? {
         eligible: !1,
         reason: "single_target"
       } : {
@@ -17768,7 +17787,7 @@ function Gh(n = {}, e = {}) {
         String(o || "").trim()
       ].filter(Boolean).join(":");
     },
-    pruneFailoverStateEntry(r, a = ua * 1e3, o = $()) {
+    pruneFailoverStateEntry(r, a = da * 1e3, o = $()) {
       if (!r || typeof r != "object") return null;
       r.failingTargets instanceof Map || (r.failingTargets = /* @__PURE__ */ new Map());
       for (const [u, f] of r.failingTargets) Number(f) <= o && r.failingTargets.delete(u);
@@ -17778,7 +17797,7 @@ function Gh(n = {}, e = {}) {
       const i = !!String(r.preferredTargetKey || "").trim(), c = r.failingTargets.size > 0, l = !!r.inFlightProbe, d = !!r.lastProbeResult;
       return i || c || l || d ? r : null;
     },
-    getOrCreateFailoverStateEntry(r, a = ua * 1e3) {
+    getOrCreateFailoverStateEntry(r, a = da * 1e3) {
       const o = String(r || "").trim();
       if (!o) return null;
       const s = ee.ProxyFailoverStateCache;
@@ -17793,7 +17812,7 @@ function Gh(n = {}, e = {}) {
       const c = e.pruneFailoverStateEntry(i, a, $()) || i;
       return Ne(s, o, c, lr), c;
     },
-    getFailoverStateSnapshot(r, a = ua * 1e3) {
+    getFailoverStateSnapshot(r, a = da * 1e3) {
       const o = String(r || "").trim();
       if (!o) return null;
       const s = ee.ProxyFailoverStateCache, i = s.get(o);
@@ -17855,7 +17874,7 @@ function Gh(n = {}, e = {}) {
       ];
     },
     prepareFailoverOverlay(r, a = []) {
-      const o = e.ensureFailoverTelemetry(r), s = jd(a), i = Math.max(1e3, (Number(r?.hedgePreferredTtlSec) || ua) * 1e3), c = e.isFailoverEligible(r, a), l = e.buildFailoverCacheKey(r?.nodeName, s, r?.nodeDerivedCacheRevision), d = c.eligible ? e.getFailoverStateSnapshot(l, i) : null, u = c.eligible ? e.reorderRetryTargetsForFailover(a, d) : Array.isArray(a) ? a.slice() : [];
+      const o = e.ensureFailoverTelemetry(r), s = qd(a), i = Math.max(1e3, (Number(r?.hedgePreferredTtlSec) || da) * 1e3), c = e.isFailoverEligible(r, a), l = e.buildFailoverCacheKey(r?.nodeName, s, r?.nodeDerivedCacheRevision), d = c.eligible ? e.getFailoverStateSnapshot(l, i) : null, u = c.eligible ? e.reorderRetryTargetsForFailover(a, d) : Array.isArray(a) ? a.slice() : [];
       let f = "disabled";
       return r?.hedgeFailoverEnabled === !0 && (c.eligible ? d?.preferredTargetKey ? f = "preferred_reordered" : d?.probeWinnerTargetKey ? f = "probe_hint_reordered" : Array.isArray(d?.failingTargetKeys) && d.failingTargetKeys.length > 0 ? f = "failure_demoted" : f = "ready" : f = c.reason || "ineligible"), o.overlay = f, o.preferredTarget = String(d?.preferredTargetKey || "").trim(), r.failoverContext = {
         enabled: r?.hedgeFailoverEnabled === !0,
@@ -17911,13 +17930,13 @@ function Gh(n = {}, e = {}) {
     }
   };
 }
-function Vh(n = {}, e = {}) {
+function jh(n = {}, e = {}) {
   return {
     buildFailoverProbeHeaders(t = "") {
       return new Headers(ko(t));
     },
     async performFailoverProbeRequest(t, r, a, o, s = null, i = null) {
-      const c = ah([
+      const c = nh([
         t?.request?.signal,
         t?.requestLifecycle?.signal,
         s
@@ -18130,7 +18149,7 @@ function Vh(n = {}, e = {}) {
         failedTargetRecord: i
       });
       if (!d?.promise) return null;
-      const u = await nh(d.promise, o.waitTimeoutMs, a?.requestLifecycle);
+      const u = await oh(d.promise, o.waitTimeoutMs, a?.requestLifecycle);
       if (s.waitJoinMs = u.timedOut === !0 ? o.waitTimeoutMs : Math.max(0, $() - Number(d.startedAt || $())), u.timedOut === !0)
         return s.overlay = "probe_wait_timeout", s.fastFailReason = "probe_wait_timeout", null;
       const f = u.value && typeof u.value == "object" ? u.value : null;
@@ -18139,7 +18158,7 @@ function Vh(n = {}, e = {}) {
       const m = qe(i), p = qe(f.winnerTargetRecord);
       if (!p || p === m)
         return s.overlay = "probe_miss", s.fastFailReason = "probe_reused_failed_target", null;
-      o.wakeJitterMs > 0 && await oh(Math.floor(Math.random() * (o.wakeJitterMs + 1)), a?.requestLifecycle);
+      o.wakeJitterMs > 0 && await sh(Math.floor(Math.random() * (o.wakeJitterMs + 1)), a?.requestLifecycle);
       try {
         const h = await e.performUpstreamFetch(f.winnerTargetRecord, t.proxyPath, t.requestUrl, t.buildFetchOptions, {
           isRetry: !0,
@@ -18195,17 +18214,17 @@ function Vh(n = {}, e = {}) {
     }
   };
 }
-function jh(n = {}, e = {}) {
+function qh(n = {}, e = {}) {
   return {
-    ...zh(n, e),
-    ...Gh(n, e),
-    ...Vh(n, e)
+    ...Wh(n, e),
+    ...Vh(n, e),
+    ...jh(n, e)
   };
 }
-function qh(n = {}, e = {}) {
+function Xh(n = {}, e = {}) {
   const t = {
     async buildProxyRequestState(r, a, o, s, i, c, l, d, u = {}) {
-      const f = Kg(r.headers);
+      const f = zg(r.headers);
       Ta.forEach((F) => f.delete(F));
       const m = /* @__PURE__ */ new Set();
       let p = null;
@@ -18216,9 +18235,9 @@ function qh(n = {}, e = {}) {
       const h = ii(f.get("Cookie"), p, ["auth_token", ...Aa]);
       h ? f.set("Cookie", h) : f.delete("Cookie");
       const g = p ? ii(null, p, ["auth_token", ...Aa]) : null;
-      di(f, u.effectiveMediaAuthMode || a.mediaAuthMode, jg(s));
-      const y = sf(u.effectiveRealClientIpMode || a.realClientIpMode);
-      y === "none" && Td.forEach((F) => f.delete(F)), (y === "full" || y === "real-ip-only") && f.set("X-Real-IP", i), y === "full" && f.set("X-Forwarded-For", i), f.set("X-Forwarded-Host", s.host), f.set("X-Forwarded-Proto", s.protocol.replace(":", "")), c.isWsUpgrade ? (f.set("Upgrade", "websocket"), f.set("Connection", "Upgrade")) : l && f.set("Connection", "keep-alive"), (c.isBigStream || c.isSmartStrmMedia || c.isSegment || c.isManifest) && !m.has("referer") && f.delete("Referer");
+      di(f, u.effectiveMediaAuthMode || a.mediaAuthMode, qg(s));
+      const y = cf(u.effectiveRealClientIpMode || a.realClientIpMode);
+      y === "none" && Ad.forEach((F) => f.delete(F)), (y === "full" || y === "real-ip-only") && f.set("X-Real-IP", i), y === "full" && f.set("X-Forwarded-For", i), f.set("X-Forwarded-Host", s.host), f.set("X-Forwarded-Proto", s.protocol.replace(":", "")), c.isWsUpgrade ? (f.set("Upgrade", "websocket"), f.set("Connection", "Upgrade")) : l && f.set("Connection", "keep-alive"), (c.isBigStream || c.isSmartStrmMedia || c.isSegment || c.isManifest) && !m.has("referer") && f.delete("Referer");
       const _ = m.has("origin"), S = m.has("referer"), T = f.has("Origin"), b = f.has("Referer");
       let A = "", C = "/";
       if (b && !S) try {
@@ -18259,19 +18278,19 @@ function qh(n = {}, e = {}) {
         retryTargetRecords: L,
         allowAutomaticRetry: x,
         allowSameTargetRetry: !P,
-        clientRedirectAuthPolicy: ta(f)
+        clientRedirectAuthPolicy: ra(f)
       };
     },
     buildProxyResponseHeaders(r, a, o, s, i, c = {}) {
       const l = new Headers(r.headers);
-      Ad.forEach((f) => l.delete(f)), l.set("Access-Control-Allow-Origin", s), o && o["Access-Control-Expose-Headers"] && l.set("Access-Control-Expose-Headers", o["Access-Control-Expose-Headers"]), o && o["Access-Control-Allow-Methods"] && l.set("Access-Control-Allow-Methods", o["Access-Control-Allow-Methods"]);
+      Rd.forEach((f) => l.delete(f)), l.set("Access-Control-Allow-Origin", s), o && o["Access-Control-Expose-Headers"] && l.set("Access-Control-Expose-Headers", o["Access-Control-Expose-Headers"]), o && o["Access-Control-Allow-Methods"] && l.set("Access-Control-Allow-Methods", o["Access-Control-Allow-Methods"]);
       const d = a.headers.get("Access-Control-Request-Headers");
-      d ? (l.set("Access-Control-Allow-Headers", d), Kr(l, "Access-Control-Request-Headers")) : o && o["Access-Control-Allow-Headers"] && l.set("Access-Control-Allow-Headers", o["Access-Control-Allow-Headers"]), s !== "*" && Kr(l, "Origin"), (!c.enableH3 || c.forceH1) && l.delete("Alt-Svc");
+      d ? (l.set("Access-Control-Allow-Headers", d), zr(l, "Access-Control-Request-Headers")) : o && o["Access-Control-Allow-Headers"] && l.set("Access-Control-Allow-Headers", o["Access-Control-Allow-Headers"]), s !== "*" && zr(l, "Origin"), (!c.enableH3 || c.forceH1) && l.delete("Alt-Svc");
       const u = fe(c.imageCacheMaxAge, Qi * 86400, 0, 365 * 86400);
       if (r.status >= 400 || i.isManifest || i.isBigStream || i.isSmartStrmMedia) l.set("Cache-Control", "no-store");
       else if (c.proxiedExternalRedirect) l.set("Cache-Control", "no-store");
       else if (i.isImage || i.isStaticFile || i.isSubtitle) {
-        const f = Eg(a) ? "private" : "public";
+        const f = Tg(a) ? "private" : "public";
         l.set("Cache-Control", `${f}, max-age=${u}`);
       }
       return De(l), l;
@@ -18335,12 +18354,12 @@ function qh(n = {}, e = {}) {
         entryMode: r?.entryMode,
         search: i,
         hash: c
-      }).toString() : `${sg(ng(s, r?.nodeName, r?.nodeKey, { entryMode: r?.entryMode }), og(r))}${i}${c}`;
+      }).toString() : `${ig(og(s, r?.nodeName, r?.nodeKey, { entryMode: r?.entryMode }), sg(r))}${i}${c}`;
     },
     buildPlaybackInfoProxyUrl(r, a, o, s) {
       const i = String(a || "").trim();
       if (!i) return "";
-      const c = Qp(i, r?.proxyPath || "/", o, r?.requestUrl || r?.rawRequestUrl || s, nt(r?.nodeName, r?.nodeKey, {
+      const c = Zp(i, r?.proxyPath || "/", o, r?.requestUrl || r?.rawRequestUrl || s, nt(r?.nodeName, r?.nodeKey, {
         linkVariant: r?.linkVariant,
         entryMode: r?.entryMode
       }));
@@ -18359,14 +18378,14 @@ function qh(n = {}, e = {}) {
       if (o) {
         const { resolvedUrl: u, proxyPath: f } = Ha(l, o);
         if (u && f) {
-          const m = Zp(f, r?.proxyPath || "/", o);
+          const m = eg(f, r?.proxyPath || "/", o);
           return t.buildPlaybackInfoClientVisibleUrl(r, m, {
             search: u.search,
             hash: u.hash
           });
         }
       }
-      const d = rg(r?.requestUrl || r?.rawRequestUrl || "https://playback-info.local/", r?.nodeName, r?.nodeKey, l, {
+      const d = ag(r?.requestUrl || r?.rawRequestUrl || "https://playback-info.local/", r?.nodeName, r?.nodeKey, l, {
         linkVariant: r?.linkVariant,
         entryMode: r?.entryMode
       });
@@ -18418,7 +18437,7 @@ function qh(n = {}, e = {}) {
       if ((!Pt(a?.playbackInfoRepresentation) || a.playbackInfoRepresentation.response !== i) && (a = await t.guardPlaybackInfoResponseContract(r, a), !Pt(a?.playbackInfoRepresentation)))
         return a;
       try {
-        const c = eu(a.playbackInfoRepresentation, {
+        const c = tu(a.playbackInfoRepresentation, {
           rewriteEnabled: o,
           buildProxyUrl: (l) => t.buildPlaybackInfoProxyUrl(r, l, a?.activeTargetBase, a?.finalUrl || new URL(String(r?.requestUrl || r?.rawRequestUrl || "")))
         });
@@ -18434,7 +18453,7 @@ function qh(n = {}, e = {}) {
   };
   return t;
 }
-function Xh({ configReader: n, nodeRepository: e, logger: t, cachePort: r, fetchPort: a }) {
+function Yh({ configReader: n, nodeRepository: e, logger: t, cachePort: r, fetchPort: a }) {
   const o = {}, s = {
     CacheManager: r,
     Logger: t,
@@ -18442,18 +18461,18 @@ function Xh({ configReader: n, nodeRepository: e, logger: t, cachePort: r, fetch
     fetchPort: a,
     nodeRepository: e
   }, i = [
-    lh(s, o),
-    ph(s, o),
-    Kh(s, o),
-    jh(s, o),
+    uh(s, o),
+    gh(s, o),
+    zh(s, o),
     qh(s, o),
-    Hh(s, o)
+    Xh(s, o),
+    $h(s, o)
   ];
   for (const c of i) for (const [l, d] of Object.entries(c)) o[l] = d;
   return o;
 }
-function Yh({ configReader: n, nodeRepository: e, logger: t, cachePort: r, fetchPort: a }) {
-  const o = Xh({
+function Jh({ configReader: n, nodeRepository: e, logger: t, cachePort: r, fetchPort: a }) {
+  const o = Yh({
     configReader: n,
     nodeRepository: e,
     logger: t,
@@ -18465,7 +18484,7 @@ function Yh({ configReader: n, nodeRepository: e, logger: t, cachePort: r, fetch
     testingSupport: o
   });
 }
-function Jh(n = {}, e = {}) {
+function Qh(n = {}, e = {}) {
   return {
     getStatsBucketParts(t, r = B.Defaults.ScheduleUtcOffsetMinutes) {
       const a = ut(Number(t) || 0, r);
@@ -18486,7 +18505,7 @@ function Jh(n = {}, e = {}) {
           playCount: 0,
           playbackInfoCount: 0
         };
-        u.requestCount += 1, mf(s?.requestPath, s?.category) && (u.playCount += 1), ff(s?.requestPath, s?.category) && (u.playbackInfoCount += 1), o.set(d, u);
+        u.requestCount += 1, pf(s?.requestPath, s?.category) && (u.playCount += 1), mf(s?.requestPath, s?.category) && (u.playbackInfoCount += 1), o.set(d, u);
       }
       return [...o.values()].sort((s, i) => s.bucketDate !== i.bucketDate ? String(s.bucketDate).localeCompare(String(i.bucketDate)) : Number(s.bucketHour) - Number(i.bucketHour));
     },
@@ -18644,7 +18663,7 @@ function Jh(n = {}, e = {}) {
     }
   };
 }
-function Qh(n = {}, e = {}) {
+function Zh(n = {}, e = {}) {
   return {
     async ensureDnsIpWorkspaceSchema(t) {
       if (!t) return !1;
@@ -19035,7 +19054,7 @@ function Qh(n = {}, e = {}) {
     }
   };
 }
-function Zh(n = {}, e = {}) {
+function ey(n = {}, e = {}) {
   return {
     resolveOpsStatusStores(t) {
       return t && typeof t == "object" && !Array.isArray(t) && ("kv" in t || "db" in t) ? {
@@ -19196,7 +19215,7 @@ function Zh(n = {}, e = {}) {
     }
   };
 }
-function ey(n = {}, e = {}) {
+function ty(n = {}, e = {}) {
   return {
     async ensureCfDashboardCacheTable(t) {
       if (!t || typeof t.prepare != "function") return !1;
@@ -19447,7 +19466,7 @@ function ey(n = {}, e = {}) {
     }
   };
 }
-function ty(n = {}, e = {}) {
+function ry(n = {}, e = {}) {
   return {
     buildCloudflareKvQuotaCard({ planProfile: t = {}, planState: r = {}, usageState: a = {}, namespaceId: o = "", nowTimestamp: s = $() } = {}) {
       const i = Na(t?.planClass), c = k(a?.payload) ? a.payload : {}, l = String(c.namespaceTitle || t?.resourceMeta?.kv?.namespaceTitle || o || "未命名 Namespace").trim(), d = [
@@ -19543,7 +19562,7 @@ function ty(n = {}, e = {}) {
         summary: "D1 写入热点尚未启用",
         detail: "请先在账号设置中填写 Cloudflare 账号 ID、API 令牌与 D1 Database ID。"
       });
-      const u = dt(new Date(o), s).startTs - 8640 * 60 * 1e3, f = await om({
+      const u = dt(new Date(o), s).startTs - 8640 * 60 * 1e3, f = await sm({
         accountId: i,
         apiToken: c,
         databaseId: l,
@@ -19664,7 +19683,7 @@ function ty(n = {}, e = {}) {
       const c = Math.max(0, Number(r?.nowMs) || $()), l = Ue(a.scheduleUtcOffsetMinutes), d = dt(new Date(c), l), u = 1440 * 60 * 1e3, f = c - Ya * u;
       let m = 0;
       const p = [];
-      for (let h = 1; h <= Pp; h += 1) {
+      for (let h = 1; h <= xp; h += 1) {
         const g = d.startTs - h * u, y = g + u - 1, _ = ut(new Date(g), l).dateKey;
         if (!(g < f) && await ti(o, s, _) === null)
           try {
@@ -19690,7 +19709,7 @@ function ty(n = {}, e = {}) {
         monthWindow: c,
         nowMs: i
       });
-      const d = xp(l, c.monthKey, a.scheduleUtcOffsetMinutes), u = Op(d), f = mr();
+      const d = Op(l, c.monthKey, a.scheduleUtcOffsetMinutes), u = vp(d), f = mr();
       let m = null;
       const p = ee.DashboardMonthlyTrafficCache.get(d);
       if (p?.staleUntil > i) {
@@ -19727,7 +19746,7 @@ function ty(n = {}, e = {}) {
             config: a,
             monthWindow: c,
             nowMs: i
-          }), g = i, y = g + Dp, _ = g + Qs, S = {
+          }), g = i, y = g + Ip, _ = g + Qs, S = {
             version: 1,
             cacheKey: d,
             cachedAt: g,
@@ -19772,7 +19791,7 @@ function ty(n = {}, e = {}) {
     }
   };
 }
-function ry(n = {}, e = {}) {
+function ay(n = {}, e = {}) {
   const { CacheManager: t, withAdminShellRuntimeStatus: r } = n;
   return {
     async buildDashboardStatsPayload(a, o = {}) {
@@ -19824,7 +19843,7 @@ function ry(n = {}, e = {}) {
               }
             }), h = sn(J), y = !0, S = "Cloudflare 统计正常", N = "视频流量当前对齐：CF Zone 总流量（edgeResponseBytes）";
             try {
-              const se = await sm({
+              const se = await im({
                 cfAccountId: String(l.cfAccountId || "").trim(),
                 cfZoneId: U,
                 cfApiToken: V,
@@ -19959,7 +19978,7 @@ function ry(n = {}, e = {}) {
       }) : null;
       if (!d && s) {
         const y = h && h.expiresAt > u ? h : null;
-        if (y && y.version === 8) return ia(y.payload, "cache", {
+        if (y && y.version === 8) return ca(y.payload, "cache", {
           cachedAt: y.cachedAt,
           expiresAt: y.expiresAt,
           updatedAt: y.updatedAt,
@@ -19986,7 +20005,7 @@ function ry(n = {}, e = {}) {
             db: s,
             config: l,
             forceRefresh: d
-          })]), T = ia({
+          })]), T = ca({
             stats: _,
             runtimeStatus: S,
             cacheMeta: { generatedAt: _.generatedAt }
@@ -20012,14 +20031,14 @@ function ry(n = {}, e = {}) {
           }
           return T;
         });
-        return ia(y, "live", {
+        return ca(y, "live", {
           cachedAt: u,
           expiresAt: u + 3600 * 1e3,
           updatedAt: u,
           generatedAt: y?.stats?.generatedAt || ""
         });
       } catch (y) {
-        if (g && g.version === 8) return ia(g.payload, "stale", {
+        if (g && g.version === 8) return ca(g.payload, "stale", {
           cachedAt: g.cachedAt,
           expiresAt: g.expiresAt,
           updatedAt: g.updatedAt,
@@ -20037,7 +20056,7 @@ function ry(n = {}, e = {}) {
         nowMs: c,
         includeExpired: !0
       });
-      return !u || u.version !== 8 ? null : ia(u.payload, u.expiresAt > c ? "cache" : "stale", {
+      return !u || u.version !== 8 ? null : ca(u.payload, u.expiresAt > c ? "cache" : "stale", {
         cachedAt: u.cachedAt,
         expiresAt: u.expiresAt,
         updatedAt: u.updatedAt,
@@ -20063,7 +20082,7 @@ function ry(n = {}, e = {}) {
           nowMs: m,
           skipCacheRead: c,
           loader: async () => {
-            const A = kc(await zc(l, d)), [C, N] = await Promise.all([u ? ge(rm(l, u, d), "cf_runtime.plan_profile.kv_details", {
+            const A = kc(await zc(l, d)), [C, N] = await Promise.all([u ? ge(am(l, u, d), "cf_runtime.plan_profile.kv_details", {
               accountId: l,
               namespaceId: u
             }, null) : null, f ? ge(Hs(l, f, d), "cf_runtime.plan_profile.d1_details", {
@@ -20098,7 +20117,7 @@ function ry(n = {}, e = {}) {
           kv: { namespaceTitle: String(y?.resourceMeta?.kv?.namespaceTitle || "").trim() },
           d1: { databaseName: String(y?.resourceMeta?.d1?.databaseName || "").trim() }
         }
-      }, S = Qf(_.planClass), [T, b] = await Promise.all([(async () => {
+      }, S = Zf(_.planClass), [T, b] = await Promise.all([(async () => {
         if (!u) return Cr("KV", "未配置 KV Namespace", "请在账号设置中填写 Cloudflare KV Namespace ID。");
         try {
           const A = await e.loadCfRuntimeCachePayload(s, {
@@ -20109,7 +20128,7 @@ function ry(n = {}, e = {}) {
             nowMs: m,
             skipCacheRead: c,
             loader: async () => ({
-              ...await am({
+              ...await nm({
                 accountId: l,
                 apiToken: d,
                 namespaceId: u,
@@ -20140,7 +20159,7 @@ function ry(n = {}, e = {}) {
             nowMs: m,
             skipCacheRead: c,
             loader: async () => {
-              const [C, N] = await Promise.all([nm({
+              const [C, N] = await Promise.all([om({
                 accountId: l,
                 apiToken: d,
                 databaseId: f,
@@ -20172,23 +20191,23 @@ function ry(n = {}, e = {}) {
     }
   };
 }
-function ay(n = {}, e = {}) {
+function ny(n = {}, e = {}) {
   return {
-    ...Jh(n, e),
     ...Qh(n, e),
     ...Zh(n, e),
     ...ey(n, e),
     ...ty(n, e),
-    ...ry(n, e)
+    ...ry(n, e),
+    ...ay(n, e)
   };
 }
-function ny(n = {}, e = {}) {
+function oy(n = {}, e = {}) {
   return {
     getKV(t) {
       return Sr(t);
     },
     getDB(t) {
-      return lf(t);
+      return uf(t);
     },
     buildD1CreateTableSql(t, r = t, a = {}) {
       const o = de(r), s = `CREATE TABLE${a.ifNotExists === !0 ? " IF NOT EXISTS" : ""}`, i = {
@@ -20329,7 +20348,7 @@ function ny(n = {}, e = {}) {
       };
     },
     async acquireD1SchemaRepairLease(t, r, a = {}) {
-      const o = Math.max(0, Number(a.nowMs ?? $()) || 0), s = o + _d, i = await t.prepare(`INSERT INTO ${de(e.D1_SCHEMA_META_TABLE)} (scope, contract_version, contract_hash, schema_fingerprint, schema_cookie, last_plan_hash, verified_at, attestation, migration_owner, lease_expires_at)
+      const o = Math.max(0, Number(a.nowMs ?? $()) || 0), s = o + bd, i = await t.prepare(`INSERT INTO ${de(e.D1_SCHEMA_META_TABLE)} (scope, contract_version, contract_hash, schema_fingerprint, schema_cookie, last_plan_hash, verified_at, attestation, migration_owner, lease_expires_at)
         VALUES ('main', 0, '', '', 0, '', '', '', ?, ?)
         ON CONFLICT(scope) DO UPDATE SET migration_owner = excluded.migration_owner, lease_expires_at = excluded.lease_expires_at
         WHERE ${de(e.D1_SCHEMA_META_TABLE)}.migration_owner IS NULL OR ${de(e.D1_SCHEMA_META_TABLE)}.lease_expires_at IS NULL OR ${de(e.D1_SCHEMA_META_TABLE)}.lease_expires_at < ? OR ${de(e.D1_SCHEMA_META_TABLE)}.migration_owner = excluded.migration_owner`).bind(r, s, o).run();
@@ -20736,7 +20755,7 @@ function ny(n = {}, e = {}) {
     }
   };
 }
-function oy(n = {}, e = {}) {
+function sy(n = {}, e = {}) {
   return {
     async hasLogsFtsTable(t) {
       if (!t) return !1;
@@ -21213,7 +21232,7 @@ function oy(n = {}, e = {}) {
         const l = /* @__PURE__ */ new Error("JWT_SECRET is required to sign the D1 schema repair plan");
         throw l.code = "SERVER_MISCONFIGURED", l.status = 503, l;
       }
-      const s = Math.max(0, Math.floor(Number(a.nowMs ?? $()) / 1e3)), i = s + Math.floor(Sd / 1e3), c = Jr(JSON.stringify({
+      const s = Math.max(0, Math.floor(Number(a.nowMs ?? $()) / 1e3)), i = s + Math.floor(_d / 1e3), c = Qr(JSON.stringify({
         version: Wa,
         scope: "d1_schema_repair",
         phase: String(r?.phase || ""),
@@ -21689,7 +21708,7 @@ function oy(n = {}, e = {}) {
     }
   };
 }
-function sy(n = {}, e = {}) {
+function iy(n = {}, e = {}) {
   return {
     async ensureLogsBaseSchema(t) {
       if (!t) return !1;
@@ -21727,7 +21746,7 @@ function sy(n = {}, e = {}) {
     }
   };
 }
-function iy(n = {}, e = {}) {
+function cy(n = {}, e = {}) {
   return {
     normalizeD1SchemaProfile(t = "") {
       const r = String(t || "").trim().toLowerCase();
@@ -21832,15 +21851,15 @@ function iy(n = {}, e = {}) {
     }
   };
 }
-function cy(n = {}, e = {}) {
+function ly(n = {}, e = {}) {
   return {
-    ...ny(n, e),
     ...oy(n, e),
     ...sy(n, e),
-    ...iy(n, e)
+    ...iy(n, e),
+    ...cy(n, e)
   };
 }
-function ly() {
+function uy() {
   const n = {
     createSummary(e = {}, t = "manual", r = {}) {
       return {
@@ -22014,7 +22033,7 @@ function ly() {
   };
   return n;
 }
-function uy() {
+function dy() {
   return {
     async readBoundedCount(n, e, t = "", r = []) {
       const a = String(t || "").trim(), o = `SELECT COUNT(*) AS total FROM (SELECT 1 FROM ${e}${a ? ` WHERE ${a}` : ""} LIMIT ${za + 1})`, s = await n.prepare(o).bind(...r).first(), i = Math.max(0, Number(s?.total ?? s?.count) || 0);
@@ -22103,7 +22122,7 @@ function uy() {
       };
     },
     buildFlags(n, e, t, r) {
-      const a = t.deletedExpiredLogCount > 0, o = Am(e.maintenanceMode, e.mode), s = n.shouldRunLogsFtsRebuild(e.lastFtsRebuildAt, { nowMs: e.nowTimestamp }), i = (!t.ftsReady || o || a) && s, c = t.preservedLogCount > yd || t.preservedLogCountExceedsLimit === !0, l = i && !c, d = o ? !0 : a && n.shouldRunLogsOptimize(e.lastOptimizeAt, { nowMs: e.nowTimestamp }), u = o || t.statsUtcOffsetMinutes !== e.utcOffsetMinutes;
+      const a = t.deletedExpiredLogCount > 0, o = Rm(e.maintenanceMode, e.mode), s = n.shouldRunLogsFtsRebuild(e.lastFtsRebuildAt, { nowMs: e.nowTimestamp }), i = (!t.ftsReady || o || a) && s, c = t.preservedLogCount > Sd || t.preservedLogCountExceedsLimit === !0, l = i && !c, d = o ? !0 : a && n.shouldRunLogsOptimize(e.lastOptimizeAt, { nowMs: e.nowTimestamp }), u = o || t.statsUtcOffsetMinutes !== e.utcOffsetMinutes;
       return {
         deleteExpiredLogs: a,
         deleteExpiredLocks: t.deletedExpiredLockCount > 0,
@@ -22126,7 +22145,7 @@ function uy() {
       };
     },
     buildPreview(n, e, t, r) {
-      const a = [], o = Ff(e.d1DnsIpPoolSources);
+      const a = [], o = Uf(e.d1DnsIpPoolSources);
       Te(a, e.deletedExpiredLogCount > 0, "proxy_logs", "超保留期 proxy_logs 日志", [], e.deletedExpiredLogCount, `只会删除早于 ${new Date(n.retentionCutoffMs).toISOString()} 的日志。`), Te(a, e.deletedExpiredLockCount > 0, "sys_locks", "过期 sys_locks 定时租约", [], e.deletedExpiredLockCount, "只会删除 expires_at 已过期的租约记录。"), Te(a, e.deletedExpiredFetchCacheCount > 0, "dns_ip_pool_fetch_cache", "过期 dns_ip_pool_fetch_cache 聚合缓存", [], e.deletedExpiredFetchCacheCount, "只会删除 expires_at 已过期的 API 抓取聚合缓存。"), Te(a, e.deletedExpiredProbeCacheCount > 0, "dns_ip_probe_cache", "过期 dns_ip_probe_cache 探测缓存", [], e.deletedExpiredProbeCacheCount, "只会删除 expires_at 已过期的探测缓存。"), Te(a, e.deletedExpiredAuthFailureCount > 0, "auth_failures", "过期 auth_failures 登录失败计数", [], e.deletedExpiredAuthFailureCount, "只会删除 expires_at 已过期的登录失败计数。"), Te(a, e.deletedExpiredDashboardCacheCount > 0, "cf_dashboard_cache", "过期 cf_dashboard_cache 仪表盘缓存", [], e.deletedExpiredDashboardCacheCount, "只会删除 expires_at 已过期的仪表盘缓存。"), Te(a, e.deletedExpiredRuntimeCacheCount > 0, "cf_runtime_cache", "过期 cf_runtime_cache 运行缓存", [], e.deletedExpiredRuntimeCacheCount, "只会删除 expires_at 已过期的运行缓存。"), Te(a, e.deletedExpiredStatsHourlyCount > 0, "proxy_stats_hourly_expired", "过期 proxy_stats_hourly 日期桶", [], e.deletedExpiredStatsHourlyCount, `只删除早于边界日 ${e.statsRetentionBoundaryDate} 的统计桶。`);
       const s = [
         ht("proxy_stats_hourly", "proxy_stats_hourly 统计表", [], {
@@ -22206,13 +22225,13 @@ function uy() {
     }
   };
 }
-var dy = Object.freeze({
+var fy = Object.freeze({
   PREFIX: "node:",
   CONFIG_KEY: "sys:theme",
   NODES_INDEX_KEY: "sys:nodes_index:v1",
   NODES_SUMMARY_INDEX_KEY: "sys:nodes_index_full:v2",
-  ADMIN_INDEX_UPLOAD_PREFIX: Xu,
-  ADMIN_ACTIVE_INDEX_KEY: Yu,
+  ADMIN_INDEX_UPLOAD_PREFIX: Yu,
+  ADMIN_ACTIVE_INDEX_KEY: Ju,
   LEGACY_OPS_STATUS_KEY: "sys:ops_status:v1",
   LEGACY_SCHEDULED_LOCK_KEY: "sys:scheduled_lock:v1",
   WORKER_PLACEMENT_REGION_OVERRIDE_PREFIX: "sys:worker_placement_region:v1:",
@@ -22251,7 +22270,7 @@ var dy = Object.freeze({
     dnsIpPool: "sys:ops_status:dns_ip_pool:v1"
   })
 });
-function fy(n = {}) {
+function my(n = {}) {
   const { nodeRepository: e } = n;
   return {
     async getNodesList(t, r) {
@@ -22317,7 +22336,7 @@ function fy(n = {}) {
         d(Ve.RateLimitCache, (u) => !u || u.resetAt < a, "rate"), o.phase = 4;
       else if (o.phase === 4) o.phase = 5;
       else if (o.phase === 5)
-        d(ee.PlaybackInfoResponseCache, (u) => !u || (Number(u.expiresAt) || 0) <= a || !ru(u, $o), "playbackInfo", c), o.phase = 6;
+        d(ee.PlaybackInfoResponseCache, (u) => !u || (Number(u.expiresAt) || 0) <= a || !au(u, $o), "playbackInfo", c), o.phase = 6;
       else if (o.phase === 6)
         d(ee.ProxyFailoverStateCache, (u) => {
           if (!u || typeof u != "object") return !0;
@@ -22340,7 +22359,7 @@ function fy(n = {}) {
     }
   };
 }
-function my(n = {}, e = {}) {
+function py(n = {}, e = {}) {
   return {
     normalizeNodeIndex(t = []) {
       return [...new Set((Array.isArray(t) ? t : []).map((r) => String(r || "").toLowerCase().trim()).filter(Boolean))];
@@ -22359,8 +22378,8 @@ function my(n = {}, e = {}) {
         entryMode: i,
         hostPrefixCnameTarget: i === "host_prefix" ? Xt(r.hostPrefixCnameTarget) : "",
         secret: i === "host_prefix" ? "" : String(r.secret ?? ""),
-        tag: Gr(r.tags, r.tag)[0] || "",
-        tags: Gr(r.tags, r.tag),
+        tag: Vr(r.tags, r.tag)[0] || "",
+        tags: Vr(r.tags, r.tag),
         tagColor: String(r.tagColor ?? ""),
         remark: String(r.remark ?? ""),
         tmdbAggregationEnabled: r.tmdbAggregationEnabled === !0,
@@ -22374,7 +22393,7 @@ function my(n = {}, e = {}) {
         playbackInfoMode: xr(r.playbackInfoMode),
         mediaAuthMode: Gt(r.mediaAuthMode),
         realClientIpMode: Pr(r.realClientIpMode),
-        hedgeProbePath: pa(r.hedgeProbePath),
+        hedgeProbePath: ga(r.hedgeProbePath),
         routingDecisionMode: kr(r.routingDecisionMode),
         mainVideoStreamMode: En(r.mainVideoStreamMode ?? r.wangpanDirectMode ?? r.wangpanMode)
       };
@@ -22542,7 +22561,7 @@ function my(n = {}, e = {}) {
     },
     async loadAllNodeEntitiesFromKv(t, r = {}) {
       const { ctx: a } = r;
-      return t ? (await ea(await e.listNodeEntityKeys(t), B.Defaults.NodesReadConcurrency, async (o) => {
+      return t ? (await ta(await e.listNodeEntityKeys(t), B.Defaults.NodesReadConcurrency, async (o) => {
         try {
           const s = await t.get(`${e.PREFIX}${o}`, { type: "json" });
           if (!s) return null;
@@ -22561,7 +22580,7 @@ function my(n = {}, e = {}) {
       })).filter(Boolean) : [];
     },
     async loadAllNodeEntitiesFromKvStrict(t, r = {}) {
-      return t ? (await ea(await e.listNodeEntityKeysStrict(t), B.Defaults.NodesReadConcurrency, async (a) => {
+      return t ? (await ta(await e.listNodeEntityKeysStrict(t), B.Defaults.NodesReadConcurrency, async (a) => {
         const o = await ve(t, `${e.PREFIX}${a}`, { type: "json" });
         return o ? {
           name: a,
@@ -22673,7 +22692,7 @@ function my(n = {}, e = {}) {
       return {
         nodeName: o,
         cacheKey: u,
-        expiresAt: $() + fd,
+        expiresAt: $() + md,
         nodesRevision: String(a.nodesRevision || "").trim(),
         nodeCacheRevision: bo(o, d),
         orderedTargetSignature: f,
@@ -22681,7 +22700,7 @@ function my(n = {}, e = {}) {
         headers: l,
         lines: c,
         activeLineId: String(d.activeLineId || "").trim(),
-        mainVideoStreamMode: Wr(d),
+        mainVideoStreamMode: Gr(d),
         playbackInfoMode: xr(d.playbackInfoMode),
         mediaAuthMode: Gt(d.mediaAuthMode),
         realClientIpMode: Pr(d.realClientIpMode),
@@ -22724,7 +22743,7 @@ function my(n = {}, e = {}) {
         const c = String(i || "").toLowerCase().trim();
         c && (s.push(c), o.NodeCache.delete(c), o.PlaybackRouteHotCache.delete(c));
       }
-      s.length > 0 && (Rp(s, o), Nl(s), Dl(s)), r.invalidateList && (o.NodesListCache = null, o.NodesIndexCache = null, dr(a));
+      s.length > 0 && (Cp(s, o), Nl(s), Dl(s)), r.invalidateList && (o.NodesListCache = null, o.NodesIndexCache = null, dr(a));
     },
     async persistNodesIndex(t, r = {}) {
       const { kv: a, ctx: o, invalidateList: s = !1 } = r, i = be(a), c = e.normalizeNodeIndex(t);
@@ -22763,7 +22782,7 @@ function my(n = {}, e = {}) {
     }
   };
 }
-function py(n = {}, e = {}) {
+function gy(n = {}, e = {}) {
   return {
     getDnsRecordHistoryKey(t, r) {
       const a = encodeURIComponent(String(t || "").trim() || "default"), o = encodeURIComponent(String(r || "").trim() || "unknown");
@@ -22874,7 +22893,7 @@ function py(n = {}, e = {}) {
     }
   };
 }
-function gy(n = {}, e = {}) {
+function hy(n = {}, e = {}) {
   return {
     buildLegacyConfigCacheKeys(...t) {
       const r = /* @__PURE__ */ new Set([sl]);
@@ -22933,7 +22952,7 @@ function gy(n = {}, e = {}) {
       const l = /* @__PURE__ */ new Set();
       for (; i < 1e3; ) {
         i += 1;
-        const d = await Uf(t, s ? {
+        const d = await kf(t, s ? {
           prefix: a,
           cursor: s
         } : { prefix: a });
@@ -23093,7 +23112,7 @@ function gy(n = {}, e = {}) {
     }
   };
 }
-function hy(n = {}, e = {}) {
+function yy(n = {}, e = {}) {
   return {
     createEmptyTidyPreview(t = "kv") {
       return {
@@ -23213,7 +23232,7 @@ function hy(n = {}, e = {}) {
             nodeName: y
           }, C;
         }
-        const T = Jd(S);
+        const T = Qd(S);
         T.shouldAddToSourceDirectNodes && (p = bt([...p, y])), T.topLevelPortPresent && (d += 1), u += Number(T.linePortCount) || 0, T.defaultPortNodePresent && (f += 1), m += Number(T.defaultPortLineCount) || 0, l += T.legacyKeysPresent.length;
         const { data: b, changed: A } = e.normalizeNode(y, S, { dropLegacyDirectRouting: !0 });
         i.push({
@@ -23264,20 +23283,20 @@ function hy(n = {}, e = {}) {
     }
   };
 }
-function yy(n = {}, e = {}) {
+function Sy(n = {}, e = {}) {
   return {
-    ...my(n, e),
     ...py(n, e),
     ...gy(n, e),
-    ...hy(n, e)
+    ...hy(n, e),
+    ...yy(n, e)
   };
 }
-var Sy = class {
+var _y = class {
   constructor({ configReader: n, httpService: e, nodeRouteReader: t, proxyApi: r }) {
     this.configReader = n, this.httpService = e, this.nodeRouteReader = t, this.proxyApi = r;
   }
   #t(n, e, t, r = 200) {
-    return this.httpService.buildCorsResponse(ra(e, n), t, r, { mergeOriginVary: !0 });
+    return this.httpService.buildCorsResponse(aa(e, n), t, r, { mergeOriginVary: !0 });
   }
   #e(n, e) {
     const t = new URL(n.url);
@@ -23309,8 +23328,8 @@ var Sy = class {
   }
   async #n(n, e, t, r) {
     if (!n || n.status === 101) return n;
-    const a = await cg(t, e, r);
-    return a ? this.#o(n, ug(a)) : n;
+    const a = await lg(t, e, r);
+    return a ? this.#o(n, dg(a)) : n;
   }
   #r(n) {
     const e = n.segments;
@@ -23412,7 +23431,7 @@ var Sy = class {
     if (!ci(n?.normalizedPathname)) return null;
     const a = r.headers.get("Cookie") || "", o = String(Ma(a).get("legacy_proxy_ctx") || "").trim();
     if (!o) return null;
-    const s = await lg(o, e, { requestHost: n.requestHost });
+    const s = await ug(o, e, { requestHost: n.requestHost });
     if (s?.ok !== !0) return { response: this.#s(r, e) };
     const i = String(s.payload?.node || "").trim().toLowerCase();
     if (!i) return { response: this.#s(r, e) };
@@ -23445,7 +23464,7 @@ var Sy = class {
     let s = a.slice(1);
     const i = await this.nodeRouteReader.getNode(o, e, t), c = String(i?.secret || "").trim();
     c && at(s[0] || "") === c && (s = s.slice(1));
-    const l = `/${s.join("/")}`, d = r.requestUrl instanceof URL ? r.requestUrl : null, u = d?.searchParams?.get?.("Ids") || "", f = String(d?.searchParams?.get?.("MediaSourceId") || "").trim(), m = f ? Fh(f) : null, p = Pa(l) || at(/^\/(?:emby|mediabrowser)\/Items\/([^/]+)/i.exec(l)?.[1] || ""), h = m || ha(p) || (u ? u.split(",").map((b) => ha(b)).find(Boolean) : null);
+    const l = `/${s.join("/")}`, d = r.requestUrl instanceof URL ? r.requestUrl : null, u = d?.searchParams?.get?.("Ids") || "", f = String(d?.searchParams?.get?.("MediaSourceId") || "").trim(), m = f ? Uh(f) : null, p = Pa(l) || at(/^\/(?:emby|mediabrowser)\/Items\/([^/]+)/i.exec(l)?.[1] || ""), h = m || ya(p) || (u ? u.split(",").map((b) => ya(b)).find(Boolean) : null);
     if (!h) return null;
     const g = String(h.peerName || "").trim().toLowerCase();
     if (!g || g === o) return null;
@@ -23453,7 +23472,7 @@ var Sy = class {
     if (!y || y.tmdbAggregationEnabled !== !0) return null;
     const _ = m ? m.itemId : h.itemId, S = l.replace(/^(\/(?:emby\/|mediabrowser\/)?Items\/)[^/]+/i, `$1${encodeURIComponent(_)}`), T = d ? new URL(d.toString()) : new URL(n.url);
     if (T.pathname = `${nt(g, String(y.secret || ""))}${S === "/" ? "/" : S}`, u) {
-      const b = u.split(",").map((A) => ha(A)?.itemId || A).join(",");
+      const b = u.split(",").map((A) => ya(A)?.itemId || A).join(",");
       T.searchParams.set("Ids", b);
     }
     return m && T.searchParams.set("MediaSourceId", m.mediaSourceId), {
@@ -23553,10 +23572,10 @@ var Sy = class {
     return this.#t(n, e, "Not Found", 404);
   }
 };
-function _y(n) {
+function by(n) {
   return Object.freeze({
     persistCloudflareDnsRecordsForHost(e) {
-      return qm({
+      return Xm({
         ...e,
         dnsHistoryRepository: n
       });
@@ -23568,34 +23587,34 @@ function _y(n) {
       });
     },
     buildDnsIpPoolWorkspacePreviewItems(e, t, r, a, o = {}) {
-      return dp(e, t, r, a, {
+      return fp(e, t, r, a, {
         ...o,
         probeRepository: n
       });
     },
     tryAcquireDnsIpPoolFetchRefreshLock(e, t) {
-      return hp({
-        ...e,
-        leaseRepository: n
-      }, t);
-    },
-    releaseDnsIpPoolFetchRefreshLock(e, t) {
       return yp({
         ...e,
         leaseRepository: n
       }, t);
     },
-    runDnsIpPoolSourcesLiveRefresh(e) {
+    releaseDnsIpPoolFetchRefreshLock(e, t) {
       return Sp({
+        ...e,
+        leaseRepository: n
+      }, t);
+    },
+    runDnsIpPoolSourcesLiveRefresh(e) {
+      return _p({
         ...e,
         poolRepository: n
       });
     }
   });
 }
-function by(n, e) {
+function Ey(n, e) {
   const t = e.shellService, r = [
-    Ap({
+    Rp({
       kernel: n,
       bindingPort: n,
       CacheManager: e.cacheManager,
@@ -23613,7 +23632,7 @@ function by(n, e) {
       tryAcquireDnsIpPoolFetchRefreshLock: e.dns.tryAcquireDnsIpPoolFetchRefreshLock,
       withAdminShellRuntimeStatus: t.withAdminShellRuntimeStatus
     }),
-    vg({
+    Fg({
       D1TidyExecutor: e.d1TidyExecutor,
       D1TidyPlanner: e.d1TidyPlanner,
       Logger: e.logger,
@@ -23621,27 +23640,27 @@ function by(n, e) {
       normalizeAdminReleaseVendorManifestRecord: t.normalizeAdminReleaseVendorManifestRecord,
       validateAdminShellHtmlSource: t.validateAdminShellHtmlSource
     }, n),
-    Qg({
+    Zg({
       CacheManager: e.cacheManager,
       persistCloudflareDnsRecordsForHost: e.dns.persistCloudflareDnsRecordsForHost
     }, n),
-    rh({
+    ah({
       bindingPort: n,
       schemaReadinessPort: n,
       statusPersistence: n
     }),
-    ay({
+    ny({
       CacheManager: e.cacheManager,
       withAdminShellRuntimeStatus: t.withAdminShellRuntimeStatus
     }, n),
-    cy({}, n),
-    yy({}, n)
+    ly({}, n),
+    Sy({}, n)
   ];
   for (const a of r) for (const [o, s] of Object.entries(a)) n[o] = s;
   return n;
 }
-var Ey = "video.emos.best", Ty = "emos", qn = "https://medb.lat/media/list/index?page_size=1", Ay = 60 * 1e3, Ry = 5e3;
-function Cy(n) {
+var Ty = "video.emos.best", Ay = "emos", qn = "https://medb.lat/media/list/index?page_size=1", Ry = 60 * 1e3, Cy = 5e3;
+function wy(n) {
   const e = k(n?.items?.[0]?.counts) ? n.items[0].counts : k(n?.counts) ? n.counts : null;
   return e ? {
     MovieCount: e.movie ?? 0,
@@ -23649,20 +23668,20 @@ function Cy(n) {
     EpisodeCount: e.episode ?? 0
   } : null;
 }
-async function wy() {
+async function Ly() {
   const n = ee.MedbItemsCountsCache.get(qn);
   if (n && n.expiresAt > $()) return n.counts;
-  const e = new AbortController(), t = setTimeout(() => e.abort("medb_counts_timeout"), Ry);
+  const e = new AbortController(), t = setTimeout(() => e.abort("medb_counts_timeout"), Cy);
   try {
     const r = await fetch(qn, {
       headers: { accept: "application/json" },
       signal: e.signal
     });
     if (!r.ok) return null;
-    const a = Cy(await r.json());
+    const a = wy(await r.json());
     return a ? (ee.MedbItemsCountsCache.set(qn, {
       counts: a,
-      expiresAt: $() + Ay
+      expiresAt: $() + Ry
     }), a) : null;
   } catch {
     return null;
@@ -23670,51 +23689,51 @@ async function wy() {
     clearTimeout(t);
   }
 }
-function Ly(n, e) {
-  if (String(e || "").trim().toLowerCase() === Ty) return !0;
+function Ny(n, e) {
+  if (String(e || "").trim().toLowerCase() === Ay) return !0;
   for (const t of Array.isArray(n?.lines) ? n.lines : []) {
     const r = String(t?.target || "").trim();
     if (r)
       try {
-        if (oe(new URL(r).hostname) === Ey) return !0;
+        if (oe(new URL(r).hostname) === Ty) return !0;
       } catch {
       }
   }
   return !1;
 }
-async function Ny(n, e, t, r, a) {
-  if (n.method !== "GET" || String(Z(a)).replace(/\/+$/, "").toLowerCase() !== "/emby/items/counts" || !Ly(t, r)) return null;
-  const o = await wy();
-  return o ? ne(o, 200, ra(e, n)) : null;
+async function Dy(n, e, t, r, a) {
+  if (n.method !== "GET" || String(Z(a)).replace(/\/+$/, "").toLowerCase() !== "/emby/items/counts" || !Ny(t, r)) return null;
+  const o = await Ly();
+  return o ? ne(o, 200, aa(e, n)) : null;
 }
-function Dy({ includeTestingSupport: n = !1 } = {}) {
-  const e = { ...dy }, t = Object.freeze({ getRuntimeConfig: we }), r = fy({ nodeRepository: e }), a = th({ logRepository: e }), o = Wf({
+function Iy({ includeTestingSupport: n = !1 } = {}) {
+  const e = { ...fy }, t = Object.freeze({ getRuntimeConfig: we }), r = my({ nodeRepository: e }), a = rh({ logRepository: e }), o = Gf({
     indexRepository: e,
     statusPort: e
   });
-  by(e, {
+  Ey(e, {
     cacheManager: r,
-    d1TidyExecutor: ly(),
-    d1TidyPlanner: uy(),
-    dns: _y(e),
+    d1TidyExecutor: uy(),
+    d1TidyPlanner: dy(),
+    dns: by(e),
     logger: a,
-    logQueryPlanner: Zg(),
+    logQueryPlanner: eh(),
     shellService: o
   });
-  const s = Yh({
+  const s = Jh({
     cachePort: r,
     configReader: t,
     fetchPort: { fetchRequest: ze },
     logger: a,
     nodeRepository: e
-  }), i = new df({
+  }), i = new ff({
     actionHandlers: e.adminActionHandlers,
     bindingService: e,
     configReader: t,
     repository: e,
     requestModel: e,
     shellService: o
-  }), c = new Sy({
+  }), c = new _y({
     configReader: t,
     httpService: Object.freeze({
       buildCorsResponse: o.buildEdgeCorsResponse,
@@ -23722,7 +23741,7 @@ function Dy({ includeTestingSupport: n = !1 } = {}) {
     }),
     nodeRouteReader: e,
     proxyApi: s
-  }), l = new Fg({
+  }), l = new Ug({
     logger: a,
     service: e
   }), d = (m, p) => {
@@ -23735,7 +23754,7 @@ function Dy({ includeTestingSupport: n = !1 } = {}) {
       requestUrl: h,
       requestHost: g,
       configuredHost: Ge(p),
-      configuredLegacyHost: jr(p),
+      configuredLegacyHost: qr(p),
       normalizedPathname: y,
       pathnameLower: _,
       adminPath: S,
@@ -23775,17 +23794,17 @@ function Dy({ includeTestingSupport: n = !1 } = {}) {
     shellService: o,
     buildNodeRouteContext: d,
     buildRouteCorsResponse(m, p, h, g = 200) {
-      return o.buildEdgeCorsResponse(ra(p, m), h, g, { mergeOriginVary: !0 });
+      return o.buildEdgeCorsResponse(aa(p, m), h, g, { mergeOriginVary: !0 });
     },
     isPlaybackCriticalRouteContext(m) {
       const p = Array.isArray(m?.segments) ? m.segments : [];
       return p.length <= 1 ? !1 : o.isPlaybackCriticalSegments(p, 1) ? !0 : p.length > 2 && o.isPlaybackCriticalSegments(p, 2);
     },
-    isolateState: iu,
+    isolateState: cu,
     proxyService: s.testingSupport
   })), Object.freeze(f);
 }
-var { workerHandler: Iy } = Dy();
+var { workerHandler: My } = Iy();
 export {
-  Iy as default
+  My as default
 };
