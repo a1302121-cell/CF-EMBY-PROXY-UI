@@ -1,6 +1,6 @@
 # 仓库 Agent 文档
 
-这些文档是给 Agent 的导航，不替代代码、测试和 Cloudflare 配置。先读根目录 [`AGENTS.md`](../AGENTS.md)，再按任务读取下面的文档。
+这些文档是给 Agent 的导航，不替代代码、测试和 Cloudflare 配置。先读根目录 [`AGENTS.md`](../AGENTS.md)，再按任务读取下面的文档！
 
 ## 文档索引
 
