@@ -19114,19 +19114,24 @@ function defineConfigPersistenceMethods(dependencies = {}, kernel = {}) {
       };
     },
     async buildRuntimeConfigMutationPlan(kv, prevConfig, nextConfig) {
-      const legacySnapshotRecords = await kernel.readLegacyConfigSnapshotRecordsStrict(kv);
+      // 只读一次：原始值同时用于判断 key 是否存在（决定是否安排删除）与解析旧快照记录。
+      // 非法形状（非数组）沿用 readLegacyConfigSnapshotRecordsStrict 的 fail-closed 语义。
+      const legacySnapshotRaw = await kvGetStrict(kv, kernel.CONFIG_SNAPSHOTS_KEY, {
+        type: "json",
+      });
+      if (
+        legacySnapshotRaw !== null &&
+        legacySnapshotRaw !== void 0 &&
+        !Array.isArray(legacySnapshotRaw)
+      ) {
+        const error = new Error("Stored legacy config snapshot records are invalid");
+        error.code = "CONFIG_SNAPSHOTS_INVALID";
+        error.status = 409;
+        throw error;
+      }
+      const legacySnapshotRecords = Array.isArray(legacySnapshotRaw) ? legacySnapshotRaw : [];
       const configMeta = kernel.normalizeRevisionMeta(buildHashedMetaPayload(nextConfig));
       const mutationPlan = [
-        {
-          type: "delete",
-          key: kernel.CONFIG_SNAPSHOTS_KEY,
-          value: "",
-        },
-        {
-          type: "delete",
-          key: kernel.CONFIG_SNAPSHOTS_META_KEY,
-          value: "",
-        },
         {
           type: "put",
           key: kernel.CONFIG_KEY,
@@ -19138,7 +19143,26 @@ function defineConfigPersistenceMethods(dependencies = {}, kernel = {}) {
           value: JSON.stringify(configMeta),
         },
       ];
-      for (const key of kernel.buildLegacyConfigCacheKeys(prevConfig, nextConfig))
+      // 旧版配置快照只在 V19 之前的部署里存在。上一次保存已经删掉，此后每次保存都白做 2 次 delete。
+      // 用原始值判断存在性（空数组也算存在），避免为判断再读一次 KV。
+      if (legacySnapshotRaw !== null && legacySnapshotRaw !== void 0) {
+        mutationPlan.unshift(
+          { type: "delete", key: kernel.CONFIG_SNAPSHOTS_KEY, value: "" },
+          { type: "delete", key: kernel.CONFIG_SNAPSHOTS_META_KEY, value: "" },
+        );
+      }
+      // 遗留 KV 缓存（V19 之前的 sys:cf_dash_cache 系列）已经改用 D1 表，这里只负责清理。
+      // 逐个 delete 每次保存都要 3 次往返；list 一次就能确认是否还有残留，清空后只剩 1 次。
+      const staleCacheKeys = await kernel
+        .listKvKeys(kv, { prefix: LEGACY_CF_DASH_CACHE_KV_KEY_PREFIX })
+        .catch(() => null);
+      const legacyCacheKeysToDelete =
+        staleCacheKeys === null
+          ? kernel.buildLegacyConfigCacheKeys(prevConfig, nextConfig)
+          : staleCacheKeys
+              .map((entry) => String(entry?.name || entry || "").trim())
+              .filter(Boolean);
+      for (const key of legacyCacheKeysToDelete)
         mutationPlan.push({
           type: "delete",
           key,

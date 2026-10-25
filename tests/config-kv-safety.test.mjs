@@ -155,6 +155,75 @@ test("applyKvMutationsWithRollback reads rollback snapshots in parallel and skip
   assert.deepEqual(reads.sort(), ["keep", "overwrite"], "纯 delete 不存在的 key 不应读取");
 });
 
+test("runtime config saves stop paying for legacy key deletes once they are gone", async () => {
+  // 设置保存每次都会清理 V19 遗留的 sys:cf_dash_cache 系列与配置快照。
+  // 这些 key 清空后不该继续占用往返次数：快照用一次读取判断存在性，
+  // 遗留缓存用一次 list 判断，而不是固定发出 N 次 delete。
+  // 快照 key 已彻底不存在（不是空数组）时，才不该再安排 delete。
+  const { kv } = createKv({ [kernel.CONFIG_KEY]: { rateLimitRpm: 20 } });
+  const env = { ENI_KV: kv, __CONFIG_CACHE_NAMESPACE: "legacy-delete-skip" };
+  invalidateRuntimeConfigCache();
+
+  try {
+    const plan = await kernel.buildRuntimeConfigMutationPlan(
+      kv,
+      { rateLimitRpm: 20 },
+      { rateLimitRpm: 30 },
+    );
+    assert.deepEqual(
+      plan.filter((mutation) => mutation.type === "delete").map((mutation) => mutation.key),
+      [],
+      "遗留 key 不存在时不应安排任何 delete",
+    );
+
+    // 空数组也算 key 存在：必须继续清理，否则残留一个空快照 key。
+    const present = createKv({
+      [kernel.CONFIG_KEY]: { rateLimitRpm: 20 },
+      [kernel.CONFIG_SNAPSHOTS_KEY]: [],
+    });
+    const presentPlan = await kernel.buildRuntimeConfigMutationPlan(
+      present.kv,
+      { rateLimitRpm: 20 },
+      { rateLimitRpm: 30 },
+    );
+    assert.ok(
+      presentPlan.some(
+        (mutation) => mutation.type === "delete" && mutation.key === kernel.CONFIG_SNAPSHOTS_KEY,
+      ),
+      "空数组快照仍应被删除",
+    );
+  } finally {
+    invalidateRuntimeConfigCache();
+  }
+});
+
+test("runtime config saves still purge legacy keys that are actually present", async () => {
+  const { kv, values } = createKv({
+    [kernel.CONFIG_KEY]: { rateLimitRpm: 20 },
+    [kernel.CONFIG_SNAPSHOTS_KEY]: [{ revision: "old.abc" }],
+    "sys:cf_dash_cache": "legacy-1",
+    "sys:cf_dash_cache:default:current": "legacy-2",
+  });
+  const env = { ENI_KV: kv, __CONFIG_CACHE_NAMESPACE: "legacy-delete-present" };
+  invalidateRuntimeConfigCache();
+
+  try {
+    await kernel.persistRuntimeConfig(
+      { rateLimitRpm: 30 },
+      { env, kv, ctx: null, forceKvCommit: true },
+    );
+    for (const key of [
+      kernel.CONFIG_SNAPSHOTS_KEY,
+      kernel.CONFIG_SNAPSHOTS_META_KEY,
+      "sys:cf_dash_cache",
+      "sys:cf_dash_cache:default:current",
+    ])
+      assert.equal(values.has(key), false, `${key} 应被清理`);
+  } finally {
+    invalidateRuntimeConfigCache();
+  }
+});
+
 test("applyKvMutationsWithRollback restores only mutations that completed", async () => {
   const {
     kv,
