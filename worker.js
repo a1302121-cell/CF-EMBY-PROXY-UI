@@ -14387,7 +14387,7 @@ function kg(o = {}) {
       let s = ee.ScheduledLeaseDbReady.get(n);
       s || (s = (async () => {
         try {
-          return await n.prepare(`CREATE TABLE IF NOT EXISTS ${Zt} (scope TEXT PRIMARY KEY, token TEXT NOT NULL, owner TEXT NOT NULL, acquired_at INTEGER NOT NULL, renewed_at INTEGER, expires_at INTEGER NOT NULL)`).run(), await n.prepare(`CREATE INDEX IF NOT EXISTS idx_sys_locks_expires_at ON ${Zt} (expires_at DESC)`).run(), t.markD1SchemaReady(n, "scheduledLeaseTable"), !0;
+          return await n.batch([n.prepare(`CREATE TABLE IF NOT EXISTS ${Zt} (scope TEXT PRIMARY KEY, token TEXT NOT NULL, owner TEXT NOT NULL, acquired_at INTEGER NOT NULL, renewed_at INTEGER, expires_at INTEGER NOT NULL)`), n.prepare(`CREATE INDEX IF NOT EXISTS idx_sys_locks_expires_at ON ${Zt} (expires_at DESC)`)]), t.markD1SchemaReady(n, "scheduledLeaseTable"), !0;
         } catch (i) {
           return console.warn("scheduled lease table init failed", i), !1;
         }
@@ -18027,7 +18027,8 @@ function uh(o = {}, e = {}) {
       if (!t) return !1;
       if (e.isD1SchemaReadyCached(t, "dnsIpWorkspaceSchema")) return !0;
       let r = ee.DnsIpWorkspaceDbReady.get(t);
-      r || (r = (async () => (await t.prepare(`CREATE TABLE IF NOT EXISTS ${e.DNS_IP_POOL_ITEMS_TABLE} (
+      r || (r = (async () => (await t.batch([
+        t.prepare(`CREATE TABLE IF NOT EXISTS ${e.DNS_IP_POOL_ITEMS_TABLE} (
                 id TEXT PRIMARY KEY,
                 ip TEXT NOT NULL UNIQUE,
                 ip_type TEXT NOT NULL,
@@ -18037,7 +18038,9 @@ function uh(o = {}, e = {}) {
                 remark TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
-              )`).run(), await t.prepare(`CREATE INDEX IF NOT EXISTS idx_dns_ip_pool_items_updated_ip ON ${e.DNS_IP_POOL_ITEMS_TABLE} (updated_at DESC, ip ASC)`).run(), await t.prepare(`CREATE TABLE IF NOT EXISTS ${e.DNS_IP_POOL_SOURCES_TABLE} (
+              )`),
+        t.prepare(`CREATE INDEX IF NOT EXISTS idx_dns_ip_pool_items_updated_ip ON ${e.DNS_IP_POOL_ITEMS_TABLE} (updated_at DESC, ip ASC)`),
+        t.prepare(`CREATE TABLE IF NOT EXISTS ${e.DNS_IP_POOL_SOURCES_TABLE} (
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
                 url TEXT NOT NULL,
@@ -18054,7 +18057,9 @@ function uh(o = {}, e = {}) {
                 last_fetch_count INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
-              )`).run(), await t.prepare(`CREATE INDEX IF NOT EXISTS idx_dns_ip_pool_sources_sort ON ${e.DNS_IP_POOL_SOURCES_TABLE} (sort_order ASC, updated_at ASC)`).run(), await t.prepare(`CREATE TABLE IF NOT EXISTS ${e.DNS_IP_POOL_FETCH_CACHE_TABLE} (
+              )`),
+        t.prepare(`CREATE INDEX IF NOT EXISTS idx_dns_ip_pool_sources_sort ON ${e.DNS_IP_POOL_SOURCES_TABLE} (sort_order ASC, updated_at ASC)`),
+        t.prepare(`CREATE TABLE IF NOT EXISTS ${e.DNS_IP_POOL_FETCH_CACHE_TABLE} (
                 signature TEXT PRIMARY KEY,
                 items_json TEXT NOT NULL,
                 source_results_json TEXT NOT NULL,
@@ -18064,7 +18069,9 @@ function uh(o = {}, e = {}) {
                 expires_at INTEGER NOT NULL,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
-              )`).run(), await t.prepare(`CREATE INDEX IF NOT EXISTS idx_dns_ip_pool_fetch_cache_expires ON ${e.DNS_IP_POOL_FETCH_CACHE_TABLE} (expires_at)`).run(), await t.prepare(`CREATE TABLE IF NOT EXISTS ${e.DNS_IP_PROBE_CACHE_TABLE} (
+              )`),
+        t.prepare(`CREATE INDEX IF NOT EXISTS idx_dns_ip_pool_fetch_cache_expires ON ${e.DNS_IP_POOL_FETCH_CACHE_TABLE} (expires_at)`),
+        t.prepare(`CREATE TABLE IF NOT EXISTS ${e.DNS_IP_PROBE_CACHE_TABLE} (
                 ip TEXT NOT NULL,
                 entry_colo TEXT NOT NULL,
                 probe_status TEXT NOT NULL,
@@ -18077,7 +18084,10 @@ function uh(o = {}, e = {}) {
                 probed_at TEXT NOT NULL,
                 expires_at INTEGER NOT NULL,
                 PRIMARY KEY (ip, entry_colo)
-              )`).run(), await t.prepare(`CREATE INDEX IF NOT EXISTS idx_dns_ip_probe_cache_expire ON ${e.DNS_IP_PROBE_CACHE_TABLE} (expires_at)`).run(), await t.prepare(`CREATE INDEX IF NOT EXISTS idx_dns_ip_probe_cache_colo_ip_expires ON ${e.DNS_IP_PROBE_CACHE_TABLE} (entry_colo, ip, expires_at)`).run(), e.markD1SchemaReady(t, "dnsIpWorkspaceSchema"), !0))().catch((a) => {
+              )`),
+        t.prepare(`CREATE INDEX IF NOT EXISTS idx_dns_ip_probe_cache_expire ON ${e.DNS_IP_PROBE_CACHE_TABLE} (expires_at)`),
+        t.prepare(`CREATE INDEX IF NOT EXISTS idx_dns_ip_probe_cache_colo_ip_expires ON ${e.DNS_IP_PROBE_CACHE_TABLE} (entry_colo, ip, expires_at)`)
+      ]), e.markD1SchemaReady(t, "dnsIpWorkspaceSchema"), !0))().catch((a) => {
         throw ee.DnsIpWorkspaceDbReady.delete(t), a;
       }), ee.DnsIpWorkspaceDbReady.set(t, r));
       try {
@@ -18515,12 +18525,12 @@ function dh(o = {}, e = {}) {
       let r = ee.AuthFailuresDbReady.get(t);
       r || (r = (async () => {
         try {
-          return await t.prepare(`CREATE TABLE IF NOT EXISTS ${e.AUTH_FAILURES_TABLE} (
+          return await t.batch([t.prepare(`CREATE TABLE IF NOT EXISTS ${e.AUTH_FAILURES_TABLE} (
                   ip TEXT PRIMARY KEY,
                   fail_count INTEGER NOT NULL,
                   expires_at INTEGER NOT NULL,
                   updated_at INTEGER NOT NULL
-                )`).run(), await t.prepare(`CREATE INDEX IF NOT EXISTS idx_auth_failures_expires_at ON ${e.AUTH_FAILURES_TABLE} (expires_at)`).run(), e.markD1SchemaReady(t, "authFailuresTable"), !0;
+                )`), t.prepare(`CREATE INDEX IF NOT EXISTS idx_auth_failures_expires_at ON ${e.AUTH_FAILURES_TABLE} (expires_at)`)]), e.markD1SchemaReady(t, "authFailuresTable"), !0;
         } catch (a) {
           return console.warn("auth_failures init failed", a), !1;
         }
@@ -18581,7 +18591,7 @@ function fh(o = {}, e = {}) {
       let r = ee.CfDashboardCacheDbReady.get(t);
       r || (r = (async () => {
         try {
-          return await t.prepare(`CREATE TABLE IF NOT EXISTS ${e.CF_DASH_CACHE_TABLE} (
+          return await t.batch([t.prepare(`CREATE TABLE IF NOT EXISTS ${e.CF_DASH_CACHE_TABLE} (
                   cache_key TEXT PRIMARY KEY,
                   zone_id TEXT NOT NULL,
                   bucket_date TEXT NOT NULL,
@@ -18590,7 +18600,7 @@ function fh(o = {}, e = {}) {
                   cached_at INTEGER NOT NULL,
                   expires_at INTEGER NOT NULL,
                   updated_at INTEGER NOT NULL
-                )`).run(), await t.prepare(`CREATE INDEX IF NOT EXISTS idx_cf_dashboard_cache_expires_at ON ${e.CF_DASH_CACHE_TABLE} (expires_at)`).run(), e.markD1SchemaReady(t, "cfDashboardCacheTable"), !0;
+                )`), t.prepare(`CREATE INDEX IF NOT EXISTS idx_cf_dashboard_cache_expires_at ON ${e.CF_DASH_CACHE_TABLE} (expires_at)`)]), e.markD1SchemaReady(t, "cfDashboardCacheTable"), !0;
         } catch (a) {
           return console.warn("cf_dashboard_cache init failed", a), !1;
         }
@@ -18687,7 +18697,7 @@ function fh(o = {}, e = {}) {
       let r = ee.CfRuntimeCacheDbReady.get(t);
       r || (r = (async () => {
         try {
-          return await t.prepare(`CREATE TABLE IF NOT EXISTS ${e.CF_RUNTIME_CACHE_TABLE} (
+          return await t.batch([t.prepare(`CREATE TABLE IF NOT EXISTS ${e.CF_RUNTIME_CACHE_TABLE} (
                   cache_key TEXT PRIMARY KEY,
                   cache_group TEXT NOT NULL,
                   resource_id TEXT NOT NULL,
@@ -18695,7 +18705,7 @@ function fh(o = {}, e = {}) {
                   cached_at INTEGER NOT NULL,
                   expires_at INTEGER NOT NULL,
                   updated_at INTEGER NOT NULL
-                )`).run(), await t.prepare(`CREATE INDEX IF NOT EXISTS idx_cf_runtime_cache_expires_at ON ${e.CF_RUNTIME_CACHE_TABLE} (expires_at)`).run(), e.markD1SchemaReady(t, "cfRuntimeCacheTable"), !0;
+                )`), t.prepare(`CREATE INDEX IF NOT EXISTS idx_cf_runtime_cache_expires_at ON ${e.CF_RUNTIME_CACHE_TABLE} (expires_at)`)]), e.markD1SchemaReady(t, "cfRuntimeCacheTable"), !0;
         } catch (a) {
           return console.warn("cf_runtime_cache init failed", a), !1;
         }
@@ -21072,7 +21082,13 @@ function Sh(o = {}, e = {}) {
       if (!t) return !1;
       if (e.isD1SchemaReadyCached(t, "logsBaseSchema")) return !0;
       let r = ee.LogsBaseDbReady.get(t);
-      r || (r = (async () => (await t.prepare(`CREATE TABLE IF NOT EXISTS ${e.LOGS_TABLE} (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp INTEGER NOT NULL, node_name TEXT NOT NULL, request_path TEXT NOT NULL, request_method TEXT NOT NULL, status_code INTEGER NOT NULL, response_time INTEGER NOT NULL, client_ip TEXT NOT NULL, inbound_colo TEXT, outbound_colo TEXT, user_agent TEXT, referer TEXT, category TEXT DEFAULT 'api', error_detail TEXT, detail_json TEXT, created_at TEXT NOT NULL, inbound_ip TEXT, outbound_ip TEXT)`).run(), await t.prepare(`CREATE INDEX IF NOT EXISTS idx_proxy_logs_timestamp ON ${e.LOGS_TABLE} (timestamp)`).run(), await t.prepare(`CREATE INDEX IF NOT EXISTS idx_proxy_logs_client_time ON ${e.LOGS_TABLE} (client_ip, timestamp DESC)`).run(), await t.prepare(`CREATE INDEX IF NOT EXISTS idx_proxy_logs_status_time ON ${e.LOGS_TABLE} (status_code, timestamp)`).run(), await t.prepare(`CREATE INDEX IF NOT EXISTS idx_proxy_logs_category_time ON ${e.LOGS_TABLE} (category, timestamp)`).run(), e.markD1SchemaReady(t, "logsBaseSchema"), e.markD1SchemaReady(t, "logsTableExists"), oe.LogsReadinessProbeCache.delete(t), !0))().catch((a) => {
+      r || (r = (async () => (await t.batch([
+        t.prepare(`CREATE TABLE IF NOT EXISTS ${e.LOGS_TABLE} (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp INTEGER NOT NULL, node_name TEXT NOT NULL, request_path TEXT NOT NULL, request_method TEXT NOT NULL, status_code INTEGER NOT NULL, response_time INTEGER NOT NULL, client_ip TEXT NOT NULL, inbound_colo TEXT, outbound_colo TEXT, user_agent TEXT, referer TEXT, category TEXT DEFAULT 'api', error_detail TEXT, detail_json TEXT, created_at TEXT NOT NULL, inbound_ip TEXT, outbound_ip TEXT)`),
+        t.prepare(`CREATE INDEX IF NOT EXISTS idx_proxy_logs_timestamp ON ${e.LOGS_TABLE} (timestamp)`),
+        t.prepare(`CREATE INDEX IF NOT EXISTS idx_proxy_logs_client_time ON ${e.LOGS_TABLE} (client_ip, timestamp DESC)`),
+        t.prepare(`CREATE INDEX IF NOT EXISTS idx_proxy_logs_status_time ON ${e.LOGS_TABLE} (status_code, timestamp)`),
+        t.prepare(`CREATE INDEX IF NOT EXISTS idx_proxy_logs_category_time ON ${e.LOGS_TABLE} (category, timestamp)`)
+      ]), e.markD1SchemaReady(t, "logsBaseSchema"), e.markD1SchemaReady(t, "logsTableExists"), oe.LogsReadinessProbeCache.delete(t), !0))().catch((a) => {
         throw ee.LogsBaseDbReady.delete(t), a;
       }), ee.LogsBaseDbReady.set(t, r));
       try {
@@ -21178,33 +21194,39 @@ function _h(o = {}, e = {}) {
           name: "ensureLogsFtsSchema",
           run: () => e.ensureLogsFtsSchema(t)
         }
-      ] : [...n, ...s], c = [];
-      let l = {
+      ] : [...n, ...s], c = i.find((f) => f.name === "ensureLogsFtsSchema") || null, l = i.filter((f) => f !== c), d = [...await Promise.all(l.map(async (f) => {
+        const m = await f.run();
+        return {
+          name: f.name,
+          ready: m === !0
+        };
+      }))];
+      let u = {
         migratedRows: 0,
         droppedTriggers: 0,
         rebuilt: !1,
         recreated: !1
       };
-      for (const d of i) {
-        const u = await d.run();
-        d.name === "ensureLogsFtsSchema" && B(u) && (l = {
-          migratedRows: Math.max(0, Number(u.migratedRows) || 0),
-          droppedTriggers: Math.max(0, Number(u.droppedTriggers) || 0),
-          rebuilt: u.rebuilt === !0,
-          recreated: u.recreated === !0
-        }), c.push({
-          name: d.name,
-          ready: d.name === "ensureLogsFtsSchema" ? await e.isLogsFtsReady(t) : u === !0
+      if (c) {
+        const f = await c.run();
+        B(f) && (u = {
+          migratedRows: Math.max(0, Number(f.migratedRows) || 0),
+          droppedTriggers: Math.max(0, Number(f.droppedTriggers) || 0),
+          rebuilt: f.rebuilt === !0,
+          recreated: f.recreated === !0
+        }), d.push({
+          name: c.name,
+          ready: await e.isLogsFtsReady(t)
         });
       }
       return oe.LogsReadinessProbeCache.delete(t), {
         profile: a,
-        runtimeTablesReady: n.every((d) => c.some((u) => u.name === d.name && u.ready === !0)),
+        runtimeTablesReady: n.every((f) => d.some((m) => m.name === f.name && m.ready === !0)),
         schemaReady: await e.hasLogsBaseTable(t),
         statsReady: await e.hasStatsHourlyTable(t),
         ftsReady: await e.isLogsFtsReady(t),
-        ftsResult: l,
-        steps: c
+        ftsResult: u,
+        steps: d
       };
     }
   };

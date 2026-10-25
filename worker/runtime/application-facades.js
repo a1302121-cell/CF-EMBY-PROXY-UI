@@ -22776,16 +22776,14 @@ function defineDatabaseStatusMethods(dependencies = {}) {
       if (!initTask) {
         initTask = (async () => {
           try {
-            await db
-              .prepare(
+            await db.batch([
+              db.prepare(
                 `CREATE TABLE IF NOT EXISTS ${SCHEDULED_LOCKS_TABLE} (scope TEXT PRIMARY KEY, token TEXT NOT NULL, owner TEXT NOT NULL, acquired_at INTEGER NOT NULL, renewed_at INTEGER, expires_at INTEGER NOT NULL)`,
-              )
-              .run();
-            await db
-              .prepare(
+              ),
+              db.prepare(
                 `CREATE INDEX IF NOT EXISTS idx_sys_locks_expires_at ON ${SCHEDULED_LOCKS_TABLE} (expires_at DESC)`,
-              )
-              .run();
+              ),
+            ]);
             schemaReadinessPort.markD1SchemaReady(db, "scheduledLeaseTable");
             return true;
           } catch (error) {
@@ -29432,8 +29430,10 @@ function defineAnalyticsDnsMethods(dependencies = {}, kernel = {}) {
       let initTask = databaseReadinessState.DnsIpWorkspaceDbReady.get(db);
       if (!initTask) {
         initTask = (async () => {
-          await db
-            .prepare(`CREATE TABLE IF NOT EXISTS ${kernel.DNS_IP_POOL_ITEMS_TABLE} (
+          // 4 张表 + 5 个索引合并成一次往返；D1 batch 是事务语义，任一失败整体回滚，
+          // 避免出现「表建好但索引缺失」的半成品 schema。
+          await db.batch([
+            db.prepare(`CREATE TABLE IF NOT EXISTS ${kernel.DNS_IP_POOL_ITEMS_TABLE} (
                 id TEXT PRIMARY KEY,
                 ip TEXT NOT NULL UNIQUE,
                 ip_type TEXT NOT NULL,
@@ -29443,15 +29443,11 @@ function defineAnalyticsDnsMethods(dependencies = {}, kernel = {}) {
                 remark TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
-              )`)
-            .run();
-          await db
-            .prepare(
+              )`),
+            db.prepare(
               `CREATE INDEX IF NOT EXISTS idx_dns_ip_pool_items_updated_ip ON ${kernel.DNS_IP_POOL_ITEMS_TABLE} (updated_at DESC, ip ASC)`,
-            )
-            .run();
-          await db
-            .prepare(`CREATE TABLE IF NOT EXISTS ${kernel.DNS_IP_POOL_SOURCES_TABLE} (
+            ),
+            db.prepare(`CREATE TABLE IF NOT EXISTS ${kernel.DNS_IP_POOL_SOURCES_TABLE} (
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
                 url TEXT NOT NULL,
@@ -29468,15 +29464,11 @@ function defineAnalyticsDnsMethods(dependencies = {}, kernel = {}) {
                 last_fetch_count INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
-              )`)
-            .run();
-          await db
-            .prepare(
+              )`),
+            db.prepare(
               `CREATE INDEX IF NOT EXISTS idx_dns_ip_pool_sources_sort ON ${kernel.DNS_IP_POOL_SOURCES_TABLE} (sort_order ASC, updated_at ASC)`,
-            )
-            .run();
-          await db
-            .prepare(`CREATE TABLE IF NOT EXISTS ${kernel.DNS_IP_POOL_FETCH_CACHE_TABLE} (
+            ),
+            db.prepare(`CREATE TABLE IF NOT EXISTS ${kernel.DNS_IP_POOL_FETCH_CACHE_TABLE} (
                 signature TEXT PRIMARY KEY,
                 items_json TEXT NOT NULL,
                 source_results_json TEXT NOT NULL,
@@ -29486,15 +29478,11 @@ function defineAnalyticsDnsMethods(dependencies = {}, kernel = {}) {
                 expires_at INTEGER NOT NULL,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
-              )`)
-            .run();
-          await db
-            .prepare(
+              )`),
+            db.prepare(
               `CREATE INDEX IF NOT EXISTS idx_dns_ip_pool_fetch_cache_expires ON ${kernel.DNS_IP_POOL_FETCH_CACHE_TABLE} (expires_at)`,
-            )
-            .run();
-          await db
-            .prepare(`CREATE TABLE IF NOT EXISTS ${kernel.DNS_IP_PROBE_CACHE_TABLE} (
+            ),
+            db.prepare(`CREATE TABLE IF NOT EXISTS ${kernel.DNS_IP_PROBE_CACHE_TABLE} (
                 ip TEXT NOT NULL,
                 entry_colo TEXT NOT NULL,
                 probe_status TEXT NOT NULL,
@@ -29507,18 +29495,14 @@ function defineAnalyticsDnsMethods(dependencies = {}, kernel = {}) {
                 probed_at TEXT NOT NULL,
                 expires_at INTEGER NOT NULL,
                 PRIMARY KEY (ip, entry_colo)
-              )`)
-            .run();
-          await db
-            .prepare(
+              )`),
+            db.prepare(
               `CREATE INDEX IF NOT EXISTS idx_dns_ip_probe_cache_expire ON ${kernel.DNS_IP_PROBE_CACHE_TABLE} (expires_at)`,
-            )
-            .run();
-          await db
-            .prepare(
+            ),
+            db.prepare(
               `CREATE INDEX IF NOT EXISTS idx_dns_ip_probe_cache_colo_ip_expires ON ${kernel.DNS_IP_PROBE_CACHE_TABLE} (entry_colo, ip, expires_at)`,
-            )
-            .run();
+            ),
+          ]);
           kernel.markD1SchemaReady(db, "dnsIpWorkspaceSchema");
           return true;
         })().catch((error) => {
@@ -30185,19 +30169,18 @@ function defineAnalyticsStatusMethods(dependencies = {}, kernel = {}) {
       if (!initTask) {
         initTask = (async () => {
           try {
-            await db
-              .prepare(`CREATE TABLE IF NOT EXISTS ${kernel.AUTH_FAILURES_TABLE} (
+            // 建表与建索引合并成一次往返：D1 batch 是事务语义，DDL 全成功或全回滚。
+            await db.batch([
+              db.prepare(`CREATE TABLE IF NOT EXISTS ${kernel.AUTH_FAILURES_TABLE} (
                   ip TEXT PRIMARY KEY,
                   fail_count INTEGER NOT NULL,
                   expires_at INTEGER NOT NULL,
                   updated_at INTEGER NOT NULL
-                )`)
-              .run();
-            await db
-              .prepare(
+                )`),
+              db.prepare(
                 `CREATE INDEX IF NOT EXISTS idx_auth_failures_expires_at ON ${kernel.AUTH_FAILURES_TABLE} (expires_at)`,
-              )
-              .run();
+              ),
+            ]);
             kernel.markD1SchemaReady(db, "authFailuresTable");
             return true;
           } catch (error) {
@@ -30289,8 +30272,8 @@ function defineAnalyticsCacheMethods(dependencies = {}, kernel = {}) {
       if (!initTask) {
         initTask = (async () => {
           try {
-            await db
-              .prepare(`CREATE TABLE IF NOT EXISTS ${kernel.CF_DASH_CACHE_TABLE} (
+            await db.batch([
+              db.prepare(`CREATE TABLE IF NOT EXISTS ${kernel.CF_DASH_CACHE_TABLE} (
                   cache_key TEXT PRIMARY KEY,
                   zone_id TEXT NOT NULL,
                   bucket_date TEXT NOT NULL,
@@ -30299,13 +30282,11 @@ function defineAnalyticsCacheMethods(dependencies = {}, kernel = {}) {
                   cached_at INTEGER NOT NULL,
                   expires_at INTEGER NOT NULL,
                   updated_at INTEGER NOT NULL
-                )`)
-              .run();
-            await db
-              .prepare(
+                )`),
+              db.prepare(
                 `CREATE INDEX IF NOT EXISTS idx_cf_dashboard_cache_expires_at ON ${kernel.CF_DASH_CACHE_TABLE} (expires_at)`,
-              )
-              .run();
+              ),
+            ]);
             kernel.markD1SchemaReady(db, "cfDashboardCacheTable");
             return true;
           } catch (error) {
@@ -30447,8 +30428,8 @@ function defineAnalyticsCacheMethods(dependencies = {}, kernel = {}) {
       if (!initTask) {
         initTask = (async () => {
           try {
-            await db
-              .prepare(`CREATE TABLE IF NOT EXISTS ${kernel.CF_RUNTIME_CACHE_TABLE} (
+            await db.batch([
+              db.prepare(`CREATE TABLE IF NOT EXISTS ${kernel.CF_RUNTIME_CACHE_TABLE} (
                   cache_key TEXT PRIMARY KEY,
                   cache_group TEXT NOT NULL,
                   resource_id TEXT NOT NULL,
@@ -30456,13 +30437,11 @@ function defineAnalyticsCacheMethods(dependencies = {}, kernel = {}) {
                   cached_at INTEGER NOT NULL,
                   expires_at INTEGER NOT NULL,
                   updated_at INTEGER NOT NULL
-                )`)
-              .run();
-            await db
-              .prepare(
+                )`),
+              db.prepare(
                 `CREATE INDEX IF NOT EXISTS idx_cf_runtime_cache_expires_at ON ${kernel.CF_RUNTIME_CACHE_TABLE} (expires_at)`,
-              )
-              .run();
+              ),
+            ]);
             kernel.markD1SchemaReady(db, "cfRuntimeCacheTable");
             return true;
           } catch (error) {
@@ -34228,31 +34207,24 @@ function defineSchemaRecordMethods(dependencies = {}, kernel = {}) {
       let initTask = databaseReadinessState.LogsBaseDbReady.get(db);
       if (!initTask) {
         initTask = (async () => {
-          await db
-            .prepare(
+          // 建表 + 4 个索引合并成一次往返。
+          await db.batch([
+            db.prepare(
               `CREATE TABLE IF NOT EXISTS ${kernel.LOGS_TABLE} (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp INTEGER NOT NULL, node_name TEXT NOT NULL, request_path TEXT NOT NULL, request_method TEXT NOT NULL, status_code INTEGER NOT NULL, response_time INTEGER NOT NULL, client_ip TEXT NOT NULL, inbound_colo TEXT, outbound_colo TEXT, user_agent TEXT, referer TEXT, category TEXT DEFAULT 'api', error_detail TEXT, detail_json TEXT, created_at TEXT NOT NULL, inbound_ip TEXT, outbound_ip TEXT)`,
-            )
-            .run();
-          await db
-            .prepare(
+            ),
+            db.prepare(
               `CREATE INDEX IF NOT EXISTS idx_proxy_logs_timestamp ON ${kernel.LOGS_TABLE} (timestamp)`,
-            )
-            .run();
-          await db
-            .prepare(
+            ),
+            db.prepare(
               `CREATE INDEX IF NOT EXISTS idx_proxy_logs_client_time ON ${kernel.LOGS_TABLE} (client_ip, timestamp DESC)`,
-            )
-            .run();
-          await db
-            .prepare(
+            ),
+            db.prepare(
               `CREATE INDEX IF NOT EXISTS idx_proxy_logs_status_time ON ${kernel.LOGS_TABLE} (status_code, timestamp)`,
-            )
-            .run();
-          await db
-            .prepare(
+            ),
+            db.prepare(
               `CREATE INDEX IF NOT EXISTS idx_proxy_logs_category_time ON ${kernel.LOGS_TABLE} (category, timestamp)`,
-            )
-            .run();
+            ),
+          ]);
           kernel.markD1SchemaReady(db, "logsBaseSchema");
           kernel.markD1SchemaReady(db, "logsTableExists");
           cacheState.LogsReadinessProbeCache.delete(db);
@@ -34418,16 +34390,26 @@ function defineSchemaBootstrapMethods(dependencies = {}, kernel = {}) {
                 },
               ]
             : [...runtimeSteps, ...logSteps];
-      const stepResults = [];
+      // 各 step 建的是互不相同的表，彼此没有依赖，可以并行；只有 FTS 例外：
+      // 它建在 proxy_logs 之上，必须等其余 step 完成后再跑，否则会撞上「表还不存在」。
+      const ftsStep = steps.find((step) => step.name === "ensureLogsFtsSchema") || null;
+      const parallelSteps = steps.filter((step) => step !== ftsStep);
+      const settled = await Promise.all(
+        parallelSteps.map(async (step) => {
+          const result = await step.run();
+          return { name: step.name, ready: result === true };
+        }),
+      );
+      const stepResults = [...settled];
       let ftsResult = {
         migratedRows: 0,
         droppedTriggers: 0,
         rebuilt: false,
         recreated: false,
       };
-      for (const step of steps) {
-        const result = await step.run();
-        if (step.name === "ensureLogsFtsSchema" && isPlainObject(result))
+      if (ftsStep) {
+        const result = await ftsStep.run();
+        if (isPlainObject(result))
           ftsResult = {
             migratedRows: Math.max(0, Number(result.migratedRows) || 0),
             droppedTriggers: Math.max(0, Number(result.droppedTriggers) || 0),
@@ -34435,9 +34417,8 @@ function defineSchemaBootstrapMethods(dependencies = {}, kernel = {}) {
             recreated: result.recreated === true,
           };
         stepResults.push({
-          name: step.name,
-          ready:
-            step.name === "ensureLogsFtsSchema" ? await kernel.isLogsFtsReady(db) : result === true,
+          name: ftsStep.name,
+          ready: await kernel.isLogsFtsReady(db),
         });
       }
       cacheState.LogsReadinessProbeCache.delete(db);
