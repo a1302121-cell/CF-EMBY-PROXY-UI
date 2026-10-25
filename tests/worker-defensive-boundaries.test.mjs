@@ -44,6 +44,7 @@ import {
   runSingleFlight,
   runWithConcurrency,
   resetRuntimeBindingStates,
+  resetAggregationLookupStates,
   sanitizeRuntimeConfig,
   serializeBoundedLogDetailJson,
   serveMedbItemsCounts,
@@ -3109,7 +3110,7 @@ test("proxy request state ignores query tokens that are unsafe for request heade
 });
 
 test("TMDB provider id search converts to a title and year request", async () => {
-  isolateState.TmdbLookupCache.clear();
+  resetAggregationLookupStates();
   const fetched = [];
   await withWorkerGlobals(
     {
@@ -3141,7 +3142,7 @@ test("TMDB provider id search converts to a title and year request", async () =>
 });
 
 test("TMDB provider id search uses the api key and only converts provider URLs", async () => {
-  isolateState.TmdbLookupCache.clear();
+  resetAggregationLookupStates();
   const fetched = [];
   await withWorkerGlobals(
     {
@@ -3175,7 +3176,7 @@ test("TMDB provider id search uses the api key and only converts provider URLs",
 });
 
 test("TMDB provider id search keeps the original URL when the lookup is rejected", async () => {
-  isolateState.TmdbLookupCache.clear();
+  resetAggregationLookupStates();
   await withWorkerGlobals(
     {
       fetch: async () => new Response("blocked", { status: 429 }),
@@ -3193,7 +3194,7 @@ test("TMDB provider id search keeps the original URL when the lookup is rejected
 });
 
 test("TMDB provider id search does nothing without a configured credential", async () => {
-  isolateState.TmdbLookupCache.clear();
+  resetAggregationLookupStates();
   let fetchCount = 0;
   await withWorkerGlobals(
     {
@@ -3213,7 +3214,7 @@ test("TMDB provider id search does nothing without a configured credential", asy
 });
 
 test("TMDB provider id search memoizes a successful lookup", async () => {
-  isolateState.TmdbLookupCache.clear();
+  resetAggregationLookupStates();
   let fetchCount = 0;
   await withWorkerGlobals(
     {
@@ -3239,7 +3240,7 @@ test("TMDB provider id search memoizes a successful lookup", async () => {
 });
 
 test("TMDB provider id search prefers runtime config credentials over env", async () => {
-  isolateState.TmdbLookupCache.clear();
+  resetAggregationLookupStates();
   const fetched = [];
   await withWorkerGlobals(
     {
@@ -3268,7 +3269,7 @@ test("TMDB provider id search prefers runtime config credentials over env", asyn
 });
 
 test("TMDB provider id search treats config credentials as a group over env", async () => {
-  isolateState.TmdbLookupCache.clear();
+  resetAggregationLookupStates();
   const fetched = [];
   await withWorkerGlobals(
     {
@@ -3300,7 +3301,7 @@ test("TMDB provider id search treats config credentials as a group over env", as
 });
 
 test("TMDB lookup warns once when account-settings credentials shadow env credentials", async () => {
-  isolateState.TmdbLookupCache.clear();
+  resetAggregationLookupStates();
   isolateState.TmdbCredentialOverrideWarned = false;
   const warnings = [];
   let fetchCount = 0;
@@ -3335,7 +3336,7 @@ test("TMDB lookup warns once when account-settings credentials shadow env creden
 });
 
 test("TMDB provider id search falls back to env credentials when config is empty", async () => {
-  isolateState.TmdbLookupCache.clear();
+  resetAggregationLookupStates();
   const fetched = [];
   await withWorkerGlobals(
     {
@@ -3362,7 +3363,7 @@ test("TMDB provider id search falls back to env credentials when config is empty
 });
 
 test("TMDB provider id search short-caches a rejected lookup", async () => {
-  isolateState.TmdbLookupCache.clear();
+  resetAggregationLookupStates();
   let fetchCount = 0;
   await withWorkerGlobals(
     {
@@ -3389,7 +3390,7 @@ test("TMDB provider id search short-caches a rejected lookup", async () => {
 });
 
 test("TMDB provider id search honors a configured metadata language", async () => {
-  isolateState.TmdbLookupCache.clear();
+  resetAggregationLookupStates();
   const fetched = [];
   await withWorkerGlobals(
     {
@@ -3425,7 +3426,7 @@ test("TMDB provider id search honors a configured metadata language", async () =
 });
 
 test("TMDB provider id search treats episode and season requests as tv lookups", async () => {
-  isolateState.TmdbLookupCache.clear();
+  resetAggregationLookupStates();
   const fetched = [];
   await withWorkerGlobals(
     {
@@ -3465,7 +3466,7 @@ test("TMDB provider id search treats episode and season requests as tv lookups",
 });
 
 test("todb aggregation rewrites a tmdb provider id into todbvs", async () => {
-  isolateState.TodbVideoIdCache.clear();
+  resetAggregationLookupStates();
   const fetched = [];
   await withWorkerGlobals(
     {
@@ -3498,7 +3499,7 @@ test("todb aggregation rewrites a tmdb provider id into todbvs", async () => {
 });
 
 test("todb aggregation accepts a single video id and deduplicates the list", async () => {
-  isolateState.TodbVideoIdCache.clear();
+  resetAggregationLookupStates();
   await withWorkerGlobals(
     {
       fetch: async () =>
@@ -3518,7 +3519,7 @@ test("todb aggregation accepts a single video id and deduplicates the list", asy
       const converted = await convertTmdbRequestFromUrl(source, { TODB_API_KEY: "todb-key" });
       assert.equal(converted.searchParams.get("todbvs"), "7,8");
 
-      isolateState.TodbVideoIdCache.clear();
+      resetAggregationLookupStates();
       const single = new Response(JSON.stringify({ video_id: 42 }), { status: 200 });
       globalThis.fetch = async () => single;
       const singleConverted = await convertTmdbRequestFromUrl(
@@ -3551,7 +3552,7 @@ test("todb aggregation tolerates the response field names and wrapper shapes", a
   ];
   let seq = 0;
   for (const [payload, expected] of cases) {
-    isolateState.TodbVideoIdCache.clear();
+    resetAggregationLookupStates();
     await withWorkerGlobals(
       { fetch: async () => new Response(JSON.stringify(payload), { status: 200 }) },
       async () => {
@@ -3567,7 +3568,7 @@ test("todb aggregation tolerates the response field names and wrapper shapes", a
 
 test("todb aggregation treats an unusable payload as a miss and falls back", async () => {
   for (const payload of [{}, { video_id: "abc" }, { items: [] }, [], null, "not json"]) {
-    isolateState.TodbVideoIdCache.clear();
+    resetAggregationLookupStates();
     await withWorkerGlobals(
       { fetch: async () => new Response(JSON.stringify(payload), { status: 200 }) },
       async () => {
@@ -3600,7 +3601,7 @@ test("todb aggregation keeps movie and series video ids apart", async () => {
     ["Season", "1001"],
   ];
   for (const [itemTypes, expected] of cases) {
-    isolateState.TodbVideoIdCache.clear();
+    resetAggregationLookupStates();
     await withWorkerGlobals(
       { fetch: async () => new Response(JSON.stringify(mixed), { status: 200 }) },
       async () => {
@@ -3641,8 +3642,7 @@ test("todb aggregation only filters by type when the payload actually carries on
     [[{ video_id: 500, video_type: "movie" }], "Series", null],
   ];
   for (const [payload, itemTypes, expected] of cases) {
-    isolateState.TodbVideoIdCache.clear();
-    isolateState.TmdbLookupCache.clear();
+    resetAggregationLookupStates();
     await withWorkerGlobals(
       {
         fetch: async (input) =>
@@ -3672,7 +3672,7 @@ test("todb aggregation only filters by type when the payload actually carries on
 });
 
 test("todb aggregation only resolves the first tmdb id in a multi-provider filter", async () => {
-  isolateState.TodbVideoIdCache.clear();
+  resetAggregationLookupStates();
   const lookedUp = [];
   await withWorkerGlobals(
     {
@@ -3694,7 +3694,7 @@ test("todb aggregation only resolves the first tmdb id in a multi-provider filte
 });
 
 test("todb aggregation memoizes a hit and short-caches a miss", async () => {
-  isolateState.TodbVideoIdCache.clear();
+  resetAggregationLookupStates();
   let hitCount = 0;
   await withWorkerGlobals(
     {
@@ -3715,7 +3715,7 @@ test("todb aggregation memoizes a hit and short-caches a miss", async () => {
     },
   );
 
-  isolateState.TodbVideoIdCache.clear();
+  resetAggregationLookupStates();
   let missCount = 0;
   await withWorkerGlobals(
     {
@@ -3740,7 +3740,7 @@ test("todb aggregation memoizes a hit and short-caches a miss", async () => {
 });
 
 test("todb aggregation collapses concurrent identical misses into one upstream call", async () => {
-  isolateState.TodbVideoIdCache.clear();
+  resetAggregationLookupStates();
   let fetchCount = 0;
   let releaseLookup;
   const lookupGate = new Promise((resolve) => {
@@ -3772,8 +3772,7 @@ test("todb aggregation collapses concurrent identical misses into one upstream c
 });
 
 test("auto aggregation falls back to todb when the TMDB title lookup misses", async () => {
-  isolateState.TodbVideoIdCache.clear();
-  isolateState.TmdbLookupCache.clear();
+  resetAggregationLookupStates();
   const fetched = [];
   await withWorkerGlobals(
     {
@@ -3804,7 +3803,7 @@ test("auto aggregation falls back to todb when the TMDB title lookup misses", as
 });
 
 test("todb aggregation prefers account-settings credentials and skips todb without one", async () => {
-  isolateState.TodbVideoIdCache.clear();
+  resetAggregationLookupStates();
   const seen = [];
   await withWorkerGlobals(
     {
@@ -3825,7 +3824,7 @@ test("todb aggregation prefers account-settings credentials and skips todb witho
   );
 
   // 没有 todb 凭据时不发 todb 请求，直接走 TMDB 标题搜索（这里也没配 TMDB 凭据，所以原样透传）。
-  isolateState.TodbVideoIdCache.clear();
+  resetAggregationLookupStates();
   let todbCalls = 0;
   await withWorkerGlobals(
     {
@@ -3848,7 +3847,7 @@ test("todb aggregation prefers account-settings credentials and skips todb witho
 });
 
 test("todb aggregation resolves episode and season requests as tv", async () => {
-  isolateState.TodbVideoIdCache.clear();
+  resetAggregationLookupStates();
   let fetchCount = 0;
   await withWorkerGlobals(
     {
@@ -3977,6 +3976,7 @@ test("peer aggregation merges sibling nodes and prefixes their item ids", async 
     JSON.stringify({
       name: "alpha",
       target: "https://alpha.example",
+      headers: { "X-Emby-Token": "configured-fixture-token" },
       tmdbAggregationEnabled: true,
       aggregationMode: "auto",
     }),
@@ -3986,6 +3986,7 @@ test("peer aggregation merges sibling nodes and prefixes their item ids", async 
     JSON.stringify({
       name: "beta",
       target: "https://beta.example",
+      headers: { "X-Emby-Token": "configured-fixture-token" },
       tmdbAggregationEnabled: true,
       aggregationMode: "auto",
     }),
@@ -4001,8 +4002,18 @@ test("peer aggregation merges sibling nodes and prefixes their item ids", async 
   await store.put(
     kernel.NODES_SUMMARY_INDEX_KEY,
     JSON.stringify([
-      { name: "alpha", target: "https://alpha.example", tmdbAggregationEnabled: true },
-      { name: "beta", target: "https://beta.example", tmdbAggregationEnabled: true },
+      {
+        name: "alpha",
+        target: "https://alpha.example",
+        headers: { "X-Emby-Token": "configured-fixture-token" },
+        tmdbAggregationEnabled: true,
+      },
+      {
+        name: "beta",
+        target: "https://beta.example",
+        headers: { "X-Emby-Token": "configured-fixture-token" },
+        tmdbAggregationEnabled: true,
+      },
       { name: "gamma", target: "https://gamma.example", tmdbAggregationEnabled: false },
     ]),
   );
@@ -4064,14 +4075,29 @@ test("peer aggregation passes an oversized own response through untouched", asyn
   for (const name of ["alpha", "beta"]) {
     await kv.put(
       `${kernel.PREFIX}${name}`,
-      JSON.stringify({ name, target: `https://${name}.example`, tmdbAggregationEnabled: true }),
+      JSON.stringify({
+        name,
+        target: `https://${name}.example`,
+        headers: { "X-Emby-Token": "configured-fixture-token" },
+        tmdbAggregationEnabled: true,
+      }),
     );
   }
   await kv.put(
     kernel.NODES_SUMMARY_INDEX_KEY,
     JSON.stringify([
-      { name: "alpha", target: "https://alpha.example", tmdbAggregationEnabled: true },
-      { name: "beta", target: "https://beta.example", tmdbAggregationEnabled: true },
+      {
+        name: "alpha",
+        target: "https://alpha.example",
+        headers: { "X-Emby-Token": "configured-fixture-token" },
+        tmdbAggregationEnabled: true,
+      },
+      {
+        name: "beta",
+        target: "https://beta.example",
+        headers: { "X-Emby-Token": "configured-fixture-token" },
+        tmdbAggregationEnabled: true,
+      },
     ]),
   );
   const env = { ENI_KV: kv, __CONFIG_CACHE_NAMESPACE: `peer-oversized-${Date.now()}` };
@@ -4139,6 +4165,7 @@ test("peer aggregation keeps the request alive when a peer is unavailable", asyn
       JSON.stringify({
         name: "alpha",
         target: "https://alpha.example",
+        headers: { "X-Emby-Token": "configured-fixture-token" },
         tmdbAggregationEnabled: true,
       }),
     );
@@ -4148,6 +4175,7 @@ test("peer aggregation keeps the request alive when a peer is unavailable", asyn
         JSON.stringify({
           name: "beta",
           target: "https://beta.example",
+          headers: { "X-Emby-Token": "configured-fixture-token" },
           tmdbAggregationEnabled: true,
         }),
       );
@@ -4155,8 +4183,18 @@ test("peer aggregation keeps the request alive when a peer is unavailable", asyn
     await kv.put(
       kernel.NODES_SUMMARY_INDEX_KEY,
       JSON.stringify([
-        { name: "alpha", target: "https://alpha.example", tmdbAggregationEnabled: true },
-        { name: "beta", target: "https://beta.example", tmdbAggregationEnabled: true },
+        {
+          name: "alpha",
+          target: "https://alpha.example",
+          headers: { "X-Emby-Token": "configured-fixture-token" },
+          tmdbAggregationEnabled: true,
+        },
+        {
+          name: "beta",
+          target: "https://beta.example",
+          headers: { "X-Emby-Token": "configured-fixture-token" },
+          tmdbAggregationEnabled: true,
+        },
       ]),
     );
     const env = { ENI_KV: kv, __CONFIG_CACHE_NAMESPACE: `peer-down-${label}-${Date.now()}` };
@@ -4225,6 +4263,7 @@ test("peer aggregation only fans out for requests carrying client credentials", 
           name,
           target: `https://${name}.example`,
           secret: name === "alpha" ? testCase.nodeSecret || "" : "",
+          headers: { "X-Emby-Token": "configured-fixture-token" },
           tmdbAggregationEnabled: true,
           aggregationMode: "auto",
         }),
@@ -4233,8 +4272,18 @@ test("peer aggregation only fans out for requests carrying client credentials", 
     await caseKv.kv.put(
       kernel.NODES_SUMMARY_INDEX_KEY,
       JSON.stringify([
-        { name: "alpha", target: "https://alpha.example", tmdbAggregationEnabled: true },
-        { name: "beta", target: "https://beta.example", tmdbAggregationEnabled: true },
+        {
+          name: "alpha",
+          target: "https://alpha.example",
+          headers: { "X-Emby-Token": "configured-fixture-token" },
+          tmdbAggregationEnabled: true,
+        },
+        {
+          name: "beta",
+          target: "https://beta.example",
+          headers: { "X-Emby-Token": "configured-fixture-token" },
+          tmdbAggregationEnabled: true,
+        },
       ]),
     );
     const calls = [];
@@ -4286,6 +4335,7 @@ test("peer aggregation reroutes a prefixed item id back to its owning node", asy
     JSON.stringify({
       name: "alpha",
       target: "https://alpha.example",
+      headers: { "X-Emby-Token": "configured-fixture-token" },
       tmdbAggregationEnabled: true,
     }),
   );
@@ -4294,14 +4344,25 @@ test("peer aggregation reroutes a prefixed item id back to its owning node", asy
     JSON.stringify({
       name: "beta",
       target: "https://beta.example",
+      headers: { "X-Emby-Token": "configured-fixture-token" },
       tmdbAggregationEnabled: true,
     }),
   );
   await kv.put(
     kernel.NODES_SUMMARY_INDEX_KEY,
     JSON.stringify([
-      { name: "alpha", target: "https://alpha.example", tmdbAggregationEnabled: true },
-      { name: "beta", target: "https://beta.example", tmdbAggregationEnabled: true },
+      {
+        name: "alpha",
+        target: "https://alpha.example",
+        headers: { "X-Emby-Token": "configured-fixture-token" },
+        tmdbAggregationEnabled: true,
+      },
+      {
+        name: "beta",
+        target: "https://beta.example",
+        headers: { "X-Emby-Token": "configured-fixture-token" },
+        tmdbAggregationEnabled: true,
+      },
     ]),
   );
   const env = { ENI_KV: kv, __CONFIG_CACHE_NAMESPACE: `peer-reroute-${Date.now()}` };
@@ -4374,8 +4435,7 @@ test("node normalization keeps the aggregation flag and mode on the strict value
 
 test("aggregation modes gate the todb lookup and the title fallback", async () => {
   const run = async (mode, payload) => {
-    isolateState.TodbVideoIdCache.clear();
-    isolateState.TmdbLookupCache.clear();
+    resetAggregationLookupStates();
     const fetched = [];
     let converted = null;
     await withWorkerGlobals(
@@ -10752,6 +10812,7 @@ function createPlaybackVersionFixture({
       JSON.stringify({
         name: node.name,
         target: node.target,
+        headers: { "X-Emby-Token": "configured-fixture-token" },
         tmdbAggregationEnabled: true,
         aggregationMode: "auto",
       }),
@@ -10759,7 +10820,13 @@ function createPlaybackVersionFixture({
   }
   kv.put(
     kernel.NODES_SUMMARY_INDEX_KEY,
-    JSON.stringify(nodes.map((node) => ({ ...node, tmdbAggregationEnabled: true }))),
+    JSON.stringify(
+      nodes.map((node) => ({
+        ...node,
+        headers: { "X-Emby-Token": "configured-fixture-token" },
+        tmdbAggregationEnabled: true,
+      })),
+    ),
   );
   const calls = [];
   const json = (body) =>
@@ -10770,6 +10837,7 @@ function createPlaybackVersionFixture({
     const isOwn = href.startsWith("https://alpha.example");
     const isPeer = peers.some((name) => href.startsWith(`https://${name}.example`));
     if (!isOwn && !isPeer) return new Response("{}", { status: 404 });
+    if (isPeer && /\/Users\/Me/.test(href)) return json({ Id: "peer-user" });
     if (/\/Items\/[^/]+\/PlaybackInfo/i.test(href)) return json(isOwn ? ownPlayback : peerPlayback);
     // peer 侧搜索（/Items?Recursive=...）必须先判：它没有 /Items/{id} 段。
     if (/\/Items\?/i.test(href)) return json({ Items: [peerItem], TotalRecordCount: 1 });
@@ -10926,6 +10994,7 @@ test("playback version aggregation keeps the response intact when a peer fails",
       JSON.stringify({
         name: node.name,
         target: node.target,
+        headers: { "X-Emby-Token": "configured-fixture-token" },
         tmdbAggregationEnabled: true,
         aggregationMode: "auto",
       }),
@@ -10933,7 +11002,13 @@ test("playback version aggregation keeps the response intact when a peer fails",
   }
   kv.put(
     kernel.NODES_SUMMARY_INDEX_KEY,
-    JSON.stringify(nodes.map((node) => ({ ...node, tmdbAggregationEnabled: true }))),
+    JSON.stringify(
+      nodes.map((node) => ({
+        ...node,
+        headers: { "X-Emby-Token": "configured-fixture-token" },
+        tmdbAggregationEnabled: true,
+      })),
+    ),
   );
   const json = (body) =>
     new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" } });
@@ -10999,6 +11074,7 @@ test("playback version aggregation matches an episode by series and index", asyn
       JSON.stringify({
         name: node.name,
         target: node.target,
+        headers: { "X-Emby-Token": "configured-fixture-token" },
         tmdbAggregationEnabled: true,
         aggregationMode: "auto",
       }),
@@ -11006,7 +11082,13 @@ test("playback version aggregation matches an episode by series and index", asyn
   }
   kv.put(
     kernel.NODES_SUMMARY_INDEX_KEY,
-    JSON.stringify(nodes.map((node) => ({ ...node, tmdbAggregationEnabled: true }))),
+    JSON.stringify(
+      nodes.map((node) => ({
+        ...node,
+        headers: { "X-Emby-Token": "configured-fixture-token" },
+        tmdbAggregationEnabled: true,
+      })),
+    ),
   );
   const json = (body) =>
     new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" } });
@@ -11060,6 +11142,7 @@ test("playback version aggregation does not merge the same episode number from a
       JSON.stringify({
         name: node.name,
         target: node.target,
+        headers: { "X-Emby-Token": "configured-fixture-token" },
         tmdbAggregationEnabled: true,
         aggregationMode: "auto",
       }),
@@ -11067,7 +11150,13 @@ test("playback version aggregation does not merge the same episode number from a
   }
   kv.put(
     kernel.NODES_SUMMARY_INDEX_KEY,
-    JSON.stringify(nodes.map((node) => ({ ...node, tmdbAggregationEnabled: true }))),
+    JSON.stringify(
+      nodes.map((node) => ({
+        ...node,
+        headers: { "X-Emby-Token": "configured-fixture-token" },
+        tmdbAggregationEnabled: true,
+      })),
+    ),
   );
   const json = (body) =>
     new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" } });
@@ -11128,6 +11217,7 @@ test("episode list requests translate the show id before fanning out", async () 
       JSON.stringify({
         name: node.name,
         target: node.target,
+        headers: { "X-Emby-Token": "configured-fixture-token" },
         tmdbAggregationEnabled: true,
         aggregationMode: "auto",
       }),
@@ -11135,7 +11225,13 @@ test("episode list requests translate the show id before fanning out", async () 
   }
   kv.put(
     kernel.NODES_SUMMARY_INDEX_KEY,
-    JSON.stringify(nodes.map((node) => ({ ...node, tmdbAggregationEnabled: true }))),
+    JSON.stringify(
+      nodes.map((node) => ({
+        ...node,
+        headers: { "X-Emby-Token": "configured-fixture-token" },
+        tmdbAggregationEnabled: true,
+      })),
+    ),
   );
   const calls = [];
   const json = (body) =>
@@ -11147,9 +11243,14 @@ test("episode list requests translate the show id before fanning out", async () 
     const isPeer = href.startsWith("https://beta.example");
     if (!isOwn && !isPeer) return new Response("{}", { status: 404 });
     // 本节点：查剧集详情拿剧名。
-    if (isOwn && /\/Shows\/326659(\?|$)/.test(href)) {
-      return json({ Id: "326659", Name: "某剧", Type: "Series" });
+    if (isOwn && /\/Items\/326659(\?|$)/.test(href)) {
+      return json({ Id: "326659", Name: "某剧", Type: "Series", ProductionYear: 2020 });
     }
+    if (isOwn && /\/Items\/176016(\?|$)/.test(href))
+      return json({ Id: "176016", Type: "Season", SeriesId: "326659", IndexNumber: 1 });
+    if (isPeer && /\/Users\/Me/.test(href)) return json({ Id: "peer-user" });
+    if (isPeer && /\/Shows\/peer-show-9\/Seasons/.test(href))
+      return json({ Items: [{ Id: "peer-season", Type: "Season", IndexNumber: 1 }] });
     // 本节点：剧集列表。
     if (isOwn && /\/Shows\/326659\/Episodes/.test(href)) {
       return json({
@@ -11159,7 +11260,9 @@ test("episode list requests translate the show id before fanning out", async () 
     }
     // peer：按剧名搜 Series，返回它自己的剧集 Id。
     if (isPeer && /\/Items\?/.test(href)) {
-      return json({ Items: [{ Id: "peer-show-9", Name: "某剧", Type: "Series" }] });
+      return json({
+        Items: [{ Id: "peer-show-9", Name: "某剧", Type: "Series", ProductionYear: 2020 }],
+      });
     }
     // peer：用它自己的剧集 Id 请求剧集列表。
     if (isPeer && /\/Shows\/peer-show-9\/Episodes/.test(href)) {
@@ -11191,8 +11294,8 @@ test("episode list requests translate the show id before fanning out", async () 
       /beta\.example.*\/Shows\/peer-show-9\/Episodes/.test(href),
     );
     assert.ok(peerEpisodesCall, "peer 应该用翻译后的剧集 Id 请求剧集列表");
-    assert.doesNotMatch(peerEpisodesCall, /SeasonId=/);
-    assert.doesNotMatch(peerEpisodesCall, /UserId=/);
+    assert.match(peerEpisodesCall, /SeasonId=peer-season/);
+    assert.match(peerEpisodesCall, /UserId=peer-user/);
     // 绝不能把本节点剧集 Id 原样发给 peer。
     assert.ok(
       !calls.some((href) => /beta\.example.*\/Shows\/326659\//.test(href)),

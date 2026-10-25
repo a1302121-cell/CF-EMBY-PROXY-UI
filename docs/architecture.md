@@ -77,6 +77,8 @@ flowchart TD
 
 节点代理需要特别注意播放关键路径：PlaybackInfo、manifest、segment、视频下载和播放会话路径会走更严格的 body 上限、缓存分区、重写和生命周期控制；相关代码位于 `worker/runtime/proxy/playback/` 及 facade 中的 `proxy/playback` region。
 
+TMDB 查询转换、跨节点鉴权与搜索范围映射见 [`tmdb-aggregation.md`](tmdb-aggregation.md)。
+
 ## 4. 管理端 API 与管理端 HTML
 
 ### 路由和认证

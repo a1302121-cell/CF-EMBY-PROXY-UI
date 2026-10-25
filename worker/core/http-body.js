@@ -16,7 +16,7 @@ export function decodeBufferedBodyText(buffer) {
   }
 }
 
-export async function readResponseBytesWithLimit(response, maxBytes) {
+export async function readResponseBytesWithLimit(response, maxBytes, signal) {
   const limit = Math.max(0, Math.floor(Number(maxBytes) || 0));
   const declaredBytes = parseContentLengthHeader(response?.headers?.get?.("Content-Length"));
   if (Number.isFinite(declaredBytes) && declaredBytes > limit) {
@@ -36,11 +36,20 @@ export async function readResponseBytesWithLimit(response, maxBytes) {
       exceeded: false,
     };
   const reader = response.body.getReader();
+  const cancel = () => {
+    try {
+      Promise.resolve(reader.cancel()).catch(() => {});
+    } catch {}
+  };
+  signal?.addEventListener("abort", cancel, { once: true });
+  if (signal?.aborted) cancel();
   const chunks = [];
   let totalBytes = 0;
   try {
     while (true) {
       const { done, value } = await reader.read();
+      if (signal?.aborted)
+        return { bodyBytes: new Uint8Array(0), bytes: totalBytes, exceeded: true };
       if (done) break;
       const chunk = value instanceof Uint8Array ? value : new Uint8Array(value || 0);
       if (totalBytes + chunk.byteLength > limit) {
@@ -63,6 +72,7 @@ export async function readResponseBytesWithLimit(response, maxBytes) {
       exceeded: true,
     };
   } finally {
+    signal?.removeEventListener("abort", cancel);
     try {
       reader.releaseLock();
     } catch {}
