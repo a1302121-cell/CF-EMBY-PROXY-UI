@@ -16987,10 +16987,32 @@ function $h(n = {}, e = {}) {
               headers: c,
               signal: u.signal
             });
-            if (!h?.ok) continue;
+            if (!h?.ok) {
+              console.log("[peer_fanout_probe]", {
+                peer: String(m?.name || ""),
+                sentPath: String(p.pathname || ""),
+                sentQuery: String(p.search || "").slice(0, 160),
+                status: Number(h?.status || 0),
+                items: "n/a"
+              });
+              continue;
+            }
             const g = await Ga(h, ua);
-            if (k(g) && Array.isArray(g.Items)) return g;
-          } catch {
+            if (k(g) && Array.isArray(g.Items))
+              return console.log("[peer_fanout_probe]", {
+                peer: String(m?.name || ""),
+                sentPath: String(p.pathname || ""),
+                sentQuery: String(p.search || "").slice(0, 160),
+                status: Number(h.status),
+                items: g.Items.length
+              }), g;
+          } catch (h) {
+            console.log("[peer_fanout_probe]", {
+              peer: String(m?.name || ""),
+              sentPath: String(p.pathname || ""),
+              status: "throw",
+              items: String(h?.message || h).slice(0, 80)
+            });
             continue;
           }
         }
@@ -17025,6 +17047,15 @@ function $h(n = {}, e = {}) {
         if (!(!k(h) || !Array.isArray(h.Items)))
           for (const g of h.Items)
             k(g) && (u.push(Ro(g, m.name)), f += 1);
+      }), console.log("[peer_list_merge]", {
+        path: String(r?.proxyPath || ""),
+        peers: s.length,
+        ownItems: l.Items.length,
+        added: f,
+        peerItems: s.map((m, p) => {
+          const h = d[p];
+          return `${m.name}:${Array.isArray(h?.Items) ? h.Items.length : "null"}`;
+        }).join(",")
       }), f ? {
         payload: {
           ...l,

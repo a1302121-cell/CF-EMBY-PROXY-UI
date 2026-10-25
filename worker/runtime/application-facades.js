@@ -27238,13 +27238,40 @@ function definePeerAggregationMethods(dependencies = {}, kernel = {}) {
               headers,
               signal: controller.signal,
             });
-            if (!response?.ok) continue;
+            // 诊断：记录实际发给 peer 的路径与 peer 的回执。
+            // 用来确认「扇出时原样转发本节点私有编号（剧集 Id / SeasonId / ParentId）
+            // 导致 peer 返回空或 404」这个判断。
+            if (!response?.ok) {
+              console.log("[peer_fanout_probe]", {
+                peer: String(targetRecord?.name || ""),
+                sentPath: String(upstreamUrl.pathname || ""),
+                sentQuery: String(upstreamUrl.search || "").slice(0, 160),
+                status: Number(response?.status || 0),
+                items: "n/a",
+              });
+              continue;
+            }
             const payload = await readPeerAggregationJson(
               response,
               PEER_AGGREGATION_BODY_MAX_BYTES,
             );
-            if (isPlainObject(payload) && Array.isArray(payload.Items)) return payload;
-          } catch {
+            if (isPlainObject(payload) && Array.isArray(payload.Items)) {
+              console.log("[peer_fanout_probe]", {
+                peer: String(targetRecord?.name || ""),
+                sentPath: String(upstreamUrl.pathname || ""),
+                sentQuery: String(upstreamUrl.search || "").slice(0, 160),
+                status: Number(response.status),
+                items: payload.Items.length,
+              });
+              return payload;
+            }
+          } catch (error) {
+            console.log("[peer_fanout_probe]", {
+              peer: String(targetRecord?.name || ""),
+              sentPath: String(upstreamUrl.pathname || ""),
+              status: "throw",
+              items: String(error?.message || error).slice(0, 80),
+            });
             continue;
           }
         }
@@ -27306,6 +27333,20 @@ function definePeerAggregationMethods(dependencies = {}, kernel = {}) {
           mergedItems.push(rewritePeerAggregationIds(item, peer.name));
           addedCount += 1;
         }
+      });
+      // 列表级聚合的诊断日志。这条链路此前完全静默，线上无法判断「没聚合」
+      // 到底是路径没命中、peer 没数据，还是合并被跳过。
+      console.log("[peer_list_merge]", {
+        path: String(execution?.proxyPath || ""),
+        peers: peers.length,
+        ownItems: ownPayload.Items.length,
+        added: addedCount,
+        peerItems: peers
+          .map((peer, i) => {
+            const payload = peerPayloads[i];
+            return `${peer.name}:${Array.isArray(payload?.Items) ? payload.Items.length : "null"}`;
+          })
+          .join(","),
       });
       // 没有 peer 结果可加：返回 null，让调用方走原始流。
       if (!addedCount) return null;
