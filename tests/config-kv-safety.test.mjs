@@ -134,24 +134,27 @@ test("applyKvMutationsWithRollback reads rollback snapshots in parallel and skip
   // 目标本来就不存在的纯 delete 不需要快照（回滚动作就是"保持不存在"）。
   const { kv } = createKv({ keep: "old-keep", overwrite: "old-overwrite" });
   const reads = [];
+  // 用「同时在场」而不是耗时判断并行：串行实现里第一个 get 结束时第二个还没开始。
+  let inFlight = 0;
+  let maxInFlight = 0;
   const originalGet = kv.get;
   kv.get = async (key, options) => {
     reads.push(key);
+    inFlight += 1;
+    maxInFlight = Math.max(maxInFlight, inFlight);
     await new Promise((resolve) => setTimeout(resolve, 5));
+    inFlight -= 1;
     return originalGet(key, options);
   };
 
-  const startedAt = Date.now();
   await kernel.applyKvMutationsWithRollback(kv, [
     { type: "put", key: "keep", value: "new-keep" },
     { type: "put", key: "overwrite", value: "new-overwrite" },
     { type: "delete", key: "absent-a", value: "" },
     { type: "delete", key: "absent-b", value: "" },
   ]);
-  const elapsed = Date.now() - startedAt;
 
-  // 两次快照读各 5ms：并行应接近 5ms，串行会是 10ms 以上。
-  assert.ok(elapsed < 15, `快照读应并行，实际 ${elapsed}ms`);
+  assert.equal(maxInFlight, 2, "两个快照读应同时在飞");
   assert.deepEqual(reads.sort(), ["keep", "overwrite"], "纯 delete 不存在的 key 不应读取");
 });
 
