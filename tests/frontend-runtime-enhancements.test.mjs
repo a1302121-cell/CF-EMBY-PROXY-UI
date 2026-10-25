@@ -156,6 +156,130 @@ test("config save enhancement adds an idempotency token", async () => {
   assert.equal(messages.length, 0);
 });
 
+// 模板是压缩产物，无法整体执行。按「方法签名 → 下一个方法签名」切片，
+// 去掉结尾的逗号后即可作为函数表达式求值，从而测真实语义而不是源码字面量。
+function loadTemplateMethod(template, signature, nextSignature) {
+  const start = template.indexOf(signature);
+  assert.notEqual(start, -1, `模板里找不到 ${signature}`);
+  const next = template.indexOf(nextSignature, start + signature.length);
+  assert.notEqual(next, -1, `模板里找不到 ${nextSignature}`);
+  // 切片形如 `name(args){...}` 或 `async name(args){...}`：拼成对象字面量再取出方法，
+  // 避免 `{` 被当成语句块。对象方法本身支持 async，无需剥离关键字。
+  const body = template.slice(start, next).replace(/,\s*$/, "");
+  const name = body
+    .slice(0, body.indexOf("("))
+    .replace(/^async\s+/, "")
+    .trim();
+  assert.ok(name, `无法解析方法名: ${signature}`);
+  return new Function(`return ({${body}})[${JSON.stringify(name)}];`)();
+}
+
+const SYNC_FORM_SIGNATURE = "syncSettingsFormFromRuntimeConfig(r=this.runtimeConfig){";
+const SYNC_FORM_NEXT = "handleDailyReportEnabledToggle(){";
+const FINALIZE_SIGNATURE = "async finalizePersistedSettings(r,o={}){";
+const FINALIZE_NEXT = "async prepareConfigChangePreview(";
+
+function createSyncFormApp(overrides = {}) {
+  return {
+    adminRevisions: { configRevision: "rev-fresh" },
+    runtimeStatus: {},
+    settingsExperienceMode: "expert",
+    settingsFormBaseRevision: "rev-stale",
+    nodes: [],
+    appliedSections: [],
+    sanitizeRuntimeConfigCompat: (value) => value,
+    applyConfigSectionToForm(section) {
+      this.appliedSections.push(section);
+    },
+    syncReleaseSourcePreviewInSettingsForm() {},
+    normalizeSettingsNumberInputs() {},
+    syncProxySettingsGuardrails() {},
+    syncSourceDirectNodesSelection() {},
+    getMainVideoStreamShortcutSelection: () => [],
+    ...overrides,
+  };
+}
+
+test("settings form revision follows the latest adminRevisions", async () => {
+  const template = await readFile(
+    new URL("../frontend/admin-runtime.template.html", import.meta.url),
+    "utf8",
+  );
+  const syncForm = loadTemplateMethod(template, SYNC_FORM_SIGNATURE, SYNC_FORM_NEXT);
+  const app = createSyncFormApp();
+
+  syncForm.call(app, { rateLimitRpm: 20 });
+
+  // 保存用的是 settingsFormBaseRevision，它必须来自刚下发的 revision，
+  // 否则下一次保存会拿旧基线做乐观锁校验，误报 CONFIG_REVISION_CONFLICT。
+  assert.equal(app.settingsFormBaseRevision, "rev-fresh");
+  for (const section of [
+    "ui",
+    "dns",
+    "proxy",
+    "cache",
+    "security",
+    "logs",
+    "monitoring",
+    "account",
+  ])
+    assert.ok(app.appliedSections.includes(section), `应刷新 ${section} 分区`);
+});
+
+test("settings form revision falls back to empty when revisions are missing", async () => {
+  const template = await readFile(
+    new URL("../frontend/admin-runtime.template.html", import.meta.url),
+    "utf8",
+  );
+  const syncForm = loadTemplateMethod(template, SYNC_FORM_SIGNATURE, SYNC_FORM_NEXT);
+  const app = createSyncFormApp({ adminRevisions: null });
+
+  syncForm.call(app, {});
+
+  // 缺失时清空而不是沿用旧值：空基线等于「无期望版本」，不会误判冲突。
+  assert.equal(app.settingsFormBaseRevision, "");
+});
+
+test("settings save refreshes the form without re-fetching settings", async () => {
+  const template = await readFile(
+    new URL("../frontend/admin-runtime.template.html", import.meta.url),
+    "utf8",
+  );
+  const finalize = loadTemplateMethod(template, FINALIZE_SIGNATURE, FINALIZE_NEXT);
+
+  const calls = [];
+  const app = {
+    applyRuntimeConfig(config) {
+      calls.push(["applyRuntimeConfig", config]);
+    },
+    syncSettingsFormFromRuntimeConfig(config) {
+      calls.push(["syncSettingsFormFromRuntimeConfig", config]);
+    },
+    async loadActiveSettingsSidecars() {
+      calls.push(["loadActiveSettingsSidecars"]);
+    },
+    async loadSettings() {
+      calls.push(["loadSettings"]);
+    },
+    showMessage(message, options) {
+      calls.push(["showMessage", options?.tone]);
+    },
+  };
+
+  await finalize.call(app, { rateLimitRpm: 20 }, { successMessage: "ok" });
+
+  const names = calls.map(([name]) => name);
+  assert.deepEqual(names, [
+    "applyRuntimeConfig",
+    "syncSettingsFormFromRuntimeConfig",
+    "loadActiveSettingsSidecars",
+    "showMessage",
+  ]);
+  // saveConfig 的响应已经带回 config 与 revisions，再拉一次只是多一个 HTTP 往返。
+  assert.ok(!names.includes("loadSettings"), "保存成功后不应重新拉取设置");
+  assert.equal(calls.at(-1)[1], "success");
+});
+
 test("settings save sends the revision the form was built from", async () => {
   const template = await readFile(
     new URL("../frontend/admin-runtime.template.html", import.meta.url),

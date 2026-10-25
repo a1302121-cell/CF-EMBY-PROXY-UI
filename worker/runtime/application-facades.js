@@ -29393,6 +29393,8 @@ function defineAnalyticsStatsMethods(dependencies = {}, kernel = {}) {
         await db.prepare(`DROP TABLE IF EXISTS ${kernel.LOGS_FTS_TABLE}`).run();
         recreated = true;
       }
+      // 注意顺序：forceRecreate 时必须先删旧触发器，再建虚表与触发器，
+      // 否则旧触发器会指向被 DROP 掉的虚表。因此这里不能把两句合进同一个 batch。
       await db
         .prepare(
           `CREATE VIRTUAL TABLE IF NOT EXISTS ${kernel.LOGS_FTS_TABLE} USING fts5(node_name, request_path, user_agent, error_detail, detail_json, content='${kernel.LOGS_TABLE}', content_rowid='id', tokenize='unicode61')`,
