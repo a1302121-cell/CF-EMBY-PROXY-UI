@@ -7,11 +7,13 @@
 ## V20.0（2026-10-25）
 
 - **聚合层撤回**：EMOS 聚合、三档聚合策略（`auto` / `emos` / `tmdb`）、todb 凭证与 `todbvs` 改写、跨节点列表 / 剧集 / 版本聚合全部移除。`worker/`、`worker.js`、`worker/core/http-body.js` 与 `tests/worker-defensive-boundaries.test.mjs` 重新对齐远程主线；`worker/runtime/proxy/aggregation/` 整个目录删除。
-- **兼容字段保留**：`tmdbApiReadToken`、`tmdbApiV3Key`、`tmdbLanguage` 仍在配置模型、脱敏规则与备份往返里，`convertTmdbRequestFromUrl` 也保留；只是管理端不再提供聚合开关、聚合策略下拉与 todb API Key 输入框。
+- **TMDB 查询转换一并移除**：`convertTmdbRequestFromUrl`、`buildTmdbConvertedRequestUrl`、`TmdbLookupCache`、`TmdbCredentialOverrideWarned` 与 `TMDB_LOOKUP_*` 常量全部删除，节点请求不再把 `AnyProviderIdEquals=tmdb.<id>` 改写成标题 + 年份查询。管理端也不再提供聚合开关、聚合策略下拉与 todb API Key 输入框。
 - **管理端交付**：4 个首屏 CDN 脚本改为同源摇树交付，`frontend/vendor/` 随 `ASSETS` 部署到 `dist/vendor/`，Worker 按 `assetKey` 改写 URL 并代理。内置 ASSETS 壳补上 vendor 改写与 `bundled` 投递分支（此前只有上传壳与远程 release 壳生效，断网时内置壳会白屏），`__warm` 同步覆盖内置壳的 4 个资产。
 - **管理端界面**：颜色统一走 CSS 变量，节点面板与弹窗按同一套间距重排；入口模式与访问密钥收进高级设置；「继承全局」选项直接显示当前全局值；标签颜色改为自绘下拉；首屏 4 个 CDN 脚本改同源并摇树。
 - **工程**：新增 Playwright 真浏览器冒烟（登录、5 视图切换、断网同源启动）与 5 视图 × 4 主题的视觉基线；仓库换行统一为 LF，`worker.js` 产物比较前归一换行；`frontend/src/` 继续作为不参与构建的参考源。
-- **升级注意**：节点级 `tmdbAggregationEnabled` / `aggregationMode` 仍是 Worker 的已知字段，但管理端已没有写入入口，界面保存节点时不会带上它们；需要关闭已开启聚合的节点时，请直接改 KV 里的 `node:<名称>`（把 `tmdbAggregationEnabled` 置为 `false`）。跨节点列表、剧集与版本聚合已不存在，依赖这些能力的部署需要回退到 V19.9 的产物。
+- **兼容字段保留**：`tmdbApiReadToken`、`tmdbApiV3Key`、`tmdbLanguage` 仍在配置模型、`CONFIG_SECRET_FIELDS` 脱敏规则与备份往返里，值不会被丢弃，但已没有任何代码读取它们。节点级 `tmdbAggregationEnabled` 同样保留字段名与布尔类型，读取节点时一律清空为 `false` 并写回，保存时不再从旧节点继承 `true`；`aggregationMode` 已从 Worker 字段表中消失。
+- **medb 计数保留**：`emos` 节点（或线路指向 `video.emos.best`）的 `GET /emby/Items/Counts` 仍由 `medb.lat` 的统计替换，这与聚合无关，属于远程主线自带的展示适配。
+- **升级注意**：跨节点列表、剧集与版本聚合已不存在，依赖这些能力的部署需要回退到 V19.9 的产物。升级到 V20.0 后第一次读取节点列表会把历史 `tmdbAggregationEnabled: true` 写回为 `false`，这是预期行为，不需要手工改 KV。
 
 ## V19.9（2026-10-19）
 

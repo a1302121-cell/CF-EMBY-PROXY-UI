@@ -40,3 +40,6 @@ frontend/dist/.vite/
 /TMDB版本.js
 /tmdb-search-converter.js
 /worker代理与TMDB聚合原理拆解.md
+
+# 一次性本地备份（TMDB 转换移除前），不随仓库分发
+/.backup-tmdb/

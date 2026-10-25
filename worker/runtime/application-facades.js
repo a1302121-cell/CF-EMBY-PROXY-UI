@@ -96,7 +96,6 @@ var cacheState = {
   PlaybackInfoResponseCache: /* @__PURE__ */ new Map(),
   PlaybackProgressRelay: /* @__PURE__ */ new Map(),
   MetadataPrewarmTasks: /* @__PURE__ */ new Map(),
-  TmdbLookupCache: /* @__PURE__ */ new Map(),
   MedbItemsCountsCache: /* @__PURE__ */ new Map(),
   DashboardMonthlyTrafficCache: /* @__PURE__ */ new Map(),
   SingleFlightTasks: /* @__PURE__ */ new Map(),
@@ -144,7 +143,6 @@ var runtimeState = {
   OpsStatusWriteChain: Promise.resolve(),
   NodeIndexMutationChain: Promise.resolve(),
   InitCheckWarnedFingerprints: /* @__PURE__ */ new Set(),
-  TmdbCredentialOverrideWarned: false,
 };
 for (const key of ["CleanupState"])
   Object.defineProperty(runtimeState, key, {
@@ -20952,9 +20950,11 @@ function defineNodeMutationMethods(dependencies = {}, kernel = {}) {
         n.displayName = "";
         changed = true;
       }
-      const tmdbAggregationEnabled = n.tmdbAggregationEnabled === true;
-      if (n.tmdbAggregationEnabled !== tmdbAggregationEnabled) changed = true;
-      n.tmdbAggregationEnabled = tmdbAggregationEnabled;
+      // TMDB 查询转换已移除：字段保留为兼容占位，读取时一律清空并写回，旧节点不会留下 true。
+      if (n.tmdbAggregationEnabled !== false) {
+        n.tmdbAggregationEnabled = false;
+        changed = true;
+      }
       const normalizedEntryMode = normalizeNodeEntryMode(n.entryMode);
       if (String(n.entryMode || "") !== normalizedEntryMode) changed = true;
       n.entryMode = normalizedEntryMode;
@@ -21137,10 +21137,8 @@ function defineNodeMutationMethods(dependencies = {}, kernel = {}) {
           rawNode?.displayName !== void 0
             ? String(rawNode.displayName || "").trim()
             : existingNode.displayName || "",
-        tmdbAggregationEnabled:
-          rawNode?.tmdbAggregationEnabled !== void 0
-            ? rawNode.tmdbAggregationEnabled === true
-            : existingNode.tmdbAggregationEnabled === true,
+        // 兼容字段：写入恒为 false，且不再从 existingNode 继承历史 true。
+        tmdbAggregationEnabled: false,
         playbackInfoMode:
           rawNode?.playbackInfoMode !== void 0
             ? normalizeNodePlaybackInfoMode(rawNode.playbackInfoMode)
@@ -26126,111 +26124,6 @@ function defineProxyObservabilityMethods(dependencies = {}, kernel = {}) {
 }
 //#endregion
 //#region worker/features/proxy/playback/execution-cache-methods.js
-var TMDB_LOOKUP_CACHE_MAX = 4096;
-var TMDB_LOOKUP_CACHE_TTL_MS = 24 * 60 * 60 * 1e3;
-var TMDB_LOOKUP_FAILURE_TTL_MS = 60 * 1e3;
-function buildTmdbConvertedRequestUrl(requestUrl, title, year) {
-  const nextUrl = new URL(requestUrl.toString());
-  nextUrl.searchParams.delete("AnyProviderIdEquals");
-  nextUrl.searchParams.set("SearchTerm", title);
-  if (/^\d{4}$/.test(year)) nextUrl.searchParams.set("Years", year);
-  else nextUrl.searchParams.delete("Years");
-  return nextUrl;
-}
-async function convertTmdbRequestFromUrl(requestUrl, env = {}, config = {}) {
-  const providerId = requestUrl?.searchParams?.get?.("AnyProviderIdEquals");
-  const tmdbMatch = providerId?.match(/tmdb\.(\d+)/i);
-  if (!tmdbMatch) return null;
-  const configReadToken = String(config?.tmdbApiReadToken || "").trim();
-  const configApiKey = String(config?.tmdbApiV3Key || "").trim();
-  const envReadToken = String(env?.TMDB_API_READ_TOKEN || "").trim();
-  const envApiKey = String(env?.TMDB_API_KEY || "").trim();
-  const useConfigCredentials = Boolean(configReadToken || configApiKey);
-  const readToken = useConfigCredentials ? configReadToken : envReadToken;
-  const apiKey = useConfigCredentials ? configApiKey : envApiKey;
-  if (!readToken && !apiKey) return null;
-  // 账号设置凭证是整组生效的：只在面板填了任意一项，env 凭证就被整体忽略。
-  // 每个 isolate 只显式记录一次，避免 env 凭证静默失效而无人察觉，也避免逐请求刷屏。
-  if (
-    useConfigCredentials &&
-    (envReadToken || envApiKey) &&
-    runtimeState.TmdbCredentialOverrideWarned !== true
-  ) {
-    runtimeState.TmdbCredentialOverrideWarned = true;
-    logRuntimeFailure(
-      "tmdb.credentials_override",
-      "account settings TMDB credentials override TMDB_* environment variables",
-      {
-        configReadToken: configReadToken ? "set" : "unset",
-        configApiKey: configApiKey ? "set" : "unset",
-        envReadToken: envReadToken ? "set" : "unset",
-        envApiKey: envApiKey ? "set" : "unset",
-      },
-    );
-  }
-  const itemTypes = String(requestUrl.searchParams.get("IncludeItemTypes") || "").toLowerCase();
-  if (itemTypes.includes("episode") || itemTypes.includes("season")) return null;
-  const isMovie = itemTypes.includes("movie");
-  const mediaType = isMovie ? "movie" : "tv";
-  const language = String(config?.tmdbLanguage || env?.TMDB_LANGUAGE || "zh-CN").trim() || "zh-CN";
-  const cacheKey = `${language}:${mediaType}:${tmdbMatch[1]}`;
-  const cached = cacheState.TmdbLookupCache.get(cacheKey);
-  if (cached && Number(cached.expiresAt) > nowMs()) {
-    if (cached.failed === true) return null;
-    return buildTmdbConvertedRequestUrl(requestUrl, cached.title, cached.year);
-  }
-  const rememberLookupFailure = () =>
-    setBoundedMapEntry(
-      cacheState.TmdbLookupCache,
-      cacheKey,
-      {
-        failed: true,
-        expiresAt: nowMs() + TMDB_LOOKUP_FAILURE_TTL_MS,
-      },
-      TMDB_LOOKUP_CACHE_MAX,
-    );
-  const tmdbUrl = new URL(`https://api.themoviedb.org/3/${mediaType}/${tmdbMatch[1]}`);
-  tmdbUrl.searchParams.set("language", language);
-  if (apiKey && !readToken) tmdbUrl.searchParams.set("api_key", apiKey);
-  const headers = new Headers({ accept: "application/json" });
-  if (readToken) headers.set("Authorization", `Bearer ${readToken}`);
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort("tmdb_timeout"), 5e3);
-  try {
-    const response = await fetch(tmdbUrl, { headers, signal: controller.signal });
-    if (!response.ok) {
-      console.warn(`TMDB ${mediaType} lookup failed: ${response.status}`);
-      rememberLookupFailure();
-      return null;
-    }
-    const payload = await response.json();
-    const title = String(isMovie ? payload?.title || "" : payload?.name || "").trim();
-    const year = String(
-      isMovie ? payload?.release_date || "" : payload?.first_air_date || "",
-    ).slice(0, 4);
-    if (!title) {
-      rememberLookupFailure();
-      return null;
-    }
-    setBoundedMapEntry(
-      cacheState.TmdbLookupCache,
-      cacheKey,
-      {
-        title,
-        year,
-        expiresAt: nowMs() + TMDB_LOOKUP_CACHE_TTL_MS,
-      },
-      TMDB_LOOKUP_CACHE_MAX,
-    );
-    return buildTmdbConvertedRequestUrl(requestUrl, title, year);
-  } catch (error) {
-    console.warn("TMDB request conversion failed:", error?.message || error);
-    rememberLookupFailure();
-    return null;
-  } finally {
-    clearTimeout(timeoutId);
-  }
-}
 function definePlaybackExecutionCacheMethods(dependencies = {}, kernel = {}) {
   const { CacheManager } = dependencies;
   const playbackInfoCacheStore = new PlaybackInfoCacheStore({
@@ -26333,13 +26226,6 @@ function definePlaybackExecutionCacheMethods(dependencies = {}, kernel = {}) {
       }
       if (playbackAbsoluteFallbackEligible)
         requestUrl.searchParams.delete(PLAYBACK_ABSOLUTE_FALLBACK_QUERY_PARAM);
-      if (
-        node.tmdbAggregationEnabled === true &&
-        (requestMethod === "GET" || requestMethod === "HEAD")
-      ) {
-        const tmdbConvertedUrl = await convertTmdbRequestFromUrl(requestUrl, env, currentConfig);
-        if (tmdbConvertedUrl) requestUrl = tmdbConvertedUrl;
-      }
       const nodeDirectSource = isNodeVideoStreamDirectEnabled(node, currentConfig, name);
       const baseRequestTraits = kernel.classifyRequest(
         request,
@@ -35478,7 +35364,7 @@ function defineNodeIndexMethods(dependencies = {}, kernel = {}) {
         tags: normalizeNodeTags(rawNode.tags, rawNode.tag),
         tagColor: String(rawNode.tagColor ?? ""),
         remark: String(rawNode.remark ?? ""),
-        tmdbAggregationEnabled: rawNode.tmdbAggregationEnabled === true,
+        tmdbAggregationEnabled: false,
         lines: normalizedLines.map((line) => ({
           id: String(line.id || "").trim(),
           name: String(line.name || "").trim(),
@@ -37861,7 +37747,6 @@ export {
   buildWorkerMetadataCachePolicyRevision,
   buildWorkerMetadataPrewarmIdentityPartition,
   cacheState,
-  convertTmdbRequestFromUrl,
   defineAnalyticsCacheMethods,
   defineDatabaseStatusMethods,
   defineKvTidyMethods,

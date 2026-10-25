@@ -13,7 +13,7 @@
 
 > 一个以 `worker/` 为生产源码、以根目录 `worker.js` 为单文件部署产物的 Cloudflare Worker 项目：统一多台 Emby 节点入口、隐藏源站 IP、支持直连/反代混合策略、提供 `ADMIN_PATH`（默认 `/admin`）可视化后台，并集成日志、Cloudflare 统计、Telegram 日报与控制面 / 数据面分层优化。
 
-> 当前 **V20.0** 是一次减法发布：把 V19.9 之后加进来的聚合层整体撤回，Worker 与后端重新对齐远程主线，管理端只保留界面与交付改进。EMOS 聚合、三档聚合策略（`auto` / `emos` / `tmdb`）、todb 凭证与 `todbvs` 改写、跨节点列表 / 剧集 / 版本聚合全部移除，`worker/`、`worker.js` 与相关测试回到远程仓库版本；`tmdbApiReadToken` / `tmdbApiV3Key` / `tmdbLanguage` 作为配置兼容字段保留，Worker 侧字段与脱敏规则不变，但管理端不再提供聚合开关、策略下拉与 todb 输入框。管理端保留的改进：4 个首屏 CDN 脚本改为同源摇树交付（`frontend/vendor/` 随 `ASSETS` 部署，Worker 按 `assetKey` 改写并代理），内置壳补上 vendor 改写与 `bundled` 投递分支，断网也能启动；颜色统一走 CSS 变量、入口与访问密钥收进高级设置、节点面板与弹窗按同一套间距重排；新增 Playwright 真浏览器冒烟与 5 视图 × 4 主题的视觉基线；仓库换行统一为 LF，`frontend/src/` 继续作为非生产参考源。
+> 当前 **V20.0** 是一次减法发布：把 V19.9 之后加进来的聚合层整体撤回，Worker 与后端重新对齐远程主线，管理端只保留界面与交付改进。EMOS 聚合、三档聚合策略（`auto` / `emos` / `tmdb`）、todb 凭证与 `todbvs` 改写、跨节点列表 / 剧集 / 版本聚合全部移除，`worker/`、`worker.js` 与相关测试回到远程仓库版本；`tmdbApiReadToken` / `tmdbApiV3Key` / `tmdbLanguage` 作为配置兼容字段保留（字段、脱敏规则与备份往返都在，值不再被读取），`tmdbAggregationEnabled` 保留字段名但读取时一律清空为 `false`，管理端不再提供聚合开关、策略下拉与 todb 输入框。管理端保留的改进：4 个首屏 CDN 脚本改为同源摇树交付（`frontend/vendor/` 随 `ASSETS` 部署，Worker 按 `assetKey` 改写并代理），内置壳补上 vendor 改写与 `bundled` 投递分支，断网也能启动；颜色统一走 CSS 变量、入口与访问密钥收进高级设置、节点面板与弹窗按同一套间距重排；新增 Playwright 真浏览器冒烟与 5 视图 × 4 主题的视觉基线；仓库换行统一为 LF，`frontend/src/` 继续作为非生产参考源。
 
   ![img](https://web.axuitomo.qzz.io/api/p/img/github/PixPin_2026-08-03_14-00-35.png?download=true&sign=TltPfTfUurzkQ5FsY4rpQ1Wd%2Bwu1Oji3rC%2FVo2NbV%2BM%3D%3A0)
 
@@ -256,7 +256,7 @@ Worker 作为公网入口，外部只能看到 Cloudflare 边缘节点，而不�
 | **`ADMIN_PATH`** | 文本变量 (Var) | **自定义管理入口**。用于修改默认的 `/admin` 路径，有效防范自动化扫描工具的嗅探。 | `/secret_portal_99`<br>\> ⚠️ **注意**：不能以 `/api` 开头。 |
 | **`HOST`** | 文本变量 (Var) | **主访问域名**。启用 host prefix 代理或保存 host prefix 节点前必须配置；只填写合法 DNS 主机名。 | `emby.example.com`，不要带协议、端口、路径、通配符或 IP。 |
 | **`LEGACY_HOST`** | 文本变量 (Var) | **兼容旧访问域名**。迁移主域名时保留旧的路径式节点入口。 | `old-emby.example.com` |
-| **`TMDB_API_READ_TOKEN`** / **`TMDB_API_KEY`** / **`TMDB_LANGUAGE`** | 加密变量 / 文本变量 | **TMDB 聚合兜底**。仅当后台「账号设置」里的 TMDB 凭据为空时才使用；两项凭据都在后台填写后，环境变量会被整组忽略。 | 见 `.dev.vars.example` |
+| **`TMDB_API_READ_TOKEN`** / **`TMDB_API_KEY`** / **`TMDB_LANGUAGE`** | 加密变量 / 文本变量 | **已停用（保留兼容）**。V20.0 移除了 TMDB 查询转换，这三项不再被任何代码读取，填写也不会影响请求；后台「账号设置」里的同名配置项同理保留但不再生效。 | 可留空。见 `.dev.vars.example` |
 
 > 💡 **命名兼容性提示**：
 > 核心代码已向下兼容多种旧版命名（如 `KV` / `EMBY_KV` / `EMBY_PROXY` 会自动映射为 `ENI_KV`，`D1` / `PROXY_LOGS` 会映射为 `DB`）。但**强烈建议在新部署时统一使用 `ENI_KV` 和 `DB`**，以确保与后续的更新、README 说明及自动化脚本保持一致。
