@@ -129,6 +129,32 @@ test("an older settings backup cannot silently reset the global admin skin", asy
   }
 });
 
+test("applyKvMutationsWithRollback reads rollback snapshots in parallel and skips pure deletes", async () => {
+  // 设置保存的主要成本是 KV 往返次数。回滚快照之间没有依赖，必须并行；
+  // 目标本来就不存在的纯 delete 不需要快照（回滚动作就是"保持不存在"）。
+  const { kv } = createKv({ keep: "old-keep", overwrite: "old-overwrite" });
+  const reads = [];
+  const originalGet = kv.get;
+  kv.get = async (key, options) => {
+    reads.push(key);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    return originalGet(key, options);
+  };
+
+  const startedAt = Date.now();
+  await kernel.applyKvMutationsWithRollback(kv, [
+    { type: "put", key: "keep", value: "new-keep" },
+    { type: "put", key: "overwrite", value: "new-overwrite" },
+    { type: "delete", key: "absent-a", value: "" },
+    { type: "delete", key: "absent-b", value: "" },
+  ]);
+  const elapsed = Date.now() - startedAt;
+
+  // 两次快照读各 5ms：并行应接近 5ms，串行会是 10ms 以上。
+  assert.ok(elapsed < 15, `快照读应并行，实际 ${elapsed}ms`);
+  assert.deepEqual(reads.sort(), ["keep", "overwrite"], "纯 delete 不存在的 key 不应读取");
+});
+
 test("applyKvMutationsWithRollback restores only mutations that completed", async () => {
   const {
     kv,

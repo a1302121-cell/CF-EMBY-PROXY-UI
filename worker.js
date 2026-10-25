@@ -7827,7 +7827,7 @@ function mm(o = {}, e = {}) {
         expectedConfigRevision: a?.expectedConfigRevision,
         mutationId: a?.mutationId,
         forceKvCommit: !0
-      }) : c, d = await t.getAdminRevisions(n, {
+      }) : c, d = await t.getAdminRevisionsForRead(n, {
         ctx: s,
         config: l
       });
@@ -22414,55 +22414,59 @@ function Lh(o = {}, e = {}) {
     async applyKvMutationsWithRollback(t, r = []) {
       if (!t) return [];
       const a = [], n = /* @__PURE__ */ new Map(), s = /* @__PURE__ */ new Set();
-      for (const l of Array.isArray(r) ? r : []) {
-        const d = String(l?.key || "").trim();
-        if (!d) continue;
-        const u = String(l?.type || "put").trim().toLowerCase() === "delete" ? "delete" : "put";
+      for (const f of Array.isArray(r) ? r : []) {
+        const m = String(f?.key || "").trim();
+        if (!m) continue;
+        const p = String(f?.type || "put").trim().toLowerCase() === "delete" ? "delete" : "put";
         a.push({
-          type: u,
-          key: d,
-          value: String(l?.value ?? "")
-        }), !s.has(d) && (s.add(d), n.set(d, {
-          key: d,
-          ...await e.readRawKvEntry(t, d)
-        }));
+          type: p,
+          key: m,
+          value: String(f?.value ?? "")
+        }), !s.has(m) && s.add(m);
       }
-      const i = [], c = /* @__PURE__ */ new Map();
+      const i = new Set(a.filter((f) => f.type === "delete").map((f) => f.key)), c = new Set(a.filter((f) => f.type === "put").map((f) => f.key)), l = [...s].filter((f) => c.has(f) || !i.has(f));
+      await Promise.all(l.map(async (f) => {
+        n.set(f, {
+          key: f,
+          ...await e.readRawKvEntry(t, f)
+        });
+      }));
+      const d = [], u = /* @__PURE__ */ new Map();
       try {
-        for (const l of a)
-          l.type === "delete" ? await t.delete(l.key) : await t.put(l.key, l.value), c.has(l.key) || i.push(l.key), c.set(l.key, l.type === "delete" ? {
+        for (const f of a)
+          f.type === "delete" ? await t.delete(f.key) : await t.put(f.key, f.value), u.has(f.key) || d.push(f.key), u.set(f.key, f.type === "delete" ? {
             exists: !1,
             value: null
           } : {
             exists: !0,
-            value: l.value
+            value: f.value
           });
         return a;
-      } catch (l) {
-        const d = [], u = [];
-        for (let f = i.length - 1; f >= 0; f -= 1) {
-          const m = i[f], p = n.get(m), h = c.get(m);
-          if (!(!p || !h))
+      } catch (f) {
+        const m = [], p = [];
+        for (let h = d.length - 1; h >= 0; h -= 1) {
+          const g = d[h], y = n.get(g), _ = u.get(g);
+          if (!(!y || !_))
             try {
-              const g = await e.readRawKvEntry(t, m);
-              if (!(g.exists === h.exists && (h.exists !== !0 || g.value === h.value))) {
-                u.push(m);
+              const S = await e.readRawKvEntry(t, g);
+              if (!(S.exists === _.exists && (_.exists !== !0 || S.value === _.value))) {
+                p.push(g);
                 continue;
               }
-              p.exists ? await t.put(p.key, p.value) : await t.delete(p.key);
-            } catch (g) {
-              d.push(`${p.key}:${g?.message || String(g)}`);
+              y.exists ? await t.put(y.key, y.value) : await t.delete(y.key);
+            } catch (S) {
+              m.push(`${y.key}:${S?.message || String(S)}`);
             }
         }
-        if (d.length > 0 || u.length > 0) {
-          const f = /* @__PURE__ */ new Error(`${l?.message || String(l)}; rollback_incomplete`);
-          throw f.code = "KV_MUTATION_ROLLBACK_CONFLICT", f.status = 409, f.details = {
-            rollbackConflicts: u,
-            rollbackFailures: d,
-            originalError: ue(l, "kv_mutation_failed")
-          }, f;
+        if (m.length > 0 || p.length > 0) {
+          const h = /* @__PURE__ */ new Error(`${f?.message || String(f)}; rollback_incomplete`);
+          throw h.code = "KV_MUTATION_ROLLBACK_CONFLICT", h.status = 409, h.details = {
+            rollbackConflicts: p,
+            rollbackFailures: m,
+            originalError: ue(f, "kv_mutation_failed")
+          }, h;
         }
-        throw l;
+        throw f;
       }
     }
   };

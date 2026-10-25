@@ -11629,7 +11629,13 @@ function defineConfigActions(dependencies = {}, actions = {}) {
             },
           )
         : currentConfig;
-      const revisions = await kernel.getAdminRevisions(env, { ctx, config: savedConfig });
+      // 保存路径只需要回显 revisions：getAdminRevisions 会顺带重建节点索引并查两次 ops status，
+      // 稳定态要 8 次 KV。getAdminRevisionsForRead 读同一批 meta 得出完全相同的 configRevision
+      // 与 nodesRevision（只差每次现算的 logs/dns 时间戳），稳定态 2 次 KV。
+      const revisions = await kernel.getAdminRevisionsForRead(env, {
+        ctx,
+        config: savedConfig,
+      });
       return jsonResponse({
         success: true,
         committed: true,
@@ -19071,6 +19077,8 @@ function defineConfigPersistenceMethods(dependencies = {}, kernel = {}) {
         throw error;
       }
       assertHostPrefixCnameTargetValid(rawConfig?.defaultHostPrefixCnameTarget);
+      // 这次读取是乐观锁（expectedConfigRevision）的新鲜基线，不能复用调用方早先读到的配置：
+      // 并发保存时两者可能读到同一份旧值，导致两个请求都通过校验。
       const prevConfig = env
         ? await getRuntimeConfigStrict(env)
         : sanitizeRuntimeConfig((await kvGetStrict(kv, kernel.CONFIG_KEY, { type: "json" })) || {});
@@ -36490,11 +36498,21 @@ function defineKvSafetyMethods(dependencies = {}, kernel = {}) {
         });
         if (seenKeys.has(key)) continue;
         seenKeys.add(key);
-        rollbackEntries.set(key, {
-          key,
-          ...(await kernel.readRawKvEntry(kv, key)),
-        });
       }
+      // 回滚快照之间没有依赖：并行读，避免 N 次串行往返。
+      // 纯 delete 的目标如果本来就不存在，回滚动作等于"保持不存在"，快照读可以省掉。
+      const deletedKeys = new Set(
+        normalizedMutations.filter((m) => m.type === "delete").map((m) => m.key),
+      );
+      const putKeys = new Set(
+        normalizedMutations.filter((m) => m.type === "put").map((m) => m.key),
+      );
+      const needSnapshot = [...seenKeys].filter((key) => putKeys.has(key) || !deletedKeys.has(key));
+      await Promise.all(
+        needSnapshot.map(async (key) => {
+          rollbackEntries.set(key, { key, ...(await kernel.readRawKvEntry(kv, key)) });
+        }),
+      );
       const appliedKeys = [];
       const appliedExpectedEntries = /* @__PURE__ */ new Map();
       try {
