@@ -39,14 +39,16 @@ import { guardApiResponseMime as guardApiResponseMimeRepresentation } from "./pr
 import { isJsonHttpMediaType, normalizeHttpMediaType } from "./proxy/http/media-types.js";
 import { buildProxyErrorState } from "./proxy/http/proxy-error-response.js";
 import {
+  createPlaybackInfoRepresentation,
   inspectPlaybackInfoResponse,
   isPlaybackInfoRepresentation,
   parsePlaybackInfoRootObject,
 } from "./proxy/playback/contract.js";
 import {
-  collectPeerAggregationVersions,
-  mergePeerAggregationMediaSources,
-} from "./proxy/aggregation/peer-version-merge.js";
+  buildPlaybackVersionMatchKeys,
+  collectPeerPlaybackVersions,
+  mergePlaybackInfoMediaSources,
+} from "./proxy/aggregation/peer-playback-version-merge.js";
 import { PlaybackInfoCacheStore, validatePlaybackInfoCacheEntry } from "./proxy/playback/cache.js";
 import {
   decodePlaybackInfoJsonValue,
@@ -16558,6 +16560,25 @@ function buildPlaybackRelayProxyUrl(requestUrl, name, key, targetUrl, options = 
   relayUrl.hash = "";
   return relayUrl;
 }
+// peer 片源的播放地址：把 peer 上游的绝对 URL 挂到本 Worker 的 /节点名/secret/ 前缀下。
+// 客户端随后拿这个地址请求播放，回程由 #resolvePeerAggregationReroute 按片源 Id 前缀
+// 改道回 peer，所以这里只需要保证路径与查询串完整。
+function buildPeerPlaybackMediaProxyUrl(requestUrl, peerName, secret, peerMediaUrl) {
+  try {
+    const targetUrl = new URL(String(peerMediaUrl || ""));
+    const absolute = new URL(
+      requestUrl instanceof URL ? requestUrl.origin : String(requestUrl || ""),
+    );
+    absolute.pathname = `${buildProxyPrefix(peerName, secret)}${sanitizeProxyPath(
+      targetUrl.pathname || "/",
+    )}`;
+    absolute.search = targetUrl.search || "";
+    absolute.hash = "";
+    return absolute.toString();
+  } catch {
+    return "";
+  }
+}
 function stripPlaybackInfoClientVisibleProxyRoot(
   proxyPath = "",
   name = "",
@@ -23996,6 +24017,37 @@ function defineProxyUpstreamDeliveryMethods(dependencies = {}, kernel = {}) {
             finalUpstreamState,
           );
         }
+        // 跨节点版本聚合必须在 URL 改写之后：追加进来的 peer 片源自带代理 URL，
+        // 若先聚合再改写，本节点改写逻辑会把 peer 的绝对地址再套一层。
+        if (isPlaybackInfoRepresentation(finalUpstreamState.playbackInfoRepresentation)) {
+          const merged = await kernel.buildPeerPlaybackVersionResponse(
+            execution,
+            execution.env,
+            finalUpstreamState,
+          );
+          if (merged) {
+            const bodyText = JSON.stringify(merged.payload);
+            const previousResponse = finalUpstreamState.response;
+            try {
+              Promise.resolve(previousResponse.body?.cancel?.()).catch(() => {});
+            } catch {}
+            const mergedResponse = new Response(bodyText, {
+              status: previousResponse.status,
+              statusText: previousResponse.statusText,
+              headers: sanitizePlaybackInfoSerializedResponseHeaders(previousResponse.headers),
+            });
+            finalUpstreamState = {
+              ...finalUpstreamState,
+              response: mergedResponse,
+              playbackInfoRepresentation: createPlaybackInfoRepresentation({
+                response: mergedResponse,
+                bodyText,
+                bodyBytes: new TextEncoder().encode(bodyText).byteLength,
+                payload: merged.payload,
+              }),
+            };
+          }
+        }
       }
       const redirectTerminalMode = String(
         finalUpstreamState.redirectTrace?.terminalMode ||
@@ -26976,33 +27028,10 @@ function shouldFanoutPeerAggregation(execution) {
   if (execution.playbackRelayTargetUrl instanceof URL) return false;
   return isPeerAggregationMergePath(execution.proxyPath);
 }
-// 版本级归并的触发条件：客户端在 Fields 里明确要了 ProviderIds。
-//
-// 为什么用请求形状而不是再加一个节点开关：客户端要了 ProviderIds 就说明它准备按
-// tmdb / imdb 这类外部 id 做跨服匹配，也说明它拿到了归并需要的字段；没要的时候
-// 条目里根本没有 ProviderIds，只能退回名称 + 年份，那是错误合并的来源。
-// 这样同一个节点开关在两种客户端行为下都给出正确结果，不需要运维多理解一个开关。
-function shouldRequestPeerVersionAggregation(execution) {
-  if (!shouldFanoutPeerAggregation(execution)) return false;
-  const search = String(execution?.requestUrl?.search || "");
-  if (!search) return false;
-  for (const rawValue of new URLSearchParams(search).getAll("Fields")) {
-    for (const field of String(rawValue || "").split(",")) {
-      if (String(field).trim().toLowerCase() === "providerids") return true;
-    }
-  }
-  return false;
-}
-// 片源 Id 编码：`n<base64url(节点名)>.<base64url(JSON [peer 条目 Id, peer 片源 Id])>`。
-// 第一段与列表级聚合的条目 Id 同形，所以解码仍走 decodePeerAggregationItemId；
-// 第二段是自包含的，播放请求不需要任何 KV 索引就能同时找回节点、条目与片源。
-function encodePeerAggregationMediaSourceId(peerName, peerItemId, peerSourceId) {
-  const payload = encodeBase64UrlUtf8(
-    JSON.stringify([String(peerItemId ?? ""), String(peerSourceId ?? "")]),
-  );
-  return encodePeerAggregationItemId(peerName, payload);
-}
-// 反解：返回 { peerName, itemId, mediaSourceId }，itemId 是 peer 上的条目 Id。
+// 片源 Id 编码（PlaybackInfo 版本聚合）：`n<base64url(节点名)>.<base64url(peer 片源 Id)>`。
+// 前缀段与列表级聚合的条目 Id 同形，所以解码仍走 decodePeerAggregationItemId；
+// 第二段自包含，播放请求不需要任何 KV 索引就能找回「哪个节点、哪个片源」。
+// 实现见 proxy/aggregation/peer-playback-version-merge.js 的 buildPeerMediaSourceId。
 function decodePeerAggregationMediaSourceId(value) {
   const decoded = decodePeerAggregationItemId(value);
   if (!decoded) return null;
@@ -27083,7 +27112,13 @@ function definePeerAggregationMethods(dependencies = {}, kernel = {}) {
   return {
     // 自动全量：凡是开了聚合、且不是当前节点的都算兄弟节点。
     async resolvePeerAggregationNodes(execution, env) {
-      if (!shouldFanoutPeerAggregation(execution)) return [];
+      // 允许 Items 列表与 PlaybackInfo 两条链路：前者做列表级聚合，后者做版本级聚合。
+      // PlaybackInfo 不走 shouldFanoutPeerAggregation（那个判断只认 Items 路径），
+      // 它自己的开关由 shouldAggregatePeerPlaybackVersions 把关。
+      const isPlaybackInfoFanout =
+        execution?.requestTraits?.isPlaybackInfoRequest === true &&
+        execution?.requestMethod === "GET";
+      if (!isPlaybackInfoFanout && !shouldFanoutPeerAggregation(execution)) return [];
       if (execution.node?.tmdbAggregationEnabled !== true) return [];
       // 权限闸门：没有客户端鉴权凭据的请求不得扇出到兄弟节点。
       // 节点 secret 是 Worker 入口的路径段（/节点名/secret/...），它证明的是
@@ -27217,7 +27252,20 @@ function definePeerAggregationMethods(dependencies = {}, kernel = {}) {
     // 合并：本节点响应 + 各 peer 响应。任何一步不满足就返回 null，调用方按原响应继续。
     async buildPeerAggregationMergedResponse(execution, env, upstreamState) {
       const peers = await kernel.resolvePeerAggregationNodes(execution, env);
-      if (!peers.length) return null;
+      if (!peers.length) {
+        // 没有 peer 可扇出。最常见的原因是本请求没带客户端 Emby 凭据（闸门拦下），
+        // 或节点摘要索引里没有其它开启聚合的节点。
+        // 只在「本来该聚合的路径」上打日志：图片 / 播放路径根本不会走到扇出，
+        // 每次都打会把真正的 Items 诊断淹掉（实测一次页面加载能产生 45 条噪音）。
+        if (shouldFanoutPeerAggregation(execution)) {
+          console.log("[peer_aggregation_skip]", {
+            reason: "no_peers",
+            path: String(execution?.proxyPath || ""),
+            node: String(execution?.node?.name || ""),
+          });
+        }
+        return null;
+      }
       const response = upstreamState?.response;
       if (!response || Number(response.status) !== 200) return null;
       const contentType = String(response.headers.get("Content-Type") || "").toLowerCase();
@@ -27241,52 +27289,22 @@ function definePeerAggregationMethods(dependencies = {}, kernel = {}) {
       const peerPayloads = await Promise.all(
         peers.map((peer) => kernel.fetchPeerAggregationPayload(execution, peer, env)),
       );
-      // 两种合并模式共用同一个节点开关，由客户端的请求形状决定：
-      //   - 版本级（客户端请求了 Fields=ProviderIds）：列表只留本节点条目，同片的
-      //     peer 片源挂进它的 MediaSources，多版本交给客户端版本选择器；
-      //   - 列表级（其它情况）：peer 条目直接追加进列表，Id 加节点前缀。
-      // 版本级是列表级的严格超集：能归并的收成一条，归并不了的仍按列表追加。
-      const wantVersionMerge = kernel.shouldRequestPeerVersionAggregation(execution);
+      // 列表级聚合：peer 条目直接追加进列表，Id 加节点前缀。
+      // 版本级（同片多版本）挂在 PlaybackInfo 上，见 buildPeerPlaybackVersionResponse：
+      // 真实 Emby 客户端的版本选择器只读 PlaybackInfo 的 MediaSources，不读 /Items。
       const mergedItems = [...ownPayload.Items];
-      let addedVersionCount = 0;
-      let versionMergedKeys = null;
-      if (wantVersionMerge) {
-        const versions = [];
-        peers.forEach((peer, peerIndex) => {
-          versions.push(
-            ...collectPeerAggregationVersions(
-              peerPayloads[peerIndex],
-              peer.name,
-              encodePeerAggregationMediaSourceId,
-            ),
-          );
-        });
-        const versionMerged = mergePeerAggregationMediaSources(ownPayload, versions);
-        if (versionMerged) {
-          addedVersionCount = versionMerged.addedVersionCount;
-          mergedItems.length = 0;
-          mergedItems.push(...versionMerged.payload.Items);
-          versionMergedKeys = versionMerged.mergedKeys;
-        }
-      }
       let addedCount = 0;
       peers.forEach((peer, peerIndex) => {
         const payload = peerPayloads[peerIndex];
         if (!isPlainObject(payload) || !Array.isArray(payload.Items)) return;
         for (const item of payload.Items) {
           if (!isPlainObject(item)) continue;
-          // 版本级模式下，已经收进某个本节点条目 MediaSources 的 peer 条目不再重复出现。
-          if (
-            versionMergedKeys &&
-            versionMergedKeys.has(`${peer.name}\u0000${String(item.Id ?? "").trim()}`)
-          )
-            continue;
           mergedItems.push(rewritePeerAggregationIds(item, peer.name));
           addedCount += 1;
         }
       });
-      // 既没有新条目也没有新版本：返回 null，让调用方走原始流。
-      if (!addedCount && !addedVersionCount) return null;
+      // 没有 peer 结果可加：返回 null，让调用方走原始流。
+      if (!addedCount) return null;
       return {
         payload: {
           ...ownPayload,
@@ -27295,7 +27313,6 @@ function definePeerAggregationMethods(dependencies = {}, kernel = {}) {
             Number(ownPayload.TotalRecordCount || ownPayload.Items.length || 0) + addedCount,
         },
         addedCount,
-        addedVersionCount,
         peerCount: peers.length,
       };
     },
@@ -27311,11 +27328,227 @@ function definePeerAggregationMethods(dependencies = {}, kernel = {}) {
       }
       return null;
     },
-    // 版本级聚合是否生效：由客户端是否请求了 Fields=ProviderIds 决定，见
-    // shouldRequestPeerVersionAggregation 的注释。节点开关仍是总闸。
-    shouldRequestPeerVersionAggregation(execution) {
+    // 跨节点 PlaybackInfo 版本聚合：把兄弟节点上同一部片的 MediaSources 追加进本节点响应。
+    //
+    // 为什么在 PlaybackInfo 而不是 /Items：真实 Emby 客户端（实测 Hills 1.10.1）的流程是
+    //   点播放 -> PlaybackInfo(无 MediaSourceId) -> 拿 MediaSources -> 弹版本选择器
+    //   -> 带 MediaSourceId 再请求
+    // /Items 的 MediaSources 只是列表元数据，客户端不拿它渲染版本选择器；而且客户端的
+    // Fields 通常不含 MediaSources，peer 的 /Items 根本不会返回该字段。
+    //
+    // 只在客户端没带 MediaSourceId 的首次请求上聚合：带了就说明用户已经选定版本，
+    // 再合并只会让响应变慢，且可能让客户端以为自己选错了。
+    shouldAggregatePeerPlaybackVersions(execution) {
       if (execution?.node?.tmdbAggregationEnabled !== true) return false;
-      return shouldRequestPeerVersionAggregation(execution);
+      if (execution?.requestTraits?.isPlaybackInfoRequest !== true) return false;
+      if (execution.requestMethod !== "GET") return false;
+      const mediaSourceId = String(
+        execution?.requestUrl?.searchParams?.get?.("MediaSourceId") || "",
+      ).trim();
+      return !mediaSourceId;
+    },
+    // 本节点条目的元数据（只要匹配用的几个字段）。用于跨节点配对同一部片。
+    async fetchOwnPlaybackItemIdentity(execution, env, upstreamState) {
+      const itemId =
+        extractProxyItemId(execution?.proxyPath || "") ||
+        safeDecodeSegment(
+          /^\/(?:emby|mediabrowser)\/Items\/([^/]+)/i.exec(
+            String(execution?.proxyPath || ""),
+          )?.[1] || "",
+        );
+      if (!itemId) return null;
+      // 本节点当前生效的上游由 executeUpstreamFlow 回传，不在 execution 上。
+      const targetRecord = upstreamState?.activeTargetBase || upstreamState?.activeTargetRecord;
+      if (!targetRecord) return null;
+      const upstreamUrl = buildUpstreamProxyUrl(
+        targetRecord,
+        `/Items/${encodeURIComponent(itemId)}`,
+      );
+      upstreamUrl.searchParams.set("Fields", "ProviderIds,ProductionYear");
+      const headers = new Headers({ accept: "application/json" });
+      const clientAuth =
+        execution.request.headers.get("Authorization") ||
+        execution.request.headers.get("X-Emby-Authorization") ||
+        "";
+      if (clientAuth) headers.set("Authorization", clientAuth);
+      for (const headerName of ["X-Emby-Token", "X-MediaBrowser-Token"]) {
+        const value = String(execution.request.headers.get(headerName) || "").trim();
+        if (value) headers.set(headerName, value);
+      }
+      const controller = new AbortController();
+      const timeoutId = setTimeout(
+        () => controller.abort("playback_identity_timeout"),
+        PEER_AGGREGATION_TIMEOUT_MS,
+      );
+      try {
+        const response = await fetchPort.fetchRequest(upstreamUrl, {
+          method: "GET",
+          headers,
+          signal: controller.signal,
+        });
+        if (!response?.ok) return null;
+        const payload = await readPeerAggregationJson(response, PEER_AGGREGATION_BODY_MAX_BYTES);
+        if (!isPlainObject(payload)) return null;
+        return {
+          Id: payload.Id,
+          Name: payload.Name,
+          ProductionYear: payload.ProductionYear,
+          ProviderIds: payload.ProviderIds,
+        };
+      } catch {
+        return null;
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    },
+    // 在 peer 上找同一部片，并取它的 PlaybackInfo 片源。
+    async fetchPeerPlaybackVersionPayload(execution, peer, env, identity) {
+      try {
+        const peerNode = await kernel.readPeerAggregationNode(peer.name, env);
+        if (!peerNode) return null;
+        const targetRecords = await kernel.resolvePeerAggregationTargets(peerNode);
+        if (!targetRecords.length) return null;
+        const headers = new Headers({ accept: "application/json" });
+        const clientAuth =
+          execution.request.headers.get("Authorization") ||
+          execution.request.headers.get("X-Emby-Authorization") ||
+          "";
+        if (clientAuth) headers.set("Authorization", clientAuth);
+        for (const headerName of ["X-Emby-Token", "X-MediaBrowser-Token"]) {
+          const value = String(execution.request.headers.get(headerName) || "").trim();
+          if (value) headers.set(headerName, value);
+        }
+        const nodeHeaders = isPlainObject(peerNode?.headers) ? peerNode.headers : {};
+        for (const [headerName, headerValue] of Object.entries(nodeHeaders)) {
+          if (DROP_REQUEST_HEADER_SET.has(String(headerName).toLowerCase())) continue;
+          headers.set(headerName, String(headerValue));
+        }
+        const controller = new AbortController();
+        const timeoutId = setTimeout(
+          () => controller.abort("peer_playback_timeout"),
+          PEER_AGGREGATION_TIMEOUT_MS,
+        );
+        try {
+          for (const targetRecord of targetRecords) {
+            const peerItemId = await kernel.findPeerItemIdForIdentity(
+              targetRecord,
+              headers,
+              identity,
+              controller.signal,
+            );
+            if (!peerItemId) continue;
+            const playbackUrl = buildUpstreamProxyUrl(
+              targetRecord,
+              `/Items/${encodeURIComponent(peerItemId)}/PlaybackInfo`,
+            );
+            // 复用客户端原来的查询参数（UserId 等），但去掉 MediaSourceId。
+            const originalSearch = new URLSearchParams(String(execution.requestUrl?.search || ""));
+            originalSearch.delete("MediaSourceId");
+            playbackUrl.search = originalSearch.toString();
+            const response = await fetchPort.fetchRequest(playbackUrl, {
+              method: "GET",
+              headers,
+              signal: controller.signal,
+            });
+            if (!response?.ok) continue;
+            const payload = await readPeerAggregationJson(
+              response,
+              PEER_AGGREGATION_BODY_MAX_BYTES,
+            );
+            if (isPlainObject(payload) && Array.isArray(payload.MediaSources))
+              return { itemId: peerItemId, payload };
+          }
+          return null;
+        } finally {
+          clearTimeout(timeoutId);
+        }
+      } catch (error) {
+        console.warn("peer playback aggregation skipped:", peer?.name, error?.message || error);
+        return null;
+      }
+    },
+    // 在 peer 上按 ProviderIds / 名称 + 年份找同片。
+    async findPeerItemIdForIdentity(targetRecord, headers, identity, signal) {
+      const keys = buildPlaybackVersionMatchKeys(identity);
+      if (!keys.size) return "";
+      const searchUrl = buildUpstreamProxyUrl(targetRecord, "/Items");
+      const params = searchUrl.searchParams;
+      params.set("Recursive", "true");
+      params.set("Limit", "20");
+      params.set("Fields", "ProviderIds,ProductionYear");
+      // 有 tmdb id 就精确查，否则按名称搜。
+      let tmdbId = "";
+      for (const key of keys) {
+        if (key.startsWith("tmdb:")) {
+          tmdbId = key.slice(5);
+          break;
+        }
+      }
+      if (tmdbId) params.set("AnyProviderIdEquals", `tmdb.${tmdbId}`);
+      else params.set("SearchTerm", String(identity?.Name || ""));
+      const response = await fetchPort.fetchRequest(searchUrl, {
+        method: "GET",
+        headers,
+        signal,
+      });
+      if (!response?.ok) return "";
+      const payload = await readPeerAggregationJson(response, PEER_AGGREGATION_BODY_MAX_BYTES);
+      const items = Array.isArray(payload?.Items) ? payload.Items : [];
+      for (const item of items) {
+        if (!isPlainObject(item)) continue;
+        const itemKeys = buildPlaybackVersionMatchKeys(item);
+        for (const key of itemKeys) {
+          if (!keys.has(key)) continue;
+          const itemId = String(item.Id ?? "").trim();
+          if (itemId) return itemId;
+        }
+      }
+      return "";
+    },
+    // 把 peer 的 MediaSources 合并进本节点 PlaybackInfo 响应。
+    async buildPeerPlaybackVersionResponse(execution, env, upstreamState) {
+      if (!kernel.shouldAggregatePeerPlaybackVersions(execution)) return null;
+      const representation = upstreamState?.playbackInfoRepresentation;
+      if (!isPlaybackInfoRepresentation(representation)) return null;
+      const peers = await kernel.resolvePeerAggregationNodes(execution, env);
+      if (!peers.length) return null;
+      const identity = await kernel.fetchOwnPlaybackItemIdentity(execution, env, upstreamState);
+      if (!identity) return null;
+      if (!buildPlaybackVersionMatchKeys(identity).size) return null;
+      const peerPayloads = await Promise.all(
+        peers.map((peer) => kernel.fetchPeerPlaybackVersionPayload(execution, peer, env, identity)),
+      );
+      const versions = [];
+      const peerSecrets = new Map();
+      for (const peer of peers) {
+        const peerNode = await kernel.readPeerAggregationNode(peer.name, env);
+        peerSecrets.set(peer.name, String(peerNode?.secret || ""));
+      }
+      peers.forEach((peer, peerIndex) => {
+        versions.push(
+          ...collectPeerPlaybackVersions(
+            peerPayloads[peerIndex]?.payload,
+            peer.name,
+            peerPayloads[peerIndex]?.itemId,
+            (peerName, peerMediaUrl) =>
+              buildPeerPlaybackMediaProxyUrl(
+                execution?.requestUrl,
+                peerName,
+                peerSecrets.get(peerName) || "",
+                peerMediaUrl,
+              ),
+          ),
+        );
+      });
+      const merged = mergePlaybackInfoMediaSources(representation.payload, versions);
+      console.log("[peer_playback_version]", {
+        peers: peers.length,
+        versions: merged ? merged.addedVersionCount : 0,
+        ownSources: Array.isArray(representation.payload.MediaSources)
+          ? representation.payload.MediaSources.length
+          : 0,
+      });
+      return merged;
     },
   };
 }
@@ -37911,6 +38144,9 @@ var NodeProxyFacade = class {
     if (peerNode.tmdbAggregationEnabled !== true) return null;
     // 还原 Id：路径段与 Ids 查询参数都要换回 peer 自己的编号。
     // 路径前缀可能是 /Items/ 或 /emby/Items/，两种都要把 Id 段换回去。
+    // 片源级改道（decodedMediaSource）例外：条目 Id 是本节点的，peer 不认识它，
+    // 必须先问 peer 要同片条目 Id。这里用 decoded.itemId 会拿不到，所以留空由
+    // buildPeerPlaybackVersionResponse 预先写入 peerItemId。
     const restoredItemId = decodedMediaSource ? decodedMediaSource.itemId : decoded.itemId;
     const nextPath = remaining.replace(
       /^(\/(?:emby\/|mediabrowser\/)?Items\/)[^/]+/i,

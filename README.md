@@ -776,18 +776,29 @@ TMDB 的电影 id 和剧 id 是两套独立编号，同一个整数可能既是�
 - 兄弟节点查询**直接打它的上游**，不经 Worker 自己的 HTTP 入口，因此不存在可被客户端伪造的「内部特权参数」，也天然跳过该节点的 Geo / IP / 限速 / 节点密钥。客户端鉴权头与兄弟节点的管理员自定义 Headers 会带上。
 - 最多 8 个兄弟节点，单个查询超时 6 秒。**任何一个兄弟节点失败（503 / 抛异常 / 返回非 JSON / 节点记录缺失）只让它自己缺席**，不会把请求变成 502。
 - 本节点响应超过 8 MB、非 JSON、或不是 Items 载荷时**彻底放弃聚合**，原始流原样转发（用 `clone()` 读副本，原流从未被消费）。
-- 兄弟节点结果在列表级模式下**不去重**：同一部片在多个节点都有时会返回多条。客户端请求了 `Fields=ProviderIds` 时改走版本级归并，见下。
+- 兄弟节点结果**不去重**：同一部片在多个节点都有时会返回多条。想让客户端把多个源当成「同一部片的不同版本」，见下节的 PlaybackInfo 版本聚合。
 
 ##### 版本级聚合（一条影片、多版本可选）
 
-列表级聚合是「同一部片出现 N 条，每条属于一台服务器」。版本级聚合把它收成「一条片带 N 个源」：同片的兄弟节点片源被挂进本节点条目的 `MediaSources`，多版本选择交给客户端自己的版本选择器。
+列表级聚合是「同一部片出现 N 条，每条属于一台服务器」。版本级聚合把它收成「一条片带 N 个源」：同片的兄弟节点片源被追加进本节点的 `PlaybackInfo` 响应，多版本选择交给客户端自己的版本选择器。
 
-- **触发条件**：客户端在 `Fields` 里请求了 `ProviderIds`。这类客户端本来就要按外部 id 做跨服匹配，也恰好拿到了归并需要的字段；没请求时条目上没有 `ProviderIds`，退回列表级。
-- **归并键**：每个条目生成候选键集合（`tmdb:<id>` 与 `name:<名称>:<年份>`），两边取交集非空即视为同一部片。用集合而不是单一最强键，是因为客户端不请求 `ProviderIds` 时本节点条目没有该字段、而 peer 条目有，单一键会永远配不上。同名不同年（重制版、不同剪辑）不会合并。
-- **片源 Id 自包含**：`n<base64url(节点名)>.<base64url(JSON [peer 条目 Id, peer 片源 Id])>`。第一段与列表级条目 Id 同形，所以解码仍走同一套逻辑；第二段让 PlaybackInfo / 播放请求无需任何 KV 索引就能同时找回「哪个节点、哪条条目、哪个片源」。
-- **播放回程**：客户端选中 peer 片源后回传的 `MediaSourceId`（或 `X-Emby-MediaSource-Id` / `X-MediaBrowser-MediaSource-Id`）带前缀，Worker 据此把请求整体改道到那个 peer，并把条目 Id 与片源 Id 分别还原成 peer 自己的编号。
-- **不丢片**：没有 `MediaSources`、或没有匹配键的 peer 条目仍然按列表级追加（带条目 Id 前缀）。版本级是列表级的严格超集。
-- 本节点条目原本没有 `MediaSources` 时也会补上数组，否则客户端不渲染版本选择器。
+**挂在 PlaybackInfo 而不是 `/Items`。** 真实 Emby 客户端（实测 Hills 1.10.1）的流程是：
+
+```
+点播放 → PlaybackInfo（不带 MediaSourceId）→ 拿 MediaSources → 弹版本选择器
+       → 带 MediaSourceId 再请求一次 PlaybackInfo
+```
+
+`/Items` 里的 `MediaSources` 只是列表元数据，客户端不拿它渲染版本选择器；而且客户端的 `Fields` 通常不含 `MediaSources`，peer 的 `/Items` 根本不会返回该字段。早期版本把归并做在 `/Items` 上，实测归并数恒为 0，已移除。
+
+- **触发条件**：节点开了「启用 EMOS 聚合」，请求是 `GET .../PlaybackInfo`，且**没有** `MediaSourceId`。带了 `MediaSourceId` 说明用户已选定版本，再扇出只会拖慢播放。
+- **归并键**：`tmdb:<id>` 与 `name:<名称>:<年份>` 两组候选，两边取交集非空即视为同一部片。同名不同年（重制版、不同剪辑）不会合并。
+- **找片流程**：先取本节点条目的 `ProviderIds` 与 `ProductionYear`，再按 `AnyProviderIdEquals=tmdb.<id>`（没有 tmdb id 时用 `SearchTerm`）在 peer 上搜同片，拿到 peer 的条目 Id 后请求它的 `PlaybackInfo`。
+- **片源 Id 自包含**：`n<base64url(节点名)>.<base64url(JSON [peer 条目 Id, peer 片源 Id])>`。必须同时带条目 Id：客户端回传的路径里是本节点的条目 Id，peer 不认识它。
+- **播放地址**：peer 片源的 `Path` / `DirectStreamUrl` 换成本 Worker 的 `/节点名/secret/...` 代理地址，peer 上游主机名不会泄漏给客户端。
+- **播放回程**：客户端选中 peer 片源后回传的 `MediaSourceId` 带前缀，Worker 据此把请求整体改道到那个 peer，并把路径里的条目 Id 与 `MediaSourceId` 分别还原成 peer 自己的编号。
+- **尽力而为**：peer 读不到、超时、返回非 JSON、或找不到同片，都只让它自己缺席，本节点响应照常返回，播放不会失败。
+- 片源追加只发生在本节点 `MediaSources` 数组已存在时；`PlaybackInfo` 一定有这个数组，所以不存在「客户端不渲染选择器」的情况。
 
 ---
 

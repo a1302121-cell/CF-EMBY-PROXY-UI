@@ -10732,10 +10732,17 @@ test("backslash-normalized cross-origin redirects still fail closed", async () =
 });
 
 // ---------------------------------------------------------------------------
-// 版本级聚合：同一部片只留本节点一条，peer 的片源挂进它的 MediaSources。
+// PlaybackInfo 版本聚合：真实 Emby 客户端的版本选择器数据来自 PlaybackInfo，
+// 不是 /Items 的 MediaSources（线上 tail 实测确认）。
 // ---------------------------------------------------------------------------
 
-function createPeerVersionFixture({ peers = ["beta"], ownItems = [], peerItems = {} } = {}) {
+function createPlaybackVersionFixture({
+  peers = ["beta"],
+  ownItem,
+  ownPlayback,
+  peerItem,
+  peerPlayback,
+} = {}) {
   const { kv } = createInMemoryKvStore();
   const nodes = [{ name: "alpha", target: "https://alpha.example" }];
   for (const name of peers) nodes.push({ name, target: `https://${name}.example` });
@@ -10755,239 +10762,147 @@ function createPeerVersionFixture({ peers = ["beta"], ownItems = [], peerItems =
     JSON.stringify(nodes.map((node) => ({ ...node, tmdbAggregationEnabled: true }))),
   );
   const calls = [];
+  const json = (body) =>
+    new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" } });
   const fetch = async (input) => {
     const href = String(input);
     calls.push(href);
-    if (href.startsWith("https://alpha.example")) {
-      return new Response(JSON.stringify({ Items: ownItems, TotalRecordCount: ownItems.length }), {
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-    for (const name of peers) {
-      if (!href.startsWith(`https://${name}.example`)) continue;
-      const items = peerItems[name] || [];
-      return new Response(JSON.stringify({ Items: items, TotalRecordCount: items.length }), {
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-    return new Response("{}", { status: 404 });
+    const isOwn = href.startsWith("https://alpha.example");
+    const isPeer = peers.some((name) => href.startsWith(`https://${name}.example`));
+    if (!isOwn && !isPeer) return new Response("{}", { status: 404 });
+    if (/\/Items\/[^/]+\/PlaybackInfo/i.test(href)) return json(isOwn ? ownPlayback : peerPlayback);
+    // peer 侧搜索（/Items?Recursive=...）必须先判：它没有 /Items/{id} 段。
+    if (/\/Items\?/i.test(href)) return json({ Items: [peerItem], TotalRecordCount: 1 });
+    // 条目元数据查询（/Items/{id}?Fields=...）
+    if (/\/Items\/[^/?]+\?/i.test(href)) return json(isOwn ? ownItem : peerItem);
+    return json({});
   };
-  return { kv, calls, fetch, peers: nodes.slice(1).map((node) => node.name) };
+  return { kv, calls, fetch };
 }
 
-const PEER_VERSION_MOVIE = {
+const PLAYBACK_OWN_ITEM = {
+  Id: "a1",
+  Name: "流浪地球2",
+  ProductionYear: 2023,
+  ProviderIds: { Tmdb: "842675" },
+};
+
+const PLAYBACK_PEER_ITEM = {
   Id: "b1",
   Name: "流浪地球2",
   ProductionYear: 2023,
   ProviderIds: { Tmdb: "842675" },
-  MediaSources: [{ Id: "b1-src", Path: "/media/b1.mkv", Name: "4K" }],
 };
 
-test("peer version aggregation folds a sibling copy into MediaSources", async () => {
-  const fixture = createPeerVersionFixture({
-    ownItems: [
-      {
-        Id: "a1",
-        Name: "流浪地球2",
-        ProductionYear: 2023,
-        ProviderIds: { Tmdb: "842675" },
-        MediaSources: [{ Id: "a1-src", Path: "/media/a1.mkv", Name: "1080p" }],
-      },
-    ],
-    peerItems: { beta: [PEER_VERSION_MOVIE] },
+test("playback version aggregation appends a sibling MediaSource", async () => {
+  const fixture = createPlaybackVersionFixture({
+    ownItem: PLAYBACK_OWN_ITEM,
+    ownPlayback: {
+      MediaSources: [
+        {
+          Id: "a1-src",
+          Path: "https://alpha.example/media/a1.mkv",
+          DirectStreamUrl: "https://alpha.example/media/a1.mkv",
+          Name: "1080p",
+        },
+      ],
+    },
+    peerItem: PLAYBACK_PEER_ITEM,
+    peerPlayback: {
+      MediaSources: [
+        {
+          Id: "b1-src",
+          Path: "https://beta.example/media/b1.mkv",
+          DirectStreamUrl: "https://beta.example/media/b1.mkv",
+          Name: "4K",
+        },
+      ],
+    },
   });
-  const env = { ENI_KV: fixture.kv, __CONFIG_CACHE_NAMESPACE: `peer-version-${Date.now()}` };
+  const env = { ENI_KV: fixture.kv, __CONFIG_CACHE_NAMESPACE: `pb-version-${Date.now()}` };
   await withWorkerGlobals({ fetch: fixture.fetch }, async () => {
     const response = await workerHandler.fetch(
-      new Request(
-        "https://worker.test/alpha/emby/Items?Recursive=true&Fields=ProviderIds,MediaSources",
-        { method: "GET", headers: { "X-Emby-Token": "peer-version-token" } },
-      ),
+      new Request("https://worker.test/alpha/emby/Items/a1/PlaybackInfo?UserId=u-version", {
+        method: "GET",
+        headers: { "X-Emby-Token": "tok" },
+      }),
       env,
       { waitUntil() {} },
     );
     assert.equal(response.status, 200);
     const payload = await response.json();
-    // 同一部片只留本节点一条，peer 条目不再作为独立条目出现。
-    assert.equal(payload.Items.length, 1);
-    assert.equal(payload.Items[0].Id, "a1");
-    // 本节点片源在前，peer 片源追加在后。
-    assert.equal(payload.Items[0].MediaSources.length, 2);
-    assert.equal(payload.Items[0].MediaSources[0].Id, "a1-src");
-    const peerSourceId = payload.Items[0].MediaSources[1].Id;
-    assert.notEqual(peerSourceId, "b1-src");
-    // 片源 Id 必须能反解出 peer 名、peer 条目 Id 与 peer 片源 Id。
-    const [namePart, payloadPart] = peerSourceId.slice(1).split(".");
-    assert.equal(Buffer.from(namePart, "base64url").toString("utf8"), "beta");
-    const [peerItemId, peerSourceOriginalId] = JSON.parse(
-      Buffer.from(payloadPart, "base64url").toString("utf8"),
-    );
-    assert.equal(peerItemId, "b1");
-    assert.equal(peerSourceOriginalId, "b1-src");
-    // peer 片源自己的字段原样保留。
-    assert.equal(payload.Items[0].MediaSources[1].Name, "4K");
-    // TotalRecordCount 按实际条目数算，不含被归并掉的 peer 条目。
-    assert.equal(payload.TotalRecordCount, 1);
+    assert.equal(payload.MediaSources.length, 2);
+    assert.equal(payload.MediaSources[0].Id, "a1-src");
+    // peer 片源的 Id 必须带节点前缀，且能反解出 peer 条目 Id 与片源 Id。
+    const peerSource = payload.MediaSources[1];
+    assert.match(peerSource.Id, /^n[A-Za-z0-9_-]+\./);
+    {
+      const [namePart, payloadPart] = peerSource.Id.slice(1).split(".");
+      assert.equal(Buffer.from(namePart, "base64url").toString("utf8"), "beta");
+      const [peerItemId, peerSourceId] = JSON.parse(
+        Buffer.from(payloadPart, "base64url").toString("utf8"),
+      );
+      assert.equal(peerItemId, "b1");
+      assert.equal(peerSourceId, "b1-src");
+    }
+    assert.equal(peerSource.Name, "4K");
+    assert.match(peerSource.Path, /^https:\/\/worker\.test\/beta\//);
+    assert.match(peerSource.DirectStreamUrl, /^https:\/\/worker\.test\/beta\//);
+    // peer 上游的主机名不能泄漏给客户端。
+    assert.doesNotMatch(peerSource.Path, /beta\.example/);
   });
 });
 
-test("peer version aggregation keeps unmergeable sibling items as list entries", async () => {
-  // 版本级归并不能处理「没有 MediaSources」或「没有匹配键」的 peer 条目，
-  // 这些必须仍然按列表级追加，否则会丢片。
-  const fixture = createPeerVersionFixture({
-    ownItems: [
-      {
-        Id: "a1",
-        Name: "流浪地球2",
-        ProductionYear: 2023,
-        ProviderIds: { Tmdb: "842675" },
-        MediaSources: [{ Id: "a1-src" }],
-      },
-    ],
-    peerItems: {
-      beta: [
-        PEER_VERSION_MOVIE,
-        { Id: "b2", Name: "另一部片", ProductionYear: 2020, ProviderIds: { Tmdb: "999" } },
-      ],
+test("playback version aggregation is skipped when the client already picked a source", async () => {
+  // 带 MediaSourceId 说明用户已选定版本，再扇出只会拖慢播放。
+  const fixture = createPlaybackVersionFixture({
+    ownItem: PLAYBACK_OWN_ITEM,
+    ownPlayback: {
+      MediaSources: [{ Id: "a1-src", Path: "https://alpha.example/media/a1.mkv" }],
+    },
+    peerItem: PLAYBACK_PEER_ITEM,
+    peerPlayback: {
+      MediaSources: [{ Id: "b1-src", Path: "https://beta.example/media/b1.mkv" }],
     },
   });
-  const env = { ENI_KV: fixture.kv, __CONFIG_CACHE_NAMESPACE: `peer-version-mixed-${Date.now()}` };
-  // 用正确凭据跑：匿名请求本来就不扇出，这里只验证归并与列表追加的混合结果。
+  const env = { ENI_KV: fixture.kv, __CONFIG_CACHE_NAMESPACE: `pb-picked-${Date.now()}` };
   await withWorkerGlobals({ fetch: fixture.fetch }, async () => {
     const response = await workerHandler.fetch(
       new Request(
-        "https://worker.test/alpha/emby/Items?Recursive=true&Fields=ProviderIds,MediaSources",
+        "https://worker.test/alpha/emby/Items/a1/PlaybackInfo?UserId=u1&MediaSourceId=a1-src",
         { method: "GET", headers: { "X-Emby-Token": "tok" } },
       ),
       env,
       { waitUntil() {} },
     );
     const payload = await response.json();
-    // a1（归并了 beta 的 b1）+ b2（无法归并，按列表追加）。
-    assert.equal(payload.Items.length, 2);
-    assert.equal(payload.Items[0].MediaSources.length, 2);
-    assert.match(payload.Items[1].Id, /^n/);
-    assert.equal(payload.TotalRecordCount, 2);
+    assert.equal(payload.MediaSources.length, 1);
+    assert.equal(payload.MediaSources[0].Id, "a1-src");
+    // 不应该为 peer 发起任何请求。
+    assert.equal(fixture.calls.filter((href) => href.includes("beta.example")).length, 0);
   });
 });
 
-test("peer version aggregation falls back to name and year without ProviderIds", async () => {
-  const fixture = createPeerVersionFixture({
-    ownItems: [
-      {
-        Id: "a1",
-        Name: "流浪地球2",
-        ProductionYear: 2023,
-        MediaSources: [{ Id: "a1-src" }],
-      },
-    ],
-    peerItems: {
-      beta: [
-        {
-          Id: "b1",
-          Name: "流浪地球2",
-          ProductionYear: 2023,
-          MediaSources: [{ Id: "b1-src" }],
-        },
-      ],
+test("playback version aggregation does not merge a different movie", async () => {
+  const fixture = createPlaybackVersionFixture({
+    ownItem: PLAYBACK_OWN_ITEM,
+    ownPlayback: {
+      MediaSources: [{ Id: "a1-src", Path: "https://alpha.example/media/a1.mkv" }],
+    },
+    peerItem: {
+      Id: "b9",
+      Name: "完全不同的片",
+      ProductionYear: 1999,
+      ProviderIds: { Tmdb: "111" },
+    },
+    peerPlayback: {
+      MediaSources: [{ Id: "b9-src", Path: "https://beta.example/media/b9.mkv" }],
     },
   });
-  const env = { ENI_KV: fixture.kv, __CONFIG_CACHE_NAMESPACE: `peer-version-name-${Date.now()}` };
+  const env = { ENI_KV: fixture.kv, __CONFIG_CACHE_NAMESPACE: `pb-diff-${Date.now()}` };
   await withWorkerGlobals({ fetch: fixture.fetch }, async () => {
     const response = await workerHandler.fetch(
-      new Request(
-        "https://worker.test/alpha/emby/Items?Recursive=true&Fields=ProviderIds,MediaSources",
-        { method: "GET", headers: { "X-Emby-Token": "tok" } },
-      ),
-      env,
-      { waitUntil() {} },
-    );
-    const payload = await response.json();
-    assert.equal(payload.Items.length, 1);
-    assert.equal(payload.Items[0].MediaSources.length, 2);
-  });
-});
-
-test("peer version aggregation does not merge when names collide but years differ", async () => {
-  const fixture = createPeerVersionFixture({
-    ownItems: [
-      {
-        Id: "a1",
-        Name: "沙丘",
-        ProductionYear: 1984,
-        MediaSources: [{ Id: "a1-src" }],
-      },
-    ],
-    peerItems: {
-      beta: [{ Id: "b1", Name: "沙丘", ProductionYear: 2021, MediaSources: [{ Id: "b1-src" }] }],
-    },
-  });
-  const env = { ENI_KV: fixture.kv, __CONFIG_CACHE_NAMESPACE: `peer-version-year-${Date.now()}` };
-  await withWorkerGlobals({ fetch: fixture.fetch }, async () => {
-    const response = await workerHandler.fetch(
-      new Request(
-        "https://worker.test/alpha/emby/Items?Recursive=true&Fields=ProviderIds,MediaSources",
-        { method: "GET", headers: { "X-Emby-Token": "tok" } },
-      ),
-      env,
-      { waitUntil() {} },
-    );
-    const payload = await response.json();
-    // 同名不同年（重制版）不能被合并成一条。
-    assert.equal(payload.Items.length, 2);
-  });
-});
-
-test("peer version aggregation skips a merged peer item whose id carries whitespace", async () => {
-  // 跳过键由 merge 侧（trim 过的 Id）与调用方（原始 Id）两边拼成，
-  // 形状不一致时归并过的条目会同时以「片源」和「独立条目」出现两次。
-  const fixture = createPeerVersionFixture({
-    ownItems: [
-      {
-        Id: "a1",
-        Name: "流浪地球2",
-        ProductionYear: 2023,
-        ProviderIds: { Tmdb: "842675" },
-        MediaSources: [{ Id: "a1-src" }],
-      },
-    ],
-    peerItems: {
-      beta: [
-        {
-          ...PEER_VERSION_MOVIE,
-          Id: "  b1  ",
-          MediaSources: [{ ...PEER_VERSION_MOVIE.MediaSources[0], Id: "  b1-src  " }],
-        },
-      ],
-    },
-  });
-  const env = { ENI_KV: fixture.kv, __CONFIG_CACHE_NAMESPACE: `peer-version-trim-${Date.now()}` };
-  await withWorkerGlobals({ fetch: fixture.fetch }, async () => {
-    const response = await workerHandler.fetch(
-      new Request(
-        "https://worker.test/alpha/emby/Items?Recursive=true&Fields=ProviderIds,MediaSources",
-        { method: "GET", headers: { "X-Emby-Token": "tok" } },
-      ),
-      env,
-      { waitUntil() {} },
-    );
-    const payload = await response.json();
-    assert.equal(payload.Items.length, 1);
-    assert.equal(payload.Items[0].MediaSources.length, 2);
-    assert.equal(payload.TotalRecordCount, 1);
-  });
-});
-
-test("peer version aggregation stays off when Fields omits ProviderIds", async () => {
-  // 没有 Fields=ProviderIds 时退回列表级：条目本身没有 ProviderIds 可供归并。
-  const fixture = createPeerVersionFixture({
-    ownItems: [{ Id: "a1", Name: "流浪地球2", ProductionYear: 2023 }],
-    peerItems: { beta: [PEER_VERSION_MOVIE] },
-  });
-  const env = { ENI_KV: fixture.kv, __CONFIG_CACHE_NAMESPACE: `peer-version-off-${Date.now()}` };
-  await withWorkerGlobals({ fetch: fixture.fetch }, async () => {
-    const response = await workerHandler.fetch(
-      new Request("https://worker.test/alpha/emby/Items?Recursive=true", {
+      new Request("https://worker.test/alpha/emby/Items/a1/PlaybackInfo?UserId=u-diff", {
         method: "GET",
         headers: { "X-Emby-Token": "tok" },
       }),
@@ -10995,61 +10910,58 @@ test("peer version aggregation stays off when Fields omits ProviderIds", async (
       { waitUntil() {} },
     );
     const payload = await response.json();
-    // 列表级：peer 条目带前缀追加。
-    assert.equal(payload.Items.length, 2);
-    assert.match(payload.Items[1].Id, /^n/);
-    assert.equal(payload.Items[0].MediaSources, undefined);
+    assert.equal(payload.MediaSources.length, 1);
   });
 });
 
-test("peer version aggregation reroutes playback by MediaSourceId", async () => {
-  const fixture = createPeerVersionFixture({
-    // 本节点条目没有 MediaSources：归并后 peer 的片源会成为唯一版本，
-    // 客户端照样能从版本选择器里选中它。
-    ownItems: [{ Id: "a1", Name: "流浪地球2", ProductionYear: 2023 }],
-    peerItems: { beta: [PEER_VERSION_MOVIE] },
-  });
-  const env = { ENI_KV: fixture.kv, __CONFIG_CACHE_NAMESPACE: `peer-version-play-${Date.now()}` };
-  // 先拿一次合并结果，取出带前缀的片源 Id。
-  let peerSourceId = "";
-  await withWorkerGlobals({ fetch: fixture.fetch }, async () => {
-    const response = await workerHandler.fetch(
-      new Request(
-        "https://worker.test/alpha/emby/Items?Recursive=true&Fields=ProviderIds,MediaSources",
-        { method: "GET", headers: { "X-Emby-Token": "tok" } },
-      ),
-      env,
-      { waitUntil() {} },
+test("playback version aggregation keeps the response intact when a peer fails", async () => {
+  const { kv } = createInMemoryKvStore();
+  const nodes = [
+    { name: "alpha", target: "https://alpha.example" },
+    { name: "beta", target: "https://beta.example" },
+  ];
+  for (const node of nodes) {
+    kv.put(
+      `${kernel.PREFIX}${node.name}`,
+      JSON.stringify({
+        name: node.name,
+        target: node.target,
+        tmdbAggregationEnabled: true,
+        aggregationMode: "auto",
+      }),
     );
-    const payload = await response.json();
-    assert.equal(payload.Items.length, 1);
-    assert.equal(payload.Items[0].MediaSources.length, 1);
-    peerSourceId = payload.Items[0].MediaSources[0].Id;
-  });
-  assert.ok(peerSourceId);
-
-  // 客户端拿这个片源 Id 去请求播放：必须改道到 beta，并把 MediaSourceId 还原。
-  const calls = [];
+  }
+  kv.put(
+    kernel.NODES_SUMMARY_INDEX_KEY,
+    JSON.stringify(nodes.map((node) => ({ ...node, tmdbAggregationEnabled: true }))),
+  );
+  const json = (body) =>
+    new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" } });
   const fetch = async (input) => {
-    calls.push(String(input));
-    return new Response(JSON.stringify({ MediaSources: [] }), {
-      headers: { "Content-Type": "application/json" },
-    });
+    const href = String(input);
+    if (href.startsWith("https://alpha.example")) {
+      if (/PlaybackInfo/i.test(href))
+        return json({
+          MediaSources: [{ Id: "a1-src", Path: "https://alpha.example/media/a1.mkv" }],
+        });
+      return json(PLAYBACK_OWN_ITEM);
+    }
+    // peer 全挂
+    throw new Error("peer unreachable");
   };
+  const env = { ENI_KV: kv, __CONFIG_CACHE_NAMESPACE: `pb-fail-${Date.now()}` };
   await withWorkerGlobals({ fetch }, async () => {
     const response = await workerHandler.fetch(
-      new Request(
-        `https://worker.test/alpha/emby/Items/a1/PlaybackInfo?MediaSourceId=${encodeURIComponent(peerSourceId)}`,
-        { method: "GET", headers: { "X-Emby-Token": "tok" } },
-      ),
+      new Request("https://worker.test/alpha/emby/Items/a1/PlaybackInfo?UserId=u-fail", {
+        method: "GET",
+        headers: { "X-Emby-Token": "tok" },
+      }),
       env,
       { waitUntil() {} },
     );
+    // peer 全挂不能让播放请求失败。
     assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.MediaSources.length, 1);
   });
-  assert.equal(calls.length, 1);
-  assert.match(calls[0], /^https:\/\/beta\.example\//);
-  // 条目 Id 换成 peer 自己的 b1，片源 Id 还原成 b1-src。
-  assert.match(calls[0], /\/Items\/b1\/PlaybackInfo/);
-  assert.match(calls[0], /MediaSourceId=b1-src/);
 });
