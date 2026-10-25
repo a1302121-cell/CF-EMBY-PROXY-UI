@@ -29,7 +29,7 @@ function loadEnhancementTestHooks(documentOverrides = {}, windowOverrides = {}) 
   assert.notEqual(closureEnd, -1, "enhancement script must use the expected closure");
   const instrumentedScript =
     inlineScript.slice(0, closureEnd) +
-    "window.__enhancementTestHooks = { formatD1SchemaStatus, formatD1InitializationResult, formatD1RepairPlan, formatD1RepairError, patchSafetyContractMethods, patchTmdbNodeMethods, getDashboardMonthPeriodKey, isDashboardMonthlyTrafficCacheFresh, toggleDashboardTrafficPeriod, dashboardTrafficState, normalizeHeadProbeResult, formatHeadProbeResult, formatHeadProbeTitle, normalizeHeadProbePath, normalizeHostPrefixDnsHostname, isHostPrefixNodeLinkActive, runWithConcurrency, NODE_GET_PROBE_CONCURRENCY, readStoredUiSkin, readBootstrapUiSkin, normalizeUiSkin, applyUiSkin, resolveInitialUiThemeMode, applyUiThemeMode, swapUiTheme, patchThemeTransitionMethods, resolveCurrentUiSkin, syncServerUiSkin, persistUiSkinPreference, syncDialogAccessibility, handleDialogEscapeKey, withUiRequestTimeout, installAdminBootstrapFetchDedupe, patchLogPageCache, dashboardLayerState, readFreshSettingsBootstrap, updateAdminBootstrapCache, buildCurrentLogPageSignature, fetch: window.fetch };\n" +
+    "window.__enhancementTestHooks = { formatD1SchemaStatus, formatD1InitializationResult, formatD1RepairPlan, formatD1RepairError, patchSafetyContractMethods, patchTmdbNodeMethods, normalizeAggregationModeValue, getDashboardMonthPeriodKey, isDashboardMonthlyTrafficCacheFresh, toggleDashboardTrafficPeriod, dashboardTrafficState, normalizeHeadProbeResult, formatHeadProbeResult, formatHeadProbeTitle, normalizeHeadProbePath, normalizeHostPrefixDnsHostname, isHostPrefixNodeLinkActive, runWithConcurrency, NODE_GET_PROBE_CONCURRENCY, readStoredUiSkin, readBootstrapUiSkin, normalizeUiSkin, applyUiSkin, resolveInitialUiThemeMode, applyUiThemeMode, swapUiTheme, patchThemeTransitionMethods, resolveCurrentUiSkin, syncServerUiSkin, persistUiSkinPreference, syncDialogAccessibility, handleDialogEscapeKey, withUiRequestTimeout, installAdminBootstrapFetchDedupe, patchLogPageCache, dashboardLayerState, readFreshSettingsBootstrap, updateAdminBootstrapCache, buildCurrentLogPageSignature, fetch: window.fetch };\n" +
     inlineScript.slice(closureEnd);
   const window = {
     addEventListener() {},
@@ -1532,11 +1532,15 @@ test("account settings expose TMDB aggregation credentials", async () => {
   assert.match(template, /type:"password",id:"cfg-todb-api-key",autocomplete:"new-password"/);
 });
 
-test("TMDB aggregation enhancement carries the node flag through form state and save", async () => {
+test("aggregation enhancement carries the node flag and mode through form state and save", async () => {
   const { patchTmdbNodeMethods } = loadEnhancementTestHooks();
   const app = {
-    nodes: [{ name: "alpha", tmdbAggregationEnabled: true }],
-    nodeModalForm: { name: "alpha", tmdbAggregationEnabled: undefined },
+    nodes: [{ name: "alpha", tmdbAggregationEnabled: true, aggregationMode: "emos" }],
+    nodeModalForm: {
+      name: "alpha",
+      tmdbAggregationEnabled: undefined,
+      aggregationMode: undefined,
+    },
     nodeModalRenderKey: 1,
     calls: [],
     buildNodeModalFormState(node) {
@@ -1556,18 +1560,31 @@ test("TMDB aggregation enhancement carries the node flag through form state and 
   patchTmdbNodeMethods(app);
   const state = app.buildNodeModalFormState(app.nodes[0]);
   assert.equal(state.form.tmdbAggregationEnabled, true);
+  assert.equal(state.form.aggregationMode, "emos");
 
   app.nodeModalForm.tmdbAggregationEnabled = true;
+  app.nodeModalForm.aggregationMode = "tmdb";
   await app.saveNode();
   assert.equal(app.calls[0].action, "save");
   assert.equal(app.calls[0].payload.tmdbAggregationEnabled, true);
+  assert.equal(app.calls[0].payload.aggregationMode, "tmdb");
   assert.equal(app.calls[1].action, "getNodes");
   assert.equal("tmdbAggregationEnabled" in app.calls[1].payload, false);
+  assert.equal("aggregationMode" in app.calls[1].payload, false);
 
   app.calls.length = 0;
   app.nodeModalForm.tmdbAggregationEnabled = false;
   await app.saveNode();
   assert.equal(app.calls[0].payload.tmdbAggregationEnabled, false);
+});
+
+test("aggregation mode normalizes unknown values to auto", () => {
+  const { normalizeAggregationModeValue } = loadEnhancementTestHooks();
+  assert.equal(normalizeAggregationModeValue(""), "auto");
+  assert.equal(normalizeAggregationModeValue(undefined), "auto");
+  assert.equal(normalizeAggregationModeValue("junk"), "auto");
+  assert.equal(normalizeAggregationModeValue(" EMOS "), "emos");
+  assert.equal(normalizeAggregationModeValue("tmdb"), "tmdb");
 });
 
 test("D1 schema dialog reports only the current schema contract", () => {

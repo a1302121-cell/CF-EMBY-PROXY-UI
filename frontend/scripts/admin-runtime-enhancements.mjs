@@ -1502,17 +1502,27 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
     app.buildNodeModalFormState = function (...args) {
       const state = originalBuildNodeModalFormState.apply(this, args);
       const source = state?.hydratedNode || args[0] || {};
-      if (state?.form) state.form.tmdbAggregationEnabled = source?.tmdbAggregationEnabled === true;
+      if (state?.form) {
+        state.form.tmdbAggregationEnabled = source?.tmdbAggregationEnabled === true;
+        state.form.aggregationMode = normalizeAggregationModeValue(source?.aggregationMode);
+      }
       return state;
     };
     app.saveNode = async function (...args) {
       const enabled = document.querySelector('[data-admin-node-tmdb-aggregation="1"] input')?.checked === true
         || this?.nodeModalForm?.tmdbAggregationEnabled === true;
-      if (this?.nodeModalForm) this.nodeModalForm.tmdbAggregationEnabled = enabled;
+      const aggregationMode = normalizeAggregationModeValue(
+        document.querySelector('[data-admin-node-aggregation-mode="1"] select')?.value
+        || this?.nodeModalForm?.aggregationMode,
+      );
+      if (this?.nodeModalForm) {
+        this.nodeModalForm.tmdbAggregationEnabled = enabled;
+        this.nodeModalForm.aggregationMode = aggregationMode;
+      }
       const originalApiCall = this.apiCall;
       const wrappedApiCall = function (action, payload, ...rest) {
         const nextPayload = action === 'save' && payload && typeof payload === 'object'
-          ? { ...payload, tmdbAggregationEnabled: enabled }
+          ? { ...payload, tmdbAggregationEnabled: enabled, aggregationMode }
           : payload;
         return originalApiCall.call(this, action, nextPayload, ...rest);
       };
@@ -1529,17 +1539,22 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
   function syncTmdbAggregationControl(app, content, advancedFields) {
     if (!app || !content || !advancedFields) return;
     patchTmdbNodeMethods(app);
-    if (app.nodeModalForm && typeof app.nodeModalForm.tmdbAggregationEnabled !== 'boolean') {
+    if (app.nodeModalForm) {
       const currentName = String(app.nodeModalForm.originalName || app.nodeModalForm.name || '').trim().toLowerCase();
       const currentNode = (Array.isArray(app.nodes) ? app.nodes : []).find((node) => String(node?.name || '').trim().toLowerCase() === currentName);
-      app.nodeModalForm.tmdbAggregationEnabled = currentNode?.tmdbAggregationEnabled === true;
+      if (typeof app.nodeModalForm.tmdbAggregationEnabled !== 'boolean') {
+        app.nodeModalForm.tmdbAggregationEnabled = currentNode?.tmdbAggregationEnabled === true;
+      }
+      if (typeof app.nodeModalForm.aggregationMode !== 'string') {
+        app.nodeModalForm.aggregationMode = normalizeAggregationModeValue(currentNode?.aggregationMode);
+      }
     }
     let field = document.querySelector('[data-admin-node-tmdb-aggregation="1"]');
     if (!field) {
       field = document.createElement('label');
       field.setAttribute('data-admin-node-tmdb-aggregation', '1');
       field.className = 'col-span-full flex items-start justify-between gap-4 border-b border-slate-100 pb-3.5 dark:border-slate-800';
-      field.innerHTML = '<span class="min-w-0"><span class="block text-sm text-slate-500">TMDB 聚合</span><span class="mt-1 block text-xs leading-5 text-slate-400">启用后，带 tmdb.&lt;id&gt; 的 Provider ID 查询先换成 todbvs，查不到时再退回标题和年份搜索。</span></span><span class="relative mt-0.5 inline-flex h-5 w-9 shrink-0 items-center"><input type="checkbox" class="peer absolute inset-0 h-full w-full cursor-pointer opacity-0"><span class="pointer-events-none absolute inset-0 rounded-full bg-slate-200 transition-colors peer-checked:bg-brand-600 peer-focus-visible:ring-2 peer-focus-visible:ring-brand-400 peer-focus-visible:ring-offset-2 dark:bg-slate-700"></span><span class="pointer-events-none absolute left-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-4"></span></span>';
+      field.innerHTML = '<span class="min-w-0"><span class="block text-sm text-slate-500">EMOS 聚合</span><span class="mt-1 block text-xs leading-5 text-slate-400">启用后，带 tmdb.&lt;id&gt; 的 Provider ID 查询先换成 todbvs，查不到时再退回标题和年份搜索。</span></span><span class="relative mt-0.5 inline-flex h-5 w-9 shrink-0 items-center"><input type="checkbox" class="peer absolute inset-0 h-full w-full cursor-pointer opacity-0"><span class="pointer-events-none absolute inset-0 rounded-full bg-slate-200 transition-colors peer-checked:bg-brand-600 peer-focus-visible:ring-2 peer-focus-visible:ring-brand-400 peer-focus-visible:ring-offset-2 dark:bg-slate-700"></span><span class="pointer-events-none absolute left-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-4"></span></span>';
     }
     const input = field.querySelector('input');
     if (input) {
@@ -1555,6 +1570,31 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
       }
     }
     if (field.parentElement !== advancedFields) advancedFields.prepend(field);
+    // 聚合策略：三档下拉，跟着节点开关一起进高级设置。
+    let modeField = document.querySelector('[data-admin-node-aggregation-mode="1"]');
+    if (!modeField) {
+      modeField = document.createElement('label');
+      modeField.setAttribute('data-admin-node-aggregation-mode', '1');
+      modeField.className = 'col-span-full block border-b border-slate-100 pb-3.5 dark:border-slate-800';
+      modeField.innerHTML = '<span class="block text-sm text-slate-500">聚合策略</span><span class="mt-1 block text-xs leading-5 text-slate-400">auto：先按 TMDB 标题 + 年份搜索，失败回退 todb 换 todbvs（默认）。emos：只查 todb，查不到就原样透传。tmdb：只按标题 + 年份，不碰 todb，适配标准 Emby / Jellyfin。</span><select class="mt-2 w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 outline-none text-sm text-slate-900 dark:text-white"><option value="auto">auto（TMDB 优先，回退 todb）</option><option value="emos">emos（只查 todb）</option><option value="tmdb">tmdb（只按标题 + 年份）</option></select>';
+    }
+    const modeSelect = modeField.querySelector('select');
+    if (modeSelect) {
+      const syncMode = () => {
+        if (app.nodeModalForm) app.nodeModalForm.aggregationMode = modeSelect.value;
+      };
+      modeSelect.onchange = syncMode;
+      const modeRenderKey = String(app.nodeModalRenderKey ?? '');
+      if (modeField.dataset.renderKey !== modeRenderKey) {
+        modeSelect.value = normalizeAggregationModeValue(app.nodeModalForm?.aggregationMode);
+        modeField.dataset.renderKey = modeRenderKey;
+      }
+    }
+    if (modeField.parentElement !== advancedFields) advancedFields.insertBefore(modeField, field.nextSibling);
+  }
+  function normalizeAggregationModeValue(value) {
+    const normalized = String(value || '').trim().toLowerCase();
+    return normalized === 'emos' || normalized === 'tmdb' ? normalized : 'auto';
   }
 
   // 标签颜色自绘下拉：原生 select 的弹出菜单由系统绘制，选项颜色改不动。

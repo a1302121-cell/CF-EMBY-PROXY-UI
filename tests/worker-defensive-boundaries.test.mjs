@@ -22,6 +22,7 @@ import {
   fetchDnsIpItemsFromUrlSource,
   createTargetRecord,
   convertTmdbRequestFromUrl,
+  normalizeNodeAggregationMode,
   createWorkerApplication,
   defineAnalyticsCacheMethods,
   defineDatabaseStatusMethods,
@@ -3489,7 +3490,7 @@ test("todb aggregation rewrites a tmdb provider id into todbvs", async () => {
       assert.equal(fetched.length, 1);
       assert.equal(
         fetched[0].url,
-        "https://theotherdb.org/api/video/getVideoIdByExternalId?type=tmdb&value=1399",
+        "https://api.theotherdb.org/video/getVideoIdByExternalId?type=tmdb&value=1399",
       );
       assert.equal(fetched[0].headers.get("Authorization"), "Bearer todb-key");
     },
@@ -3657,9 +3658,11 @@ test("todb aggregation only filters by type when the payload actually carries on
             `https://worker.test/Items?AnyProviderIdEquals=tmdb.1399&IncludeItemTypes=${itemTypes}`,
           ),
           { TODB_API_KEY: "todb-key", TMDB_API_READ_TOKEN: "read-token" },
+          {},
+          "emos",
         );
         assert.equal(
-          converted.searchParams.get("todbvs"),
+          converted?.searchParams?.get("todbvs") ?? null,
           expected,
           `${JSON.stringify(payload)} / ${itemTypes}`,
         );
@@ -3768,7 +3771,7 @@ test("todb aggregation collapses concurrent identical misses into one upstream c
   );
 });
 
-test("todb aggregation falls back to the TMDB title search when todb misses", async () => {
+test("auto aggregation falls back to todb when the TMDB title lookup misses", async () => {
   isolateState.TodbVideoIdCache.clear();
   isolateState.TmdbLookupCache.clear();
   const fetched = [];
@@ -3777,13 +3780,12 @@ test("todb aggregation falls back to the TMDB title search when todb misses", as
       fetch: async (url) => {
         const href = String(url);
         fetched.push(href);
-        if (href.startsWith("https://theotherdb.org/")) return new Response("{}", { status: 404 });
-        return new Response(
-          JSON.stringify({ title: "Fallback Movie", release_date: "2010-07-16" }),
-          {
-            status: 200,
-          },
-        );
+        // TMDB 先查且失败，todb 兜底命中。
+        if (href.startsWith("https://api.themoviedb.org/"))
+          return new Response("{}", { status: 500 });
+        return new Response(JSON.stringify([{ video_id: 5072, video_type: "movie" }]), {
+          status: 200,
+        });
       },
     },
     async () => {
@@ -3791,12 +3793,12 @@ test("todb aggregation falls back to the TMDB title search when todb misses", as
         new URL("https://worker.test/Items?AnyProviderIdEquals=tmdb.27205&IncludeItemTypes=Movie"),
         { TODB_API_KEY: "todb-key", TMDB_API_READ_TOKEN: "read-token" },
       );
-      assert.equal(converted.searchParams.has("todbvs"), false);
-      assert.equal(converted.searchParams.get("SearchTerm"), "Fallback Movie");
-      assert.equal(converted.searchParams.get("Years"), "2010");
+      assert.equal(converted.searchParams.get("todbvs"), "5072");
+      assert.equal(converted.searchParams.has("SearchTerm"), false);
       assert.equal(fetched.length, 2);
-      assert.match(fetched[0], /^https:\/\/theotherdb\.org\//);
-      assert.equal(fetched[1], "https://api.themoviedb.org/3/movie/27205?language=zh-CN");
+      // TMDB 先，todb 后。
+      assert.equal(fetched[0], "https://api.themoviedb.org/3/movie/27205?language=zh-CN");
+      assert.match(fetched[1], /^https:\/\/api\.theotherdb\.org\//);
     },
   );
 });
@@ -3965,7 +3967,271 @@ test("medb counts stay out of unrelated nodes, paths, and methods", async () => 
   assert.equal(fetchCount, 0);
 });
 
-test("node normalization keeps the TMDB aggregation flag as a strict boolean", () => {
+test("peer aggregation merges sibling nodes and prefixes their item ids", async () => {
+  const encodeId = (peerName, itemId) =>
+    `n${Buffer.from(peerName, "utf8").toString("base64url")}.${itemId}`;
+  const { kv } = createInMemoryKvStore();
+  const store = kv;
+  await store.put(
+    `${kernel.PREFIX}alpha`,
+    JSON.stringify({
+      name: "alpha",
+      target: "https://alpha.example",
+      tmdbAggregationEnabled: true,
+      aggregationMode: "auto",
+    }),
+  );
+  await store.put(
+    `${kernel.PREFIX}beta`,
+    JSON.stringify({
+      name: "beta",
+      target: "https://beta.example",
+      tmdbAggregationEnabled: true,
+      aggregationMode: "auto",
+    }),
+  );
+  await store.put(
+    `${kernel.PREFIX}gamma`,
+    JSON.stringify({
+      name: "gamma",
+      target: "https://gamma.example",
+      tmdbAggregationEnabled: false,
+    }),
+  );
+  await store.put(
+    kernel.NODES_SUMMARY_INDEX_KEY,
+    JSON.stringify([
+      { name: "alpha", target: "https://alpha.example", tmdbAggregationEnabled: true },
+      { name: "beta", target: "https://beta.example", tmdbAggregationEnabled: true },
+      { name: "gamma", target: "https://gamma.example", tmdbAggregationEnabled: false },
+    ]),
+  );
+  const env = { ENI_KV: store, __CONFIG_CACHE_NAMESPACE: `peer-agg-${Date.now()}` };
+  const calls = [];
+  const fetch = async (input) => {
+    const href = String(input);
+    calls.push(href);
+    if (href.startsWith("https://alpha.example")) {
+      return new Response(
+        JSON.stringify({
+          Items: [{ Id: "a1", Name: "Alpha Movie", SeriesId: "as1" }],
+          TotalRecordCount: 1,
+        }),
+        { headers: { "Content-Type": "application/json" } },
+      );
+    }
+    if (href.startsWith("https://beta.example")) {
+      return new Response(
+        JSON.stringify({
+          Items: [{ Id: "b1", Name: "Beta Movie", SeriesId: "bs1" }],
+          TotalRecordCount: 1,
+        }),
+        { headers: { "Content-Type": "application/json" } },
+      );
+    }
+    return new Response("{}", { status: 404 });
+  };
+  await withWorkerGlobals({ fetch }, async () => {
+    const response = await workerHandler.fetch(
+      new Request("https://worker.test/alpha/emby/Items?Recursive=true", { method: "GET" }),
+      env,
+      { waitUntil() {} },
+    );
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.Items.length, 2);
+    // 本节点条目保持原 Id。
+    assert.equal(payload.Items[0].Id, "a1");
+    // peer 条目加上可反解的前缀，SeriesId 这类外键也一起加。
+    assert.equal(payload.Items[1].Id, encodeId("beta", "b1"));
+    assert.equal(payload.Items[1].SeriesId, encodeId("beta", "bs1"));
+    assert.equal(payload.TotalRecordCount, 2);
+    // gamma 没开聚合，不参与扇出。
+    assert.equal(
+      calls.some((href) => href.includes("gamma.example")),
+      false,
+    );
+  });
+});
+
+test("peer aggregation passes an oversized own response through untouched", async () => {
+  // 超过 PEER_AGGREGATION_BODY_MAX_BYTES 时彻底放弃聚合，原始流必须完整转发：
+  // 不能出现「body 已被读走、只能返回空响应」。
+  const { kv } = createInMemoryKvStore();
+  for (const name of ["alpha", "beta"]) {
+    await kv.put(
+      `${kernel.PREFIX}${name}`,
+      JSON.stringify({ name, target: `https://${name}.example`, tmdbAggregationEnabled: true }),
+    );
+  }
+  await kv.put(
+    kernel.NODES_SUMMARY_INDEX_KEY,
+    JSON.stringify([
+      { name: "alpha", target: "https://alpha.example", tmdbAggregationEnabled: true },
+      { name: "beta", target: "https://beta.example", tmdbAggregationEnabled: true },
+    ]),
+  );
+  const env = { ENI_KV: kv, __CONFIG_CACHE_NAMESPACE: `peer-oversized-${Date.now()}` };
+  // 约 12 MB，明显超过 8 MB 的聚合上限。
+  const oversizedBody = JSON.stringify({
+    Items: Array.from({ length: 200000 }, (_, index) => ({
+      Id: `a${index}`,
+      Name: "x".repeat(40),
+    })),
+    TotalRecordCount: 200000,
+  });
+  let peerFetched = false;
+  const fetch = async (input) => {
+    const href = String(input);
+    if (href.includes("beta.example")) {
+      peerFetched = true;
+      return new Response(JSON.stringify({ Items: [{ Id: "b1" }], TotalRecordCount: 1 }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    return new Response(oversizedBody, {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+  await withWorkerGlobals({ fetch }, async () => {
+    const response = await workerHandler.fetch(
+      new Request("https://worker.test/alpha/emby/Items?Recursive=true", { method: "GET" }),
+      env,
+      { waitUntil() {} },
+    );
+    assert.equal(response.status, 200);
+    const bodyText = await response.text();
+    // 原始内容一字不差地到达客户端。
+    assert.equal(bodyText.length, oversizedBody.length);
+    assert.equal(bodyText, oversizedBody);
+    // 超限后不再打扰 peer。
+    assert.equal(peerFetched, false);
+  });
+});
+
+test("peer aggregation keeps the request alive when a peer is unavailable", async () => {
+  // 兄弟节点 503 / 抛异常 / 返回非 JSON / 节点记录缺失，都只能让它自己缺席，
+  // 绝不能把本节点的 Items 请求变成 502。
+  const cases = [
+    ["peer 503", () => new Response("", { status: 503 }), true],
+    [
+      "peer throws",
+      () => {
+        throw new Error("unreachable");
+      },
+      true,
+    ],
+    ["peer non-json", () => new Response("oops", { status: 200 }), true],
+    ["peer node missing", () => new Response("{}", { status: 200 }), false],
+  ];
+  for (const [label, peerResponse, withPeerNode] of cases) {
+    const { kv } = createInMemoryKvStore();
+    await kv.put(
+      `${kernel.PREFIX}alpha`,
+      JSON.stringify({
+        name: "alpha",
+        target: "https://alpha.example",
+        tmdbAggregationEnabled: true,
+      }),
+    );
+    if (withPeerNode) {
+      await kv.put(
+        `${kernel.PREFIX}beta`,
+        JSON.stringify({
+          name: "beta",
+          target: "https://beta.example",
+          tmdbAggregationEnabled: true,
+        }),
+      );
+    }
+    await kv.put(
+      kernel.NODES_SUMMARY_INDEX_KEY,
+      JSON.stringify([
+        { name: "alpha", target: "https://alpha.example", tmdbAggregationEnabled: true },
+        { name: "beta", target: "https://beta.example", tmdbAggregationEnabled: true },
+      ]),
+    );
+    const env = { ENI_KV: kv, __CONFIG_CACHE_NAMESPACE: `peer-down-${label}-${Date.now()}` };
+    const fetch = async (input) => {
+      const href = String(input);
+      if (href.includes("beta.example")) return peerResponse();
+      return new Response(JSON.stringify({ Items: [{ Id: "a1" }], TotalRecordCount: 1 }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    };
+    await withWorkerGlobals({ fetch }, async () => {
+      const response = await workerHandler.fetch(
+        new Request("https://worker.test/alpha/emby/Items?Recursive=true", { method: "GET" }),
+        env,
+        { waitUntil() {} },
+      );
+      assert.equal(response.status, 200, label);
+      const payload = await response.json();
+      // 本节点结果原样保留，peer 缺席不影响其它条目。
+      assert.deepEqual(payload.Items, [{ Id: "a1" }], label);
+      assert.equal(payload.TotalRecordCount, 1, label);
+    });
+  }
+});
+
+test("peer aggregation reroutes a prefixed item id back to its owning node", async () => {
+  const encodeId = (peerName, itemId) =>
+    `n${Buffer.from(peerName, "utf8").toString("base64url")}.${itemId}`;
+  const { kv } = createInMemoryKvStore();
+  await kv.put(
+    `${kernel.PREFIX}alpha`,
+    JSON.stringify({
+      name: "alpha",
+      target: "https://alpha.example",
+      tmdbAggregationEnabled: true,
+    }),
+  );
+  await kv.put(
+    `${kernel.PREFIX}beta`,
+    JSON.stringify({
+      name: "beta",
+      target: "https://beta.example",
+      tmdbAggregationEnabled: true,
+    }),
+  );
+  await kv.put(
+    kernel.NODES_SUMMARY_INDEX_KEY,
+    JSON.stringify([
+      { name: "alpha", target: "https://alpha.example", tmdbAggregationEnabled: true },
+      { name: "beta", target: "https://beta.example", tmdbAggregationEnabled: true },
+    ]),
+  );
+  const env = { ENI_KV: kv, __CONFIG_CACHE_NAMESPACE: `peer-reroute-${Date.now()}` };
+  const calls = [];
+  const fetch = async (input) => {
+    calls.push(String(input));
+    return new Response(JSON.stringify({ Id: "b1", Name: "Beta Movie" }), {
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+  await withWorkerGlobals({ fetch }, async () => {
+    // 客户端拿着合并结果里的 Id 回来要图片：必须改道到 beta 并还原 Id。
+    const response = await workerHandler.fetch(
+      new Request(
+        `https://worker.test/alpha/emby/Items/${encodeURIComponent(encodeId("beta", "b1"))}/Images/Primary`,
+        { method: "GET" },
+      ),
+      env,
+      { waitUntil() {} },
+    );
+    assert.equal(response.status, 200);
+    assert.equal(calls.length, 1);
+    assert.match(calls[0], /^https:\/\/beta\.example\//);
+    // 发往 beta 的请求里是它自己的 Id，不带聚合前缀。
+    assert.equal(calls[0].includes("n"), false);
+    assert.match(calls[0], /\/Items\/b1\/Images\/Primary$/);
+  });
+});
+
+test("node normalization keeps the aggregation flag and mode on the strict values", () => {
   const enabled = kernel.normalizeNode("alpha", {
     target: "https://origin.test",
     tmdbAggregationEnabled: true,
@@ -3981,6 +4247,91 @@ test("node normalization keeps the TMDB aggregation flag as a strict boolean", (
     tmdbAggregationEnabled: true,
   });
   assert.equal(summary.tmdbAggregationEnabled, true);
+
+  // 聚合策略只有三档，未知值一律回到 auto，避免脏数据把节点锁死在某种模式。
+  assert.equal(normalizeNodeAggregationMode(""), "auto");
+  assert.equal(normalizeNodeAggregationMode("junk"), "auto");
+  assert.equal(normalizeNodeAggregationMode(" EMOS "), "emos");
+  assert.equal(normalizeNodeAggregationMode("tmdb"), "tmdb");
+  const emos = kernel.normalizeNode("alpha", {
+    target: "https://origin.test",
+    aggregationMode: "emos",
+  }).data;
+  assert.equal(emos.aggregationMode, "emos");
+  const unknown = kernel.normalizeNode("alpha", {
+    target: "https://origin.test",
+    aggregationMode: "nope",
+  }).data;
+  assert.equal(unknown.aggregationMode, "auto");
+  assert.equal(
+    kernel.normalizeNodeSummaryPayload("alpha", {
+      target: "https://origin.test",
+      aggregationMode: "tmdb",
+    }).aggregationMode,
+    "tmdb",
+  );
+});
+
+test("aggregation modes gate the todb lookup and the title fallback", async () => {
+  const run = async (mode, payload) => {
+    isolateState.TodbVideoIdCache.clear();
+    isolateState.TmdbLookupCache.clear();
+    const fetched = [];
+    let converted = null;
+    await withWorkerGlobals(
+      {
+        fetch: async (url) => {
+          const href = String(url);
+          fetched.push(href);
+          if (href.startsWith("https://api.theotherdb.org/")) {
+            return new Response(JSON.stringify(payload), { status: 200 });
+          }
+          return new Response(
+            JSON.stringify({ title: "Fallback Title", release_date: "1999-10-15" }),
+            {
+              status: 200,
+            },
+          );
+        },
+      },
+      async () => {
+        converted = await convertTmdbRequestFromUrl(
+          new URL("https://worker.test/Items?AnyProviderIdEquals=tmdb.550&IncludeItemTypes=Movie"),
+          { TODB_API_KEY: "todb-key", TMDB_API_READ_TOKEN: "read-token" },
+          {},
+          mode,
+        );
+      },
+    );
+    return { converted, fetched };
+  };
+
+  // tmdb：完全跳过 todb，只按标题 + 年份改写（tmdb-search-converter.js 的通用路径）。
+  const tmdbHit = await run("tmdb", [{ video_id: 6901, video_type: "movie" }]);
+  assert.equal(tmdbHit.fetched.length, 1);
+  assert.equal(tmdbHit.fetched[0], "https://api.themoviedb.org/3/movie/550?language=zh-CN");
+  assert.equal(tmdbHit.converted.searchParams.get("SearchTerm"), "Fallback Title");
+  assert.equal(tmdbHit.converted.searchParams.get("Years"), "1999");
+  assert.equal(tmdbHit.converted.searchParams.has("todbvs"), false);
+
+  // emos：命中时只写 todbvs，不回退标题。
+  const emosHit = await run("emos", [{ video_id: 6901, video_type: "movie" }]);
+  assert.equal(emosHit.fetched.length, 1);
+  assert.equal(emosHit.converted.searchParams.get("todbvs"), "6901");
+  assert.equal(emosHit.converted.searchParams.has("SearchTerm"), false);
+
+  // emos 未命中：原样透传（返回 null），不能偷偷走 TMDB。
+  const emosMiss = await run("emos", []);
+  assert.equal(emosMiss.converted, null);
+  assert.equal(emosMiss.fetched.length, 1);
+  assert.match(emosMiss.fetched[0], /^https:\/\/api\.theotherdb\.org\//);
+
+  // auto：TMDB 优先。TMDB 命中时不再碰 todb。
+  const autoHit = await run("auto", [{ video_id: 6901, video_type: "movie" }]);
+  assert.equal(autoHit.fetched.length, 1);
+  assert.equal(autoHit.fetched[0], "https://api.themoviedb.org/3/movie/550?language=zh-CN");
+  assert.equal(autoHit.converted.searchParams.get("SearchTerm"), "Fallback Title");
+  assert.equal(autoHit.converted.searchParams.has("todbvs"), false);
 });
 
 test("blocked cross-origin image redirects fall back to a client-visible redirect", async () => {

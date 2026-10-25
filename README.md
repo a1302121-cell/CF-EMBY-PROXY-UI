@@ -256,8 +256,8 @@ Worker 作为公网入口，外部只能看到 Cloudflare 边缘节点，而不�
 | **`ADMIN_PATH`** | 文本变量 (Var) | **自定义管理入口**。用于修改默认的 `/admin` 路径，有效防范自动化扫描工具的嗅探。 | `/secret_portal_99`<br>\> ⚠️ **注意**：不能以 `/api` 开头。 |
 | **`HOST`** | 文本变量 (Var) | **主访问域名**。启用 host prefix 代理或保存 host prefix 节点前必须配置；只填写合法 DNS 主机名。 | `emby.example.com`，不要带协议、端口、路径、通配符或 IP。 |
 | **`LEGACY_HOST`** | 文本变量 (Var) | **兼容旧访问域名**。迁移主域名时保留旧的路径式节点入口。 | `old-emby.example.com` |
-| **`TMDB_API_READ_TOKEN`** / **`TMDB_API_KEY`** / **`TMDB_LANGUAGE`** | 加密变量 / 文本变量 | **TMDB 聚合兜底**。仅当后台「账号设置」里的 TMDB 凭据为空时才使用；两项凭据都在后台填写后，环境变量会被整组忽略。 | 见 `.dev.vars.example` |
-| **`TODB_API_KEY`** | 加密变量 | **todb 聚合兜底**。仅当后台「账号设置」里的 todb API Key 为空时使用。留空则不查 todb，聚合退回 TMDB 标题 + 年份搜索。 | 见 `.dev.vars.example` |
+| **`TMDB_API_READ_TOKEN`** / **`TMDB_API_KEY`** / **`TMDB_LANGUAGE`** | 加密变量 / 文本变量 | **EMOS 聚合的主路径**（`auto` / `tmdb` 档按标题 + 年份搜索）。仅当后台「账号设置」里的 TMDB 凭据为空时才使用；两项凭据都在后台填写后，环境变量会被整组忽略。 | 见 `.dev.vars.example` |
+| **`TODB_API_KEY`** | 加密变量 | **EMOS 聚合的 todbvs 兜底**（`auto` 档 TMDB 未命中时、`emos` 档唯一路径）。仅当后台「账号设置」里的 todb API Key 为空时使用；留空则不查 todb。 | 见 `.dev.vars.example` |
 
 > 💡 **命名兼容性提示**：
 > 核心代码已向下兼容多种旧版命名（如 `KV` / `EMBY_KV` / `EMBY_PROXY` 会自动映射为 `ENI_KV`，`D1` / `PROXY_LOGS` 会映射为 `DB`）。但**强烈建议在新部署时统一使用 `ENI_KV` 和 `DB`**，以确保与后续的更新、README 说明及自动化脚本保持一致。
@@ -740,21 +740,43 @@ https://你的域名/hk/123
 ### 6. 直连与省流
 通过节点级“主视频流策略”（`mainVideoStreamMode`，直连 / 代理 / 跟随全局）与“源站直连节点”名单，可以让不适合 Worker 中继的数据直接回到客户端，避免无意义的带宽绕行。跨域 30x 重定向则由鉴权能否随跳转携带自动决定是否继续代理。
 
-### 7. TMDB / todb 聚合
-节点打开「启用 TMDB 聚合」后，Worker 会改写 `AnyProviderIdEquals` 里的 `tmdb.<id>` 查询（只对 `GET` / `HEAD` 生效；`IncludeItemTypes` 含 `movie` 时按电影查，其余一律按剧查，`Episode` / `Season` 不做特判）：
+### 7. 聚合（EMOS / 通用 TMDB）
+节点打开「启用 EMOS 聚合」后，Worker 会改写 `AnyProviderIdEquals` 里的 `tmdb.<id>` 查询（只对 `GET` / `HEAD` 生效；`IncludeItemTypes` 含 `movie` 时按电影查，其余一律按剧查，`Episode` / `Season` 不做特判）。同一节点的「聚合策略」（`aggregationMode`）决定走哪条链路：
+
+| `aggregationMode` | 链路 | 适用 |
+| --- | --- | --- |
+| `auto`（默认） | 先查 TMDB 换 `SearchTerm` + `Years`，未配置 / 未命中 / 失败时退回 todb 换 `todbvs` | 两种上游都能用，最省心 |
+| `emos` | 只查 todb 换 `todbvs`，查不到就原样透传（不走标题兜底） | 明确只对接 EMOS 源站 |
+| `tmdb` | 只查 TMDB 换 `SearchTerm` + `Years`，完全不碰 todb | 标准 Emby / Jellyfin 等没有 `todbvs` 参数的上游 |
+
+`auto` / `emos` / `tmdb` 的改写结果：
 
 | 顺序 | 条件 | 改写结果 |
 | --- | --- | --- |
-| 1 | 有 todb 凭据且 todb 命中 | 删除 `AnyProviderIdEquals`，写入 `todbvs=<video_id>[,<video_id>...]` |
-| 2 | todb 未配置 / 未命中 / 失败 | 退回 TMDB 标题 + 年份搜索：删除 `AnyProviderIdEquals`，写入 `SearchTerm` 与 `Years` |
-| 3 | 两条路都没有可用凭据 | 请求原样透传（`AnyProviderIdEquals` 保持不变） |
+| 1 | `auto` / `tmdb` 且有 TMDB 凭据且查询命中 | 删除 `AnyProviderIdEquals`，写入 `SearchTerm` 与 `Years` |
+| 2 | `auto` 且 TMDB 未配置 / 未命中 / 失败 | 退回 todb：删除 `AnyProviderIdEquals`，写入 `todbvs=<video_id>[,<video_id>...]` |
+| 3 | `emos` 且有 todb 凭据且命中 | 删除 `AnyProviderIdEquals`，写入 `todbvs=<video_id>[,<video_id>...]` |
+| 4 | 所有可用路径都没有结果（含 `emos` 查不到） | 请求原样透传（`AnyProviderIdEquals` 保持不变） |
 
-todb 查询走 `GET https://theotherdb.org/api/video/getVideoIdByExternalId?type=tmdb&value=<id>`，请求头带 `Authorization: Bearer <todbApiKey>`；响应里的 `video_id` 可能是单个对象、数组或 `{ items: [...] }`，字段名兼容 `video_id` / `videoId` / `video_ids` / `videoIds`（以及兜底的 `id` / `value`），都会合并去重后用 `,` 拼接。
+todb 查询走 `GET https://api.theotherdb.org/video/getVideoIdByExternalId?type=tmdb&value=<id>`，请求头带 `Authorization: Bearer <todbApiKey>`。注意主机是 `api.theotherdb.org`，接口前缀在根路径上——`theotherdb.org/api/...` 是 404（已实测）。参数与 Bearer 鉴权来自 todb 官方 Postman 集合（[`somebyteorg/todb`](https://www.postman.com/somebyteorg/todb) 的「影视类 → 通过外部ID查询视频ID」），不要改成 `?tmdb=<id>` 之类的变体；无 token 时返回 401 `{"message":"Unauthenticated."}`，查不到时返回 `[]`。响应里的 `video_id` 可能是单个对象、数组或 `{ items: [...] }`，字段名兼容 `video_id` / `videoId` / `video_ids` / `videoIds`（以及兜底的 `id` / `value`），都会合并去重后用 `,` 拼接。
 
 TMDB 的电影 id 和剧 id 是两套独立编号，同一个整数可能既是电影又是剧，所以该接口可能一次返回两条不同类型的结果。Worker 会读条目上的 `video_type`，在请求类型唯一时（`Series` / `Movie`）只保留匹配的那一类；`Movie,Series` 混合查询不做过滤。响应里没有 `video_type`（或值无法识别）时同样不过滤，避免字段缺失导致命中被整体丢弃。
 
-凭据来自账号设置的 `todbApiKey`，为空时读环境变量 `TODB_API_KEY`。命中缓存 24 小时，失败（非 2xx / 空结果 / 超时）缓存 60 秒，单个查询超时 5 秒。
+凭据来自账号设置的 `todbApiKey`，为空时读环境变量 `TODB_API_KEY`。命中缓存 24 小时，失败（非 2xx / 空结果 / 超时）缓存 60 秒，单个查询超时 8 秒（实测该接口首次查询常在 3–15 秒，超时过短会让请求白跑一次再回退标题搜索）。
 关于集与季：todb 的季 / 集没有外部 ID 字段（`external_ids` 只出现在影片与人物上），所以「集的 tmdb id」在 todb 里查不到，这类请求会自然落到透传。反过来说，只要请求里带的是**剧级** tmdb id（哪怕 `IncludeItemTypes` 是 `Episode` / `Season`），Worker 仍会按剧解析出 `todbvs` 并保留 `IncludeItemTypes`，由上游在剧内筛集 / 季。不做 `Episode` / `Season` 特判是刻意与上游参考实现保持一致。
+`tmdb` 策略只做标题 + 年份改写：删除 `AnyProviderIdEquals`，写入 `SearchTerm` 与 TMDB 的精确年份 `Years`，其余查询参数（`Fields` / `SortBy` / `Limit` / `Recursive` 等）原样保留，与通用 Emby 聚合反代脚本的转换结果一致。
+
+#### 跨节点聚合（节点间共享列表）
+
+节点打开「启用 EMOS 聚合」后，它的 `GET /Items` 查询会**自动扇出**到其它同样开启聚合的节点，把兄弟节点的条目合并进同一个响应。不需要额外配置，也不存在白名单：开了就参与，关了就不参与。
+
+- 合并只发生在 `GET` 的 `/Items`（含 `/emby/Items`、`/emby/Users/{id}/Items`）。`POST` 查询带 body 无法重放，播放 / 图片 / 进度路径本来就只打一个节点，都不扇出。
+- 兄弟节点的条目 Id 会加上 `n<base64url(节点名)>.<原 Id>` 前缀，`SeriesId` / `SeasonId` / `ParentId` 这类外键同步加前缀，`TotalRecordCount` 按实际条数重算。
+- 客户端拿着带前缀的 Id 回来时（图片、PlaybackInfo、播放、进度上报），Worker 会把前缀还原成原 Id 并整体改道到对应节点。前缀里编码的是**节点名**而不是序号，所以增删节点不会让旧 Id 路由到错误的上游。
+- 兄弟节点查询**直接打它的上游**，不经 Worker 自己的 HTTP 入口，因此不存在可被客户端伪造的「内部特权参数」，也天然跳过该节点的 Geo / IP / 限速 / 节点密钥。客户端鉴权头与兄弟节点的管理员自定义 Headers 会带上。
+- 最多 8 个兄弟节点，单个查询超时 6 秒。**任何一个兄弟节点失败（503 / 抛异常 / 返回非 JSON / 节点记录缺失）只让它自己缺席**，不会把请求变成 502。
+- 本节点响应超过 8 MB、非 JSON、或不是 Items 载荷时**彻底放弃聚合**，原始流原样转发（用 `clone()` 读副本，原流从未被消费）。
+- 兄弟节点结果**不去重**：同一部片在多个节点都有时会返回多条，由播放器自己合并——这正是多服聚合的语义。
 
 ---
 

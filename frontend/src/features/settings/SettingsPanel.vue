@@ -1954,7 +1954,7 @@ function resolveStatusLabel() {
               autocomplete="new-password"
             />
             <span class="field-hint"
-              >用于「TMDB 聚合」。两项都留空时回退到 Worker 环境变量 TMDB_API_READ_TOKEN /
+              >用于「EMOS 聚合」。两项都留空时回退到 Worker 环境变量 TMDB_API_READ_TOKEN /
               TMDB_API_KEY；只要填写任意一项，环境变量凭证会被整体忽略。</span
             >
           </label>
@@ -1979,7 +1979,7 @@ function resolveStatusLabel() {
               autocomplete="new-password"
             />
             <span class="field-hint"
-              >用于 todb 聚合：把 tmdb Provider ID 换成 todbvs 视频 ID
+              >用于 EMOS 聚合：把 tmdb Provider ID 换成 todbvs 视频 ID
               列表；查不到时才回退到标题和年份搜索。留空时读 Worker 环境变量 TODB_API_KEY。</span
             >
           </label>

@@ -854,6 +854,15 @@ function normalizeNodeMainVideoStreamMode(value = "") {
   if (normalized === "proxy") return "proxy";
   return "inherit";
 }
+// 聚合策略：auto = TMDB 标题优先、失败回退 todb（默认）；emos = 只查 todb；tmdb = 只做标题 + 年份。
+function normalizeNodeAggregationMode(value = "") {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
+  if (normalized === "emos") return "emos";
+  if (normalized === "tmdb") return "tmdb";
+  return "auto";
+}
 function readNodeMainVideoStreamMode(node = {}) {
   return normalizeNodeMainVideoStreamMode(
     node?.mainVideoStreamMode ?? node?.wangpanDirectMode ?? node?.wangpanMode,
@@ -5997,6 +6006,9 @@ var NODE_LEGACY_METADATA_KEYS = ["wangpanMode", "videoThrottling", "interceptMs"
 var PLAYBACK_RELAY_SEGMENT = "__playback-relay";
 var PLAYBACK_RELAY_QUERY_PARAM = "__pb_target";
 var PLAYBACK_ABSOLUTE_FALLBACK_QUERY_PARAM = "__pb_abs";
+// 跨节点聚合不走 Worker 自己的 HTTP 入口（直接打 peer 上游），所以不需要
+// 「内部特权参数」这类可被客户端伪造的标记。peer 的访问策略由聚合代码自身
+// 的取舍决定：只透传客户端鉴权头 + peer 的管理员自定义 Headers。
 var PROXY_LINK_VARIANT_SEGMENTS = Object.freeze({
   main: "",
   proxy_a: "__proxy-a",
@@ -17211,6 +17223,7 @@ function buildNodeDerivedCacheRevision(nodeName = "", nodeData = {}) {
       )
         .trim()
         .toLowerCase(),
+      aggregationMode: normalizeNodeAggregationMode(nodeData?.aggregationMode),
     }),
   );
 }
@@ -20912,6 +20925,9 @@ function defineNodeMutationMethods(dependencies = {}, kernel = {}) {
       const tmdbAggregationEnabled = n.tmdbAggregationEnabled === true;
       if (n.tmdbAggregationEnabled !== tmdbAggregationEnabled) changed = true;
       n.tmdbAggregationEnabled = tmdbAggregationEnabled;
+      const aggregationMode = normalizeNodeAggregationMode(n.aggregationMode);
+      if (n.aggregationMode !== aggregationMode) changed = true;
+      n.aggregationMode = aggregationMode;
       const normalizedEntryMode = normalizeNodeEntryMode(n.entryMode);
       if (String(n.entryMode || "") !== normalizedEntryMode) changed = true;
       n.entryMode = normalizedEntryMode;
@@ -21098,6 +21114,10 @@ function defineNodeMutationMethods(dependencies = {}, kernel = {}) {
           rawNode?.tmdbAggregationEnabled !== void 0
             ? rawNode.tmdbAggregationEnabled === true
             : existingNode.tmdbAggregationEnabled === true,
+        aggregationMode:
+          rawNode?.aggregationMode !== void 0
+            ? normalizeNodeAggregationMode(rawNode.aggregationMode)
+            : normalizeNodeAggregationMode(existingNode.aggregationMode),
         playbackInfoMode:
           rawNode?.playbackInfoMode !== void 0
             ? normalizeNodePlaybackInfoMode(rawNode.playbackInfoMode)
@@ -24234,6 +24254,31 @@ function defineProxyUpstreamDeliveryMethods(dependencies = {}, kernel = {}) {
         };
         return new Response(null, upgradeInit);
       }
+      // 跨节点聚合：本节点 200 + JSON 的 Items 查询会把兄弟节点的结果合并进来。
+      // 必须在 buildManagedProxyResponseBody 之前完成：那个函数会接管 response.body，
+      // 之后任何读取都会拿到 locked 的流。合并失败（含 peer 全挂）时按原样转发。
+      if (execution?.node?.tmdbAggregationEnabled === true) {
+        const merged = await kernel.buildPeerAggregationMergedResponse(
+          execution,
+          execution.env,
+          finalUpstreamState,
+        );
+        if (merged) {
+          modifiedHeaders.set("Content-Type", "application/json; charset=utf-8");
+          modifiedHeaders.delete("Content-Length");
+          modifiedHeaders.delete("Content-Encoding");
+          modifiedHeaders.delete("Transfer-Encoding");
+          modifiedHeaders.set("Cache-Control", "no-store");
+          return new Response(
+            execution.requestMethod === "HEAD" ? null : JSON.stringify(merged.payload),
+            {
+              status: 200,
+              statusText: "OK",
+              headers: modifiedHeaders,
+            },
+          );
+        }
+      }
       let responseBody;
       if (shouldManageProxyBody)
         responseBody = kernel.buildManagedProxyResponseBody(
@@ -26094,11 +26139,12 @@ function buildTmdbConvertedRequestUrl(requestUrl, title, year) {
   else nextUrl.searchParams.delete("Years");
   return nextUrl;
 }
-var TODB_LOOKUP_URL = "https://theotherdb.org/api/video/getVideoIdByExternalId";
+var TODB_LOOKUP_URL = "https://api.theotherdb.org/video/getVideoIdByExternalId";
 var TODB_LOOKUP_CACHE_MAX = 4096;
 var TODB_LOOKUP_CACHE_TTL_MS = 24 * 60 * 1e3;
 var TODB_LOOKUP_FAILURE_TTL_MS = 60 * 1e3;
-var TODB_LOOKUP_TIMEOUT_MS = 5e3;
+// todb 首次查询常见 3–15 秒（冷库联表），5 秒会让多数请求白跑一次再回退标题搜索。
+var TODB_LOOKUP_TIMEOUT_MS = 8e3;
 var TODB_VIDEO_ID_FIELDS = ["video_id", "videoId", "video_ids", "videoIds"];
 var TODB_VIDEO_ID_FALLBACK_FIELDS = ["id", "value"];
 var TODB_VIDEO_ID_CONTAINER_KEYS = ["items", "data", "results", "videos", "list"];
@@ -26180,6 +26226,7 @@ async function fetchTodbVideoIdEntries(tmdbId, apiKey) {
         TODB_LOOKUP_CACHE_MAX,
       );
     const lookupUrl = new URL(TODB_LOOKUP_URL);
+    // todb 官方 Postman 集合（somebyteorg/todb）里的形态就是 type/value，别再加 tmdb= 之类的变体。
     lookupUrl.searchParams.set("type", "tmdb");
     lookupUrl.searchParams.set("value", tmdbId);
     const controller = new AbortController();
@@ -26235,10 +26282,16 @@ async function convertTmdbRequestToTodbvUrl(
   nextUrl.searchParams.set("todbvs", videoIds.join(","));
   return nextUrl;
 }
-async function convertTmdbRequestFromUrl(requestUrl, env = {}, config = {}) {
+async function convertTmdbRequestFromUrl(
+  requestUrl,
+  env = {},
+  config = {},
+  aggregationMode = "auto",
+) {
   const providerId = requestUrl?.searchParams?.get?.("AnyProviderIdEquals");
   const tmdbMatch = providerId?.match(/tmdb\.(\d+)/i);
   if (!tmdbMatch) return null;
+  const mode = normalizeNodeAggregationMode(aggregationMode);
   const itemTypes = String(requestUrl.searchParams.get("IncludeItemTypes") || "").toLowerCase();
   // 集 / 季请求不再特判：与参考实现一致，只按「含 movie 走电影，其余走剧」分流。
   // 集的 tmdb id 在 todb 里查不到（季 / 集没有外部 ID），自然落到透传，
@@ -26254,14 +26307,10 @@ async function convertTmdbRequestFromUrl(requestUrl, env = {}, config = {}) {
     itemTypes.includes("episode") ||
     itemTypes.includes("season");
   const todbMediaType = wantsMovie === wantsTv ? "" : wantsMovie ? "movie" : "tv";
-  const todbvUrl = await convertTmdbRequestToTodbvUrl(
-    requestUrl,
-    env,
-    config,
-    tmdbMatch[1],
-    todbMediaType,
-  );
-  if (todbvUrl) return todbvUrl;
+  // emos 档只走 todb：查不到就原样透传，不做标题兜底。
+  if (mode === "emos") {
+    return await convertTmdbRequestToTodbvUrl(requestUrl, env, config, tmdbMatch[1], todbMediaType);
+  }
   const configReadToken = String(config?.tmdbApiReadToken || "").trim();
   const configApiKey = String(config?.tmdbApiV3Key || "").trim();
   const envReadToken = String(env?.TMDB_API_READ_TOKEN || "").trim();
@@ -26269,7 +26318,12 @@ async function convertTmdbRequestFromUrl(requestUrl, env = {}, config = {}) {
   const useConfigCredentials = Boolean(configReadToken || configApiKey);
   const readToken = useConfigCredentials ? configReadToken : envReadToken;
   const apiKey = useConfigCredentials ? configApiKey : envApiKey;
-  if (!readToken && !apiKey) return null;
+  // TMDB 优先：没有 TMDB 凭据时退回 todb（auto 档的兜底方向与主路径相反）。
+  const todbFallback = () =>
+    mode === "auto"
+      ? convertTmdbRequestToTodbvUrl(requestUrl, env, config, tmdbMatch[1], todbMediaType)
+      : Promise.resolve(null);
+  if (!readToken && !apiKey) return await todbFallback();
   // 账号设置凭证是整组生效的：只在面板填了任意一项，env 凭证就被整体忽略。
   // 每个 isolate 只显式记录一次，避免 env 凭证静默失效而无人察觉，也避免逐请求刷屏。
   if (
@@ -26293,7 +26347,7 @@ async function convertTmdbRequestFromUrl(requestUrl, env = {}, config = {}) {
   const cacheKey = `${language}:${mediaType}:${tmdbMatch[1]}`;
   const cached = cacheState.TmdbLookupCache.get(cacheKey);
   if (cached && Number(cached.expiresAt) > nowMs()) {
-    if (cached.failed === true) return null;
+    if (cached.failed === true) return await todbFallback();
     return buildTmdbConvertedRequestUrl(requestUrl, cached.title, cached.year);
   }
   const rememberLookupFailure = () =>
@@ -26350,7 +26404,7 @@ async function convertTmdbRequestFromUrl(requestUrl, env = {}, config = {}) {
       clearTimeout(timeoutId);
     }
   });
-  if (!lookup) return null;
+  if (!lookup) return await todbFallback();
   return buildTmdbConvertedRequestUrl(requestUrl, lookup.title, lookup.year);
 }
 function definePlaybackExecutionCacheMethods(dependencies = {}, kernel = {}) {
@@ -26459,7 +26513,12 @@ function definePlaybackExecutionCacheMethods(dependencies = {}, kernel = {}) {
         node.tmdbAggregationEnabled === true &&
         (requestMethod === "GET" || requestMethod === "HEAD")
       ) {
-        const tmdbConvertedUrl = await convertTmdbRequestFromUrl(requestUrl, env, currentConfig);
+        const tmdbConvertedUrl = await convertTmdbRequestFromUrl(
+          requestUrl,
+          env,
+          currentConfig,
+          node.aggregationMode,
+        );
         if (tmdbConvertedUrl) requestUrl = tmdbConvertedUrl;
       }
       const nodeDirectSource = isNodeVideoStreamDirectEnabled(node, currentConfig, name);
@@ -26881,6 +26940,267 @@ function definePlaybackExecutionCacheMethods(dependencies = {}, kernel = {}) {
         statusText: cachedResponse.statusText,
         headers: modifiedHeaders,
       });
+    },
+  };
+}
+//#endregion
+//#region worker/features/proxy/aggregation/peer-fanout-methods.js
+// 跨节点聚合：节点开启「EMOS 聚合」后，GET 的 Items 查询会扇出到其它同样开启的节点，
+// 合并结果并把 peer 的 item Id 改写成 `n<序号>_<原 Id>`。后续图片 / PlaybackInfo /
+// 播放 / 进度请求靠这个前缀回到对应节点。
+// peer 查询直接打 peer 的上游（不经 Worker 自己的 HTTP 入口），所以不存在可被客户端
+// 伪造的「内部特权」参数，也天然跳过 peer 的 Geo / IP / 限速 / 节点密钥。
+// 前缀里编码 peer 节点名（base64url）而不是序号：序号会随 peer 增删漂移，
+// 漂移的后果是把 A 的条目路由到 B，比前缀长一点危险得多。
+var PEER_AGGREGATION_ID_PATTERN = /^n([A-Za-z0-9_-]+)\.(.+)$/;
+var PEER_AGGREGATION_MAX_PEERS = 8;
+// 节点摘要索引键：DATA_SERVICE_CONSTANTS 里的同名常量在别的 region，peer 方法组读不到。
+var NODES_SUMMARY_INDEX_KV_KEY = "sys:nodes_index_full:v2";
+var PEER_AGGREGATION_TIMEOUT_MS = 6e3;
+var PEER_AGGREGATION_BODY_MAX_BYTES = 8 * 1024 * 1024;
+// 只合并 Items 列表与单条 Item 详情。播放 / 图片 / 进度不改写，它们靠 Id 前缀重新路由。
+var PEER_AGGREGATION_MERGE_PATH_PATTERN =
+  /^\/(?:emby\/|mediabrowser\/)?(?:users\/[^/]+\/)?items(?:\/\d+)?$/i;
+function isPeerAggregationMergePath(path = "") {
+  return PEER_AGGREGATION_MERGE_PATH_PATTERN.test(String(path || "").trim());
+}
+// 只在 GET 上生效：POST 查询带 body，无法安全重放给多个节点。
+function shouldFanoutPeerAggregation(execution) {
+  if (!execution) return false;
+  if (execution.requestMethod !== "GET") return false;
+  if (execution.requestTraits?.isPlaybackCriticalRequest === true) return false;
+  if (execution.playbackRelayTargetUrl instanceof URL) return false;
+  return isPeerAggregationMergePath(execution.proxyPath);
+}
+function decodePeerAggregationItemId(value) {
+  const match = PEER_AGGREGATION_ID_PATTERN.exec(String(value ?? "").trim());
+  if (!match) return null;
+  const peerName = decodeBase64UrlUtf8(match[1]);
+  if (!peerName) return null;
+  return { peerName, itemId: match[2] };
+}
+function encodePeerAggregationItemId(peerName, itemId) {
+  return `n${encodeBase64UrlUtf8(peerName)}.${String(itemId ?? "")}`;
+}
+// 递归给 `Id` / `*Id` 这类字符串字段加前缀，只改值不新增字段。
+// `ImageTags` / `ProviderIds` 的值是对象，走不到这个分支。
+function rewritePeerAggregationIds(node, peerName, depth = 0) {
+  if (node === null || node === void 0 || depth > 6) return node;
+  if (Array.isArray(node))
+    return node.map((item) => rewritePeerAggregationIds(item, peerName, depth + 1));
+  if (!isPlainObject(node)) return node;
+  const next = {};
+  for (const [key, value] of Object.entries(node)) {
+    if (typeof value === "string" && /id$/i.test(key) && value.trim()) {
+      next[key] = encodePeerAggregationItemId(peerName, value.trim());
+      continue;
+    }
+    if (Array.isArray(value) || isPlainObject(value)) {
+      next[key] = rewritePeerAggregationIds(value, peerName, depth + 1);
+      continue;
+    }
+    next[key] = value;
+  }
+  return next;
+}
+async function readPeerAggregationJson(response, maxBytes) {
+  const read = await readResponseBytesWithLimit(response, maxBytes);
+  if (read.exceeded) return null;
+  try {
+    return JSON.parse(decodeBufferedBodyText(read.bodyBytes));
+  } catch {
+    return null;
+  }
+}
+function definePeerAggregationMethods(dependencies = {}, kernel = {}) {
+  const { fetchPort } = dependencies;
+  return {
+    // 自动全量：凡是开了聚合、且不是当前节点的都算兄弟节点。
+    async resolvePeerAggregationNodes(execution, env) {
+      if (!shouldFanoutPeerAggregation(execution)) return [];
+      if (execution.node?.tmdbAggregationEnabled !== true) return [];
+      const kv = getKvBinding(env);
+      if (!kv) return [];
+      // 直接读节点摘要索引：peer 方法组拿不到 storage region 的 getNodesSummaryIndex。
+      let summaries = null;
+      try {
+        summaries = await kv.get(NODES_SUMMARY_INDEX_KV_KEY, { type: "json" });
+      } catch {
+        return [];
+      }
+      if (!Array.isArray(summaries) || !summaries.length) return [];
+      const currentNodeName = String(execution.nodeName || "")
+        .trim()
+        .toLowerCase();
+      const peers = [];
+      for (const summary of summaries) {
+        if (peers.length >= PEER_AGGREGATION_MAX_PEERS) break;
+        const peerName = String(summary?.name || "")
+          .trim()
+          .toLowerCase();
+        if (!peerName || peerName === currentNodeName) continue;
+        if (summary?.tmdbAggregationEnabled !== true) continue;
+        peers.push({ name: peerName });
+      }
+      return peers;
+    },
+    // peer 的节点数据：直接读 KV。节点仓库方法在 storage region，peer 方法组拿不到。
+    async readPeerAggregationNode(peerName, env) {
+      const kv = getKvBinding(env);
+      if (!kv || !peerName) return null;
+      try {
+        return await kv.get(`node:${peerName}`, { type: "json" });
+      } catch {
+        return null;
+      }
+    },
+    // peer 的上游基址：直接复用节点自己的 target / lines，不做 Worker 自请求。
+    async resolvePeerAggregationTargets(peerNode) {
+      if (!peerNode) return [];
+      const lines = Array.isArray(peerNode.lines) ? peerNode.lines : [];
+      const activeLineId = String(peerNode.activeLineId || "").trim();
+      const activeLine = activeLineId
+        ? lines.find((line) => String(line?.id || "").trim() === activeLineId)
+        : null;
+      const orderedLines = activeLine
+        ? [activeLine, ...lines.filter((line) => line !== activeLine)]
+        : lines;
+      const candidates = orderedLines.length
+        ? orderedLines.map((line) => line.target)
+        : String(peerNode.target || "")
+            .split(",")
+            .map((item) => item.trim())
+            .filter(Boolean);
+      return candidates.map((item) => createTargetRecord(item)).filter(isTargetRecord);
+    },
+    buildPeerAggregationUpstreamUrl(targetRecord, execution) {
+      const upstreamUrl = buildUpstreamProxyUrl(targetRecord, execution.proxyPath);
+      upstreamUrl.search = String(execution.requestUrl?.search || "");
+      return upstreamUrl;
+    },
+    // 单个 peer 的任何失败（节点读不到、target 解析失败、网络异常、超时）都只让这个
+    // peer 缺席，绝不能让异常冒到调用方把整条 Items 请求变成 502。
+    async fetchPeerAggregationPayload(execution, peer, env) {
+      try {
+        return await kernel.fetchPeerAggregationPayloadUnsafe(execution, peer, env);
+      } catch (error) {
+        console.warn("peer aggregation skipped:", peer?.name, error?.message || error);
+        return null;
+      }
+    },
+    async fetchPeerAggregationPayloadUnsafe(execution, peer, env) {
+      const peerNode = await kernel.readPeerAggregationNode(peer.name, env);
+      if (!peerNode) return null;
+      const targetRecords = await kernel.resolvePeerAggregationTargets(peerNode);
+      if (!targetRecords.length) return null;
+      // peer 的管理员自定义 Headers 也要带上，否则需要静态鉴权的 peer 会 401。
+      const headers = new Headers({ accept: "application/json" });
+      const clientAuth =
+        execution.request.headers.get("Authorization") ||
+        execution.request.headers.get("X-Emby-Authorization") ||
+        "";
+      if (clientAuth) headers.set("Authorization", clientAuth);
+      for (const headerName of ["X-Emby-Token", "X-MediaBrowser-Token"]) {
+        const value = String(execution.request.headers.get(headerName) || "").trim();
+        if (value) headers.set(headerName, value);
+      }
+      const nodeHeaders = isPlainObject(peerNode?.headers) ? peerNode.headers : {};
+      for (const [headerName, headerValue] of Object.entries(nodeHeaders)) {
+        if (DROP_REQUEST_HEADER_SET.has(String(headerName).toLowerCase())) continue;
+        headers.set(headerName, String(headerValue));
+      }
+      const controller = new AbortController();
+      const timeoutId = setTimeout(
+        () => controller.abort("peer_aggregation_timeout"),
+        PEER_AGGREGATION_TIMEOUT_MS,
+      );
+      try {
+        // 按顺序试每个 target：单个 peer 失败只影响它自己，聚合是尽力而为。
+        for (const targetRecord of targetRecords) {
+          const upstreamUrl = kernel.buildPeerAggregationUpstreamUrl(targetRecord, execution);
+          try {
+            const response = await fetchPort.fetchRequest(upstreamUrl, {
+              method: "GET",
+              headers,
+              signal: controller.signal,
+            });
+            if (!response?.ok) continue;
+            const payload = await readPeerAggregationJson(
+              response,
+              PEER_AGGREGATION_BODY_MAX_BYTES,
+            );
+            if (isPlainObject(payload) && Array.isArray(payload.Items)) return payload;
+          } catch {
+            continue;
+          }
+        }
+        return null;
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    },
+    // 合并：本节点响应 + 各 peer 响应。任何一步不满足就返回 null，调用方按原响应继续。
+    async buildPeerAggregationMergedResponse(execution, env, upstreamState) {
+      const peers = await kernel.resolvePeerAggregationNodes(execution, env);
+      if (!peers.length) return null;
+      const response = upstreamState?.response;
+      if (!response || Number(response.status) !== 200) return null;
+      const contentType = String(response.headers.get("Content-Type") || "").toLowerCase();
+      if (!contentType.includes("application/json")) return null;
+      // 用 clone 读：原 response.body 保持未读，超限或解析失败时可以原样流式透传，
+      // 不会出现「body 已消费、只能返回空响应」的情况。
+      const ownBodyBytes = await readResponseBytesWithLimit(
+        response.clone(),
+        PEER_AGGREGATION_BODY_MAX_BYTES,
+      );
+      // 超过上限就彻底放弃聚合，交给调用方把原始流原样转发。
+      if (ownBodyBytes.exceeded) return null;
+      let ownPayload = null;
+      try {
+        ownPayload = JSON.parse(decodeBufferedBodyText(ownBodyBytes.bodyBytes));
+      } catch {
+        ownPayload = null;
+      }
+      // 不是 Items 载荷就不合并，原响应流仍然完整可转发。
+      if (!isPlainObject(ownPayload) || !Array.isArray(ownPayload.Items)) return null;
+      const peerPayloads = await Promise.all(
+        peers.map((peer) => kernel.fetchPeerAggregationPayload(execution, peer, env)),
+      );
+      const mergedItems = [...ownPayload.Items];
+      let addedCount = 0;
+      peers.forEach((peer, peerIndex) => {
+        const payload = peerPayloads[peerIndex];
+        if (!isPlainObject(payload) || !Array.isArray(payload.Items)) return;
+        for (const item of payload.Items) {
+          if (!isPlainObject(item)) continue;
+          mergedItems.push(rewritePeerAggregationIds(item, peer.name));
+          addedCount += 1;
+        }
+      });
+      // 没有 peer 结果可加：同样返回 null，让调用方走原始流。
+      if (!addedCount) return null;
+      return {
+        payload: {
+          ...ownPayload,
+          Items: mergedItems,
+          TotalRecordCount:
+            Number(ownPayload.TotalRecordCount || ownPayload.Items.length || 0) + addedCount,
+        },
+        addedCount,
+        peerCount: peers.length,
+      };
+    },
+    // 带前缀的 item Id 还原成「peer 序号 + 原 Id」，供后续请求重新路由到该 peer。
+    resolvePeerAggregationItemRoute(execution, env) {
+      const candidates = [
+        ...(execution?.requestUrl?.searchParams?.getAll?.("Ids") || []),
+        extractProxyItemId(execution?.proxyPath || ""),
+      ];
+      for (const candidate of candidates) {
+        const decoded = decodePeerAggregationItemId(candidate);
+        if (decoded) return decoded;
+      }
+      return null;
     },
   };
 }
@@ -29325,6 +29645,7 @@ function defineNodeProxyKernel({ configReader, nodeRepository, logger, cachePort
     defineProxyLifecycleMethods(dependencies, internals),
     defineProxyRoutingMethods(dependencies, internals),
     defineProxyTransportMethods(dependencies, internals),
+    definePeerAggregationMethods(dependencies, internals),
   ];
   for (const group of methodGroups) {
     for (const [name, value] of Object.entries(group)) internals[name] = value;
@@ -35601,6 +35922,7 @@ function defineNodeIndexMethods(dependencies = {}, kernel = {}) {
         tagColor: String(rawNode.tagColor ?? ""),
         remark: String(rawNode.remark ?? ""),
         tmdbAggregationEnabled: rawNode.tmdbAggregationEnabled === true,
+        aggregationMode: normalizeNodeAggregationMode(rawNode.aggregationMode),
         lines: normalizedLines.map((line) => ({
           id: String(line.id || "").trim(),
           name: String(line.name || "").trim(),
@@ -37422,6 +37744,74 @@ var NodeProxyFacade = class {
     };
   }
 
+  // 带聚合前缀的 Id 只可能出现在「后续请求」里（图片 / PlaybackInfo / 播放 / 进度），
+  // 这些请求本身不含前缀时走原路由。命中前缀时：
+  //   1. 把 Id（路径段或 Ids 查询参数）还原成 peer 自己的形式；
+  //   2. 用 peer 的节点数据重新走一遍 proxyApi.handle。
+  async #resolvePeerAggregationReroute(request, env, ctx, routeContext) {
+    const segments = Array.isArray(routeContext?.segments) ? routeContext.segments : [];
+    if (segments.length < 2) return null;
+    const rootName = String(routeContext.root || "")
+      .trim()
+      .toLowerCase();
+    if (!rootName) return null;
+    // 去掉节点名与可能的密钥段，剩下的才是真正的代理路径。
+    let pathSegments = segments.slice(1);
+    const currentNode = await this.nodeRouteReader.getNode(rootName, env, ctx);
+    const currentSecret = String(currentNode?.secret || "").trim();
+    if (currentSecret && safeDecodeSegment(pathSegments[0] || "") === currentSecret)
+      pathSegments = pathSegments.slice(1);
+    const remaining = `/${pathSegments.join("/")}`;
+    const requestUrl = routeContext.requestUrl instanceof URL ? routeContext.requestUrl : null;
+    const idsParam = requestUrl?.searchParams?.get?.("Ids") || "";
+    // 路径可能是 /Items/x，也可能是 /emby/Items/x；extractProxyItemId 只认前者。
+    const itemIdFromPath =
+      extractProxyItemId(remaining) ||
+      safeDecodeSegment(/^\/(?:emby|mediabrowser)\/Items\/([^/]+)/i.exec(remaining)?.[1] || "");
+    const decoded =
+      decodePeerAggregationItemId(itemIdFromPath) ||
+      (idsParam
+        ? idsParam
+            .split(",")
+            .map((value) => decodePeerAggregationItemId(value))
+            .find(Boolean)
+        : null);
+    if (!decoded) return null;
+    const peerName = String(decoded.peerName || "")
+      .trim()
+      .toLowerCase();
+    if (!peerName || peerName === rootName) return null;
+    const peerNode = await this.nodeRouteReader.getNode(peerName, env, ctx);
+    if (!peerNode) return null;
+    if (peerNode.tmdbAggregationEnabled !== true) return null;
+    // 还原 Id：路径段与 Ids 查询参数都要换回 peer 自己的编号。
+    // 路径前缀可能是 /Items/ 或 /emby/Items/，两种都要把 Id 段换回去。
+    const nextPath = remaining.replace(
+      /^(\/(?:emby\/|mediabrowser\/)?Items\/)[^/]+/i,
+      `$1${encodeURIComponent(decoded.itemId)}`,
+    );
+    const nextRequestUrl = requestUrl ? new URL(requestUrl.toString()) : new URL(request.url);
+    nextRequestUrl.pathname = `${buildProxyPrefix(peerName, String(peerNode.secret || ""))}${
+      nextPath === "/" ? "/" : nextPath
+    }`;
+    if (idsParam) {
+      const restoredIds = idsParam
+        .split(",")
+        .map((value) => decodePeerAggregationItemId(value)?.itemId || value)
+        .join(",");
+      nextRequestUrl.searchParams.set("Ids", restoredIds);
+    }
+    return {
+      nodeData: peerNode,
+      nodeName: peerName,
+      secret: String(peerNode.secret || ""),
+      remaining: sanitizeProxyPath(nextPath),
+      linkVariant: consumeProxyLinkVariantPrefix(nextPath).linkVariant,
+      requestUrl: nextRequestUrl,
+      entryMode: "kv_route",
+      request,
+    };
+  }
   async handle(request, env, ctx, routeContext) {
     if (!routeContext) throw new TypeError("NodeProxyFacade.handle requires routeContext");
     const { requestHost, configuredHost, configuredLegacyHost } = routeContext;
@@ -37431,6 +37821,28 @@ var NodeProxyFacade = class {
       configuredLegacyHost !== configuredHost &&
       requestHost === configuredLegacyHost
     );
+    // 跨节点聚合：合并结果里的 peer 条目 Id 带 `n<base64节点名>.<原 Id>` 前缀。
+    // 命中前缀就把请求整体改道到那个 peer，并把 Id 还原成它自己的形式。
+    const peerReroute = await this.#resolvePeerAggregationReroute(request, env, ctx, routeContext);
+    if (peerReroute) {
+      if (peerReroute.response) return peerReroute.response;
+      return this.proxyApi.handle(
+        peerReroute.request,
+        peerReroute.nodeData,
+        peerReroute.remaining,
+        peerReroute.nodeName,
+        peerReroute.secret,
+        env,
+        ctx,
+        {
+          requestUrl: peerReroute.requestUrl,
+          linkVariant: peerReroute.linkVariant,
+          runtimeConfig,
+          runtimeRouteContext: routeContext,
+          entryMode: peerReroute.entryMode,
+        },
+      );
+    }
     const hostPrefixProxyActive =
       runtimeConfig.enableHostPrefixProxy === true && !!configuredHost && !isLegacyHostRequest;
     routeContext.hostPrefixMatch = hostPrefixProxyActive
@@ -37984,6 +38396,7 @@ export {
   buildWorkerMetadataPrewarmIdentityPartition,
   cacheState,
   convertTmdbRequestFromUrl,
+  normalizeNodeAggregationMode,
   defineAnalyticsCacheMethods,
   defineDatabaseStatusMethods,
   defineKvTidyMethods,
