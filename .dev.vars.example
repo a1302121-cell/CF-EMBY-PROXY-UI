@@ -2,9 +2,8 @@
 JWT_SECRET=replace-with-a-long-random-secret
 ADMIN_PASS=replace-with-a-local-admin-password
 
-# Optional: TMDB aggregation for nodes with 启用 TMDB 聚合. Account-settings
-# credentials take precedence as a group: if either credential is set there, both
-# env vars below are ignored. Otherwise these env vars are the fallback.
-# TMDB_API_READ_TOKEN=replace-with-a-tmdb-v4-read-token
-# TMDB_API_KEY=replace-with-a-tmdb-v3-api-key
-# TMDB_LANGUAGE=zh-CN
+# Deprecated since V20.0: TMDB request conversion was removed, nothing reads these.
+# Kept so existing .dev.vars files stay valid; leave them unset.
+# TMDB_API_READ_TOKEN=
+# TMDB_API_KEY=
+# TMDB_LANGUAGE=
