@@ -36,3 +36,7 @@ frontend/dist/.vite/
 
 # 外部参考用的第三方 worker 构建产物，仅供比对，不进仓库
 /worker (*).js
+# 同上：会话里用来比对的第三方快照，含明文凭据，绝不入库
+/TMDB版本.js
+/tmdb-search-converter.js
+/worker代理与TMDB聚合原理拆解.md
