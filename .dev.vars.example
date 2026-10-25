@@ -2,14 +2,9 @@
 JWT_SECRET=replace-with-a-long-random-secret
 ADMIN_PASS=replace-with-a-local-admin-password
 
-# Optional: EMOS aggregation (tmdb id -> todbvs) for nodes with 启用 EMOS 聚合.
-# Account-settings credentials take precedence as a group: if either credential is
-# set there, both env vars below are ignored. Otherwise they are the title fallback.
+# Optional: TMDB aggregation for nodes with 启用 TMDB 聚合. Account-settings
+# credentials take precedence as a group: if either credential is set there, both
+# env vars below are ignored. Otherwise these env vars are the fallback.
 # TMDB_API_READ_TOKEN=replace-with-a-tmdb-v4-read-token
 # TMDB_API_KEY=replace-with-a-tmdb-v3-api-key
 # TMDB_LANGUAGE=zh-CN
-
-# Optional: todb lookup used by EMOS aggregation (tmdb id -> todbvs video ids).
-# todbApiKey wins over this env var. Without a key the todb lookup is skipped and
-# the request falls back to the TMDB title/year search.
-# TODB_API_KEY=replace-with-a-todb-api-key

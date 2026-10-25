@@ -259,8 +259,7 @@ html[data-theme="claude"].dark body.antialiased{background:rgb(var(--ui-c-n-900)
 :where(html[data-theme="claude"]) .dark #view-settings label[class*="border-slate-200"]:hover,
 :where(html[data-theme="claude"]) .dark #view-settings label[class*="bg-slate-200"]:hover{background:rgb(var(--ui-c-n-800)) !important;color:rgb(var(--ui-c-white)) !important}:where(html[data-theme="claude"]) #view-settings .set-tab{color:rgb(var(--ui-c-n-600)) !important}:where(html[data-theme="claude"]) #view-settings .set-tab:hover{color:rgb(var(--ui-c-n-900)) !important}:where(html[data-theme="claude"]) .dark #view-settings .set-tab{color:rgb(var(--ui-c-n-300)) !important}:where(html[data-theme="claude"]) .dark #view-settings .set-tab:hover{background:rgb(var(--ui-c-n-800)) !important;color:rgb(var(--ui-c-white)) !important}:where(html[data-theme="claude"]) #view-settings .set-tab[aria-selected="true"]{background:rgb(var(--ui-c-n-50)) !important;border-color:rgb(var(--ui-c-a-300)) !important;color:rgb(var(--ui-c-a-600)) !important;box-shadow:inset 0 0 0 1px rgb(var(--ui-c-a-500) / .28) !important}:where(html[data-theme="claude"]) .dark #view-settings .set-tab[aria-selected="true"]{background:rgb(var(--ui-c-n-800)) !important;border-color:rgb(var(--ui-c-a-500)) !important;color:rgb(var(--ui-c-a-300)) !important;box-shadow:inset 0 0 0 1px rgb(var(--ui-c-a-500) / .35) !important}:where(html[data-theme="claude"]) #view-dashboard [data-dashboard-traffic-toggle="1"]{border-color:rgb(var(--ui-c-n-200));background:rgb(var(--ui-c-white) / .9);color:rgb(var(--ui-c-n-600))}:where(html[data-theme="claude"]) #view-dashboard [data-dashboard-traffic-toggle="1"]:hover{background:rgb(var(--ui-c-n-50));border-color:rgb(var(--ui-c-n-400));color:rgb(var(--ui-c-a-500))}:where(html[data-theme="claude"]) #view-dashboard [data-dashboard-traffic-toggle="1"]:focus-visible{box-shadow:0 0 0 2px rgb(var(--ui-c-a-500) / .24)}:where(html[data-theme="claude"]) .dark #view-dashboard [data-dashboard-traffic-toggle="1"]{border-color:rgb(var(--ui-c-n-800));background:rgba(36,36,32,.92);color:rgb(var(--ui-c-n-300))}:where(html[data-theme="claude"]) .dark #view-dashboard [data-dashboard-traffic-toggle="1"]:hover{border-color:rgb(var(--ui-c-n-700));background:rgb(var(--ui-c-n-800));color:rgb(var(--ui-c-a-400))}:where(html[data-theme="claude"]) .d1-heatmap-col-label{color:rgb(var(--ui-c-n-500))}:where(html[data-theme="claude"]) .dark .d1-heatmap-col-label{color:rgb(var(--ui-c-n-500))}:where(html[data-theme="claude"]) .d1-heatmap-row-label{color:rgb(var(--ui-c-n-600))}:where(html[data-theme="claude"]) .dark .d1-heatmap-row-label{color:rgb(var(--ui-c-n-300))}:where(html[data-theme="claude"]) .d1-heat-cell{border-color:rgb(var(--ui-c-a-500) / .18);background:rgba(201,100,66,var(--ui-heat-alpha,.08))}:where(html[data-theme="claude"]) .d1-heat-cell.is-active:hover{border-color:rgb(var(--ui-c-a-500) / .4);box-shadow:0 10px 22px rgb(var(--ui-c-a-500) / .12)}:where(html[data-theme="claude"]) .d1-heat-cell.is-empty{border-color:rgb(var(--ui-c-n-200));background:rgb(var(--ui-c-n-50))}:where(html[data-theme="claude"]) .dark .d1-heat-cell{border-color:rgb(var(--ui-c-a-400) / .18);background:rgba(217,119,87,var(--ui-heat-alpha,.12))}:where(html[data-theme="claude"]) .dark .d1-heat-cell.is-active:hover{border-color:rgb(var(--ui-c-a-300) / .42);box-shadow:0 12px 26px rgb(var(--ui-c-a-500) / .16)}:where(html[data-theme="claude"]) .dark .d1-heat-cell.is-empty{border-color:rgb(var(--ui-c-n-800));background:rgb(var(--ui-c-n-900) / .74)}:where(html[data-theme="claude"]) .dark [class*="text-slate-500"],
 :where(html[data-theme="claude"]) .dark [class*="text-slate-400"],
-:where(html[data-theme="claude"]) .dark [data-admin-node-tmdb-aggregation="1"] .text-slate-500,
-:where(html[data-theme="claude"]) .dark [data-admin-node-tmdb-aggregation="1"] .text-slate-400{color:rgb(var(--ui-c-n-400)) !important}:where(html[data-theme="claude"]) .dark #view-settings label.text-slate-500,
+:where(html[data-theme="claude"]) .dark #view-settings label.text-slate-500,
 :where(html[data-theme="claude"]) .dark #cfg-source-direct-nodes-summary,
 :where(html[data-theme="claude"]) .dark #view-logs p.text-slate-500{color:rgb(var(--ui-c-n-400)) !important}/* ===== Direction A · 暖纸编辑器（排版层）===== */
 html[data-theme="claude"]{--font-display:"Noto Serif SC","Source Serif 4",Georgia,"Songti SC","SimSun",serif;--font-body:system-ui,-apple-system,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;--font-mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;--d1-paper:#f5f4ed;--d1-raised:#faf9f5;--d1-sunk:#efeee6;--d1-ink:#141413;--d1-ink-2:#3d3d3a;--d1-muted:#87867f;--d1-rule:#e8e6dc;--d1-rule-2:#d8d5c9;--d1-clay:#c96442;--d1-clay-deep:#b4553a;--d1-clay-soft:#e0a48c;--d1-radius:14px;--d1-on-accent:#ffffff;--d1-bean:#964742;--d1-bean-deep:#7f3b37;--d1-action:#8e3a22;--d1-action-hover:#7a301b;--d1-action-strong:#b3502f;--d1-action-strong-hover:#9b4326;--d1-action-active:#83381f;--d1-action-dark:#a3452a;--d1-raised-dark:#242420;--d1-muted-dark:#8f8d84;--d1-rule-2-dark:#4a4a45}/* 支持相对颜色语法时整族由 --d1-action 派生；上面的 literal 是兜底，不能只留 oklch() 一条，那样不支持的浏览器会拿到非法值、整条声明失效。 */@supports (color:oklch(from red calc(l - 0.05) calc(c - 0.01) h)){html[data-theme="claude"]{--d1-action-hover:oklch(from var(--d1-action) calc(l - 0.049) calc(c - 0.0115) calc(h - 0.103));--d1-action-strong:oklch(from var(--d1-action) calc(l + 0.0926) calc(c + 0.0172) calc(h + 1.9883));--d1-action-strong-hover:oklch(from var(--d1-action) calc(l + 0.0348) calc(c + 0.0051) calc(h + 1.7799));--d1-action-active:oklch(from var(--d1-action) calc(l - 0.0213) calc(c - 0.01) calc(h + 1.9515));--d1-action-dark:oklch(from var(--d1-action) calc(l + 0.0509) calc(c + 0.0111) calc(h + 0.0947))}}html[data-theme="claude"],
@@ -958,7 +957,6 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
   let iconFrameId = 0;
   let shellFrameId = 0;
   let nodeModalWasOpen = false;
-  let tmdbPatchedApp = null;
   let patchedSafetyContractApp = null;
   const dashboardTrafficState = {
     period: 'day',
@@ -1490,111 +1488,7 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
       }
     }
     if (headersPanel.parentElement !== content) content.appendChild(headersPanel);
-    syncTmdbAggregationControl(window.App, content, advancedFields);
     syncNodeInheritCopy(window.App);
-  }
-
-  function patchTmdbNodeMethods(app) {
-    if (!app || tmdbPatchedApp === app) return;
-    const originalBuildNodeModalFormState = app.buildNodeModalFormState;
-    const originalSaveNode = app.saveNode;
-    if (typeof originalBuildNodeModalFormState !== 'function' || typeof originalSaveNode !== 'function') return;
-    app.buildNodeModalFormState = function (...args) {
-      const state = originalBuildNodeModalFormState.apply(this, args);
-      const source = state?.hydratedNode || args[0] || {};
-      if (state?.form) {
-        state.form.tmdbAggregationEnabled = source?.tmdbAggregationEnabled === true;
-        state.form.aggregationMode = normalizeAggregationModeValue(source?.aggregationMode);
-      }
-      return state;
-    };
-    app.saveNode = async function (...args) {
-      const enabled = document.querySelector('[data-admin-node-tmdb-aggregation="1"] input')?.checked === true
-        || this?.nodeModalForm?.tmdbAggregationEnabled === true;
-      const aggregationMode = normalizeAggregationModeValue(
-        document.querySelector('[data-admin-node-aggregation-mode="1"] select')?.value
-        || this?.nodeModalForm?.aggregationMode,
-      );
-      if (this?.nodeModalForm) {
-        this.nodeModalForm.tmdbAggregationEnabled = enabled;
-        this.nodeModalForm.aggregationMode = aggregationMode;
-      }
-      const originalApiCall = this.apiCall;
-      const wrappedApiCall = function (action, payload, ...rest) {
-        const nextPayload = action === 'save' && payload && typeof payload === 'object'
-          ? { ...payload, tmdbAggregationEnabled: enabled, aggregationMode }
-          : payload;
-        return originalApiCall.call(this, action, nextPayload, ...rest);
-      };
-      this.apiCall = wrappedApiCall;
-      try {
-        return await originalSaveNode.apply(this, args);
-      } finally {
-        if (this.apiCall === wrappedApiCall) this.apiCall = originalApiCall;
-      }
-    };
-    tmdbPatchedApp = app;
-  }
-
-  function syncTmdbAggregationControl(app, content, advancedFields) {
-    if (!app || !content || !advancedFields) return;
-    patchTmdbNodeMethods(app);
-    if (app.nodeModalForm) {
-      const currentName = String(app.nodeModalForm.originalName || app.nodeModalForm.name || '').trim().toLowerCase();
-      const currentNode = (Array.isArray(app.nodes) ? app.nodes : []).find((node) => String(node?.name || '').trim().toLowerCase() === currentName);
-      if (typeof app.nodeModalForm.tmdbAggregationEnabled !== 'boolean') {
-        app.nodeModalForm.tmdbAggregationEnabled = currentNode?.tmdbAggregationEnabled === true;
-      }
-      if (typeof app.nodeModalForm.aggregationMode !== 'string') {
-        app.nodeModalForm.aggregationMode = normalizeAggregationModeValue(currentNode?.aggregationMode);
-      }
-    }
-    let field = document.querySelector('[data-admin-node-tmdb-aggregation="1"]');
-    if (!field) {
-      field = document.createElement('label');
-      field.setAttribute('data-admin-node-tmdb-aggregation', '1');
-      field.className = 'col-span-full flex items-start justify-between gap-4 border-b border-slate-100 pb-3.5 dark:border-slate-800';
-      field.innerHTML = '<span class="min-w-0"><span class="block text-sm text-slate-500">EMOS 聚合</span><span class="mt-1 block text-xs leading-5 text-slate-400">按下方策略转换 TMDB 查询，并合并其他已开启节点的结果。跨节点查询须在目标节点的自定义请求头配置有效访问凭据；无法确认用户或目录对应关系时跳过该节点。</span></span><span class="relative mt-0.5 inline-flex h-5 w-9 shrink-0 items-center"><input type="checkbox" class="peer absolute inset-0 h-full w-full cursor-pointer opacity-0"><span class="pointer-events-none absolute inset-0 rounded-full bg-slate-200 transition-colors peer-checked:bg-brand-600 peer-focus-visible:ring-2 peer-focus-visible:ring-brand-400 peer-focus-visible:ring-offset-2 dark:bg-slate-700"></span><span class="pointer-events-none absolute left-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-4"></span></span>';
-    }
-    const input = field.querySelector('input');
-    if (input) {
-      const syncValue = () => {
-        if (app.nodeModalForm) app.nodeModalForm.tmdbAggregationEnabled = input.checked === true;
-      };
-      input.onchange = syncValue;
-      input.onclick = syncValue;
-      const renderKey = String(app.nodeModalRenderKey ?? '');
-      if (field.dataset.renderKey !== renderKey) {
-        input.checked = app.nodeModalForm?.tmdbAggregationEnabled === true;
-        field.dataset.renderKey = renderKey;
-      }
-    }
-    if (field.parentElement !== advancedFields) advancedFields.prepend(field);
-    // 聚合策略：三档下拉，跟着节点开关一起进高级设置。
-    let modeField = document.querySelector('[data-admin-node-aggregation-mode="1"]');
-    if (!modeField) {
-      modeField = document.createElement('label');
-      modeField.setAttribute('data-admin-node-aggregation-mode', '1');
-      modeField.className = 'col-span-full block border-b border-slate-100 pb-3.5 dark:border-slate-800';
-      modeField.innerHTML = '<span class="block text-sm text-slate-500">聚合策略</span><span class="mt-1 block text-xs leading-5 text-slate-400">每个节点独立使用自己的策略。auto：先按 TMDB 标题 + 年份搜索，元数据查询失败或首次搜索为空时回退 todb（默认）。emos：只查 todb，查不到就原样透传。tmdb：只按标题 + 年份，不查 todb。</span><select class="mt-2 w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 outline-none text-sm text-slate-900 dark:text-white"><option value="auto">auto（TMDB 优先，回退 todb）</option><option value="emos">emos（只查 todb）</option><option value="tmdb">tmdb（只按标题 + 年份）</option></select>';
-    }
-    const modeSelect = modeField.querySelector('select');
-    if (modeSelect) {
-      const syncMode = () => {
-        if (app.nodeModalForm) app.nodeModalForm.aggregationMode = modeSelect.value;
-      };
-      modeSelect.onchange = syncMode;
-      const modeRenderKey = String(app.nodeModalRenderKey ?? '');
-      if (modeField.dataset.renderKey !== modeRenderKey) {
-        modeSelect.value = normalizeAggregationModeValue(app.nodeModalForm?.aggregationMode);
-        modeField.dataset.renderKey = modeRenderKey;
-      }
-    }
-    if (modeField.parentElement !== advancedFields) advancedFields.insertBefore(modeField, field.nextSibling);
-  }
-  function normalizeAggregationModeValue(value) {
-    const normalized = String(value || '').trim().toLowerCase();
-    return normalized === 'emos' || normalized === 'tmdb' ? normalized : 'auto';
   }
 
   // 标签颜色自绘下拉：原生 select 的弹出菜单由系统绘制，选项颜色改不动。

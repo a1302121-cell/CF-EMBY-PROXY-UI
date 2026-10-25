@@ -22,7 +22,6 @@ import {
   fetchDnsIpItemsFromUrlSource,
   createTargetRecord,
   convertTmdbRequestFromUrl,
-  normalizeNodeAggregationMode,
   createWorkerApplication,
   defineAnalyticsCacheMethods,
   defineDatabaseStatusMethods,
@@ -44,7 +43,6 @@ import {
   runSingleFlight,
   runWithConcurrency,
   resetRuntimeBindingStates,
-  resetAggregationLookupStates,
   sanitizeRuntimeConfig,
   serializeBoundedLogDetailJson,
   serveMedbItemsCounts,
@@ -54,6 +52,14 @@ import {
   inspectPlaybackInfoResponse,
 } from "../worker/runtime/proxy/playback/contract.js";
 import { PlaybackInfoCacheStore } from "../worker/runtime/proxy/playback/cache.js";
+import { hashStableText } from "../worker/core/hashing.js";
+// 与 frontend/scripts/build-admin-vendor.mjs 的 pins 一致：vendor 产物文件名 = hashStableText(upstreamUrl)。
+const BUNDLED_VENDOR_PINS = [
+  "https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.2.2/dist/index.global.js",
+  "https://cdn.jsdelivr.net/npm/vue@3.5.32/dist/vue.runtime.global.prod.js",
+  "https://cdn.jsdelivr.net/npm/lucide@1.8.0/dist/umd/lucide.min.js",
+  "https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js",
+];
 
 // 生产管理台壳由 sync-admin-runtime 注入 enhancement 层；Worker 会拒绝缺失该层的壳。
 const ADMIN_SHELL_ENHANCEMENT_MARKUP =
@@ -1818,8 +1824,9 @@ test("manual setup renders GET and HEAD as no-store with the recovery reason", a
 
 test("bundled frontend assets render when no uploaded admin index is configured", async () => {
   const assetRequests = [];
+  // 真实内置壳的头里有 4 个 CDN pin；这里放同样的 4 个 URL，验证改写与投递。
   const bundledHtml = adminShellDocument({
-    head: "<title>Bundled UI</title>",
+    head: `<title>Bundled UI</title>${BUNDLED_VENDOR_PINS.map((url) => `<script src="${url}"></script>`).join("")}`,
     body: '<div id="app" data-source="bundled"></div>',
   });
   const env = {
@@ -1863,6 +1870,61 @@ test("bundled frontend assets render when no uploaded admin index is configured"
   );
   assert.equal(headResponse.status, 200);
   assert.equal(await headResponse.text(), "");
+
+  // 内置壳的 4 个首屏脚本必须改写成 bundled revision 的同源 vendor 路径，
+  // 否则浏览器连不上 cdn.jsdelivr.net 时 Vue 直接缺失，整页白屏。
+  const bundledRevision = adminShell.ADMIN_BUNDLED_INDEX_ASSET_REVISION;
+  const vendorPrefix = `/console/__release/${bundledRevision}/vendor/`;
+  for (const pin of BUNDLED_VENDOR_PINS) {
+    assert.ok(bundledHtml.includes(pin), `测试壳缺少 CDN pin：${pin}`);
+    const assetKey = `${hashStableText(pin)}.js`;
+    assert.ok(
+      renderedHtml.includes(`${vendorPrefix}${assetKey}`),
+      `内置壳没有把 ${pin} 改写成 ${vendorPrefix}${assetKey}`,
+    );
+  }
+  assert.equal((renderedHtml.match(/https:\/\/cdn\.jsdelivr\.net/g) || []).length, 0);
+
+  // 改写到同源路径后必须有真实投递：直接从 ASSETS 的 vendor/ 读，不走 KV / edge 缓存。
+  const assetKey = `${hashStableText(BUNDLED_VENDOR_PINS[0])}.js`;
+  const vendorResponse = await renderAdminReleaseVendorAsset(
+    new Request(`https://worker.test${vendorPrefix}${assetKey}`),
+    {
+      ...env,
+      ASSETS: {
+        async fetch(request) {
+          assetRequests.push(request);
+          if (new URL(request.url).pathname === `/vendor/${assetKey}`)
+            return new Response("var bundledVendorLoaded=1;", {
+              headers: { "Content-Type": "application/javascript; charset=utf-8" },
+            });
+          return new Response("missing", { status: 404 });
+        },
+      },
+    },
+    null,
+    { releaseTag: bundledRevision, assetKey },
+    {},
+  );
+  assert.equal(vendorResponse.status, 200);
+  assert.match(vendorResponse.headers.get("Content-Type") || "", /javascript/);
+  assert.equal(
+    vendorResponse.headers.get("Cache-Control"),
+    adminShell.ADMIN_RELEASE_VENDOR_CACHE_CONTROL,
+  );
+  assert.match(await vendorResponse.text(), /bundledVendorLoaded/);
+
+  // 未知 / 越权的 assetKey 一律 404，不落到 ASSETS 之外。
+  for (const badKey of ["../index.html", "not-a-key.txt", ""]) {
+    const notFound = await renderAdminReleaseVendorAsset(
+      new Request(`https://worker.test${vendorPrefix}${badKey}`),
+      env,
+      null,
+      { releaseTag: bundledRevision, assetKey: badKey },
+      {},
+    );
+    assert.equal(notFound.status, 404, `assetKey ${JSON.stringify(badKey)} 必须 404`);
+  }
 });
 
 test("Tailwind compatibility prelude is targeted and idempotent", () => {
@@ -3110,7 +3172,7 @@ test("proxy request state ignores query tokens that are unsafe for request heade
 });
 
 test("TMDB provider id search converts to a title and year request", async () => {
-  resetAggregationLookupStates();
+  isolateState.TmdbLookupCache.clear();
   const fetched = [];
   await withWorkerGlobals(
     {
@@ -3142,7 +3204,7 @@ test("TMDB provider id search converts to a title and year request", async () =>
 });
 
 test("TMDB provider id search uses the api key and only converts provider URLs", async () => {
-  resetAggregationLookupStates();
+  isolateState.TmdbLookupCache.clear();
   const fetched = [];
   await withWorkerGlobals(
     {
@@ -3176,7 +3238,7 @@ test("TMDB provider id search uses the api key and only converts provider URLs",
 });
 
 test("TMDB provider id search keeps the original URL when the lookup is rejected", async () => {
-  resetAggregationLookupStates();
+  isolateState.TmdbLookupCache.clear();
   await withWorkerGlobals(
     {
       fetch: async () => new Response("blocked", { status: 429 }),
@@ -3194,7 +3256,7 @@ test("TMDB provider id search keeps the original URL when the lookup is rejected
 });
 
 test("TMDB provider id search does nothing without a configured credential", async () => {
-  resetAggregationLookupStates();
+  isolateState.TmdbLookupCache.clear();
   let fetchCount = 0;
   await withWorkerGlobals(
     {
@@ -3214,7 +3276,7 @@ test("TMDB provider id search does nothing without a configured credential", asy
 });
 
 test("TMDB provider id search memoizes a successful lookup", async () => {
-  resetAggregationLookupStates();
+  isolateState.TmdbLookupCache.clear();
   let fetchCount = 0;
   await withWorkerGlobals(
     {
@@ -3240,7 +3302,7 @@ test("TMDB provider id search memoizes a successful lookup", async () => {
 });
 
 test("TMDB provider id search prefers runtime config credentials over env", async () => {
-  resetAggregationLookupStates();
+  isolateState.TmdbLookupCache.clear();
   const fetched = [];
   await withWorkerGlobals(
     {
@@ -3269,7 +3331,7 @@ test("TMDB provider id search prefers runtime config credentials over env", asyn
 });
 
 test("TMDB provider id search treats config credentials as a group over env", async () => {
-  resetAggregationLookupStates();
+  isolateState.TmdbLookupCache.clear();
   const fetched = [];
   await withWorkerGlobals(
     {
@@ -3301,7 +3363,7 @@ test("TMDB provider id search treats config credentials as a group over env", as
 });
 
 test("TMDB lookup warns once when account-settings credentials shadow env credentials", async () => {
-  resetAggregationLookupStates();
+  isolateState.TmdbLookupCache.clear();
   isolateState.TmdbCredentialOverrideWarned = false;
   const warnings = [];
   let fetchCount = 0;
@@ -3336,7 +3398,7 @@ test("TMDB lookup warns once when account-settings credentials shadow env creden
 });
 
 test("TMDB provider id search falls back to env credentials when config is empty", async () => {
-  resetAggregationLookupStates();
+  isolateState.TmdbLookupCache.clear();
   const fetched = [];
   await withWorkerGlobals(
     {
@@ -3363,7 +3425,7 @@ test("TMDB provider id search falls back to env credentials when config is empty
 });
 
 test("TMDB provider id search short-caches a rejected lookup", async () => {
-  resetAggregationLookupStates();
+  isolateState.TmdbLookupCache.clear();
   let fetchCount = 0;
   await withWorkerGlobals(
     {
@@ -3390,7 +3452,7 @@ test("TMDB provider id search short-caches a rejected lookup", async () => {
 });
 
 test("TMDB provider id search honors a configured metadata language", async () => {
-  resetAggregationLookupStates();
+  isolateState.TmdbLookupCache.clear();
   const fetched = [];
   await withWorkerGlobals(
     {
@@ -3425,451 +3487,32 @@ test("TMDB provider id search honors a configured metadata language", async () =
   );
 });
 
-test("TMDB provider id search treats episode and season requests as tv lookups", async () => {
-  resetAggregationLookupStates();
-  const fetched = [];
+test("TMDB provider id search skips episode and season lookups", async () => {
+  isolateState.TmdbLookupCache.clear();
+  let fetchCount = 0;
   await withWorkerGlobals(
     {
-      fetch: async (url) => {
-        fetched.push(String(url));
-        return new Response(JSON.stringify({ name: "权力的游戏", first_air_date: "2011-04-17" }), {
-          status: 200,
-        });
+      fetch: async () => {
+        fetchCount += 1;
+        return new Response("{}", { status: 200 });
       },
     },
     async () => {
-      // 与参考实现一致：集 / 季不再特判，按「不含 movie 就走剧」分流。
       const episodeUrl = new URL(
         "https://worker.test/Items?AnyProviderIdEquals=tmdb.901&IncludeItemTypes=Episode",
       );
       const seasonUrl = new URL(
         "https://worker.test/Items?AnyProviderIdEquals=tmdb.902&IncludeItemTypes=Season",
       );
-      const episodeConverted = await convertTmdbRequestFromUrl(episodeUrl, {
-        TMDB_API_READ_TOKEN: "read-token",
-      });
-      const seasonConverted = await convertTmdbRequestFromUrl(seasonUrl, {
-        TMDB_API_READ_TOKEN: "read-token",
-      });
-      assert.equal(fetched[0], "https://api.themoviedb.org/3/tv/901?language=zh-CN");
-      assert.equal(fetched[1], "https://api.themoviedb.org/3/tv/902?language=zh-CN");
-      for (const converted of [episodeConverted, seasonConverted]) {
-        assert.ok(converted instanceof URL, "expected a converted URL");
-        assert.equal(converted.searchParams.has("AnyProviderIdEquals"), false);
-        assert.equal(converted.searchParams.get("SearchTerm"), "权力的游戏");
-        assert.equal(converted.searchParams.get("Years"), "2011");
-      }
-      assert.equal(episodeConverted.searchParams.get("IncludeItemTypes"), "Episode");
-      assert.equal(seasonConverted.searchParams.get("IncludeItemTypes"), "Season");
-    },
-  );
-});
-
-test("todb aggregation rewrites a tmdb provider id into todbvs", async () => {
-  resetAggregationLookupStates();
-  const fetched = [];
-  await withWorkerGlobals(
-    {
-      fetch: async (url, init = {}) => {
-        fetched.push({ url: String(url), headers: new Headers(init.headers) });
-        return new Response(JSON.stringify([{ video_id: 1001 }, { video_id: 1002 }]), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
-      },
-    },
-    async () => {
-      const source = new URL(
-        "https://worker.test/node/secret/Items?AnyProviderIdEquals=tmdb.1399&IncludeItemTypes=Series&Recursive=true",
-      );
-      const converted = await convertTmdbRequestFromUrl(source, { TODB_API_KEY: "todb-key" });
-      assert.ok(converted instanceof URL, "expected a converted URL");
-      assert.equal(converted.searchParams.has("AnyProviderIdEquals"), false);
-      assert.equal(converted.searchParams.get("todbvs"), "1001,1002");
-      assert.equal(converted.searchParams.get("IncludeItemTypes"), "Series");
-      assert.equal(converted.searchParams.get("Recursive"), "true");
-      assert.equal(fetched.length, 1);
       assert.equal(
-        fetched[0].url,
-        "https://api.theotherdb.org/video/getVideoIdByExternalId?type=tmdb&value=1399",
-      );
-      assert.equal(fetched[0].headers.get("Authorization"), "Bearer todb-key");
-    },
-  );
-});
-
-test("todb aggregation accepts a single video id and deduplicates the list", async () => {
-  resetAggregationLookupStates();
-  await withWorkerGlobals(
-    {
-      fetch: async () =>
-        new Response(
-          JSON.stringify([
-            { video_id: 7 },
-            { video_id: "7" },
-            { video_id: "abc" },
-            { video_id: null },
-            8,
-          ]),
-          { status: 200 },
-        ),
-    },
-    async () => {
-      const source = new URL("https://worker.test/Items?AnyProviderIdEquals=tmdb.5");
-      const converted = await convertTmdbRequestFromUrl(source, { TODB_API_KEY: "todb-key" });
-      assert.equal(converted.searchParams.get("todbvs"), "7,8");
-
-      resetAggregationLookupStates();
-      const single = new Response(JSON.stringify({ video_id: 42 }), { status: 200 });
-      globalThis.fetch = async () => single;
-      const singleConverted = await convertTmdbRequestFromUrl(
-        new URL("https://worker.test/Items?AnyProviderIdEquals=tmdb.6"),
-        { TODB_API_KEY: "todb-key" },
-      );
-      assert.equal(singleConverted.searchParams.get("todbvs"), "42");
-    },
-  );
-});
-
-test("todb aggregation tolerates the response field names and wrapper shapes", async () => {
-  const cases = [
-    [{ video_id: 1001 }, "1001"],
-    [[{ video_id: 1001 }, { video_id: 1002 }], "1001,1002"],
-    [[{ videoId: 1001 }, { videoId: 1002 }], "1001,1002"],
-    [{ video_ids: [1001, 1002] }, "1001,1002"],
-    [{ data: [{ video_id: 1001 }, { video_id: 1002 }] }, "1001,1002"],
-    [{ results: [{ videoId: 1003 }] }, "1003"],
-    [{ videos: [{ id: 1004 }] }, "1004"],
-    [[1001, 1002], "1001,1002"],
-    [{ video_id: "1001,1002" }, "1001,1002"],
-    [{ id: 1005 }, "1005"],
-    // 同一层只取最强字段：id 不能和 video_id 一起被当成 id。
-    [{ id: 9, video_id: 1006 }, "1006"],
-    // 分页字段不能被误当成 video_id。
-    [{ total: 7, items: [{ video_id: 1007 }] }, "1007"],
-    // 重复与非法值仍要收敛。
-    [[{ video_id: 1001 }, { video_id: "1001" }, { video_id: "abc" }], "1001"],
-  ];
-  let seq = 0;
-  for (const [payload, expected] of cases) {
-    resetAggregationLookupStates();
-    await withWorkerGlobals(
-      { fetch: async () => new Response(JSON.stringify(payload), { status: 200 }) },
-      async () => {
-        const converted = await convertTmdbRequestFromUrl(
-          new URL(`https://worker.test/Items?AnyProviderIdEquals=tmdb.${(seq += 1) + 9000}`),
-          { TODB_API_KEY: "todb-key" },
-        );
-        assert.equal(converted.searchParams.get("todbvs"), expected, JSON.stringify(payload));
-      },
-    );
-  }
-});
-
-test("todb aggregation treats an unusable payload as a miss and falls back", async () => {
-  for (const payload of [{}, { video_id: "abc" }, { items: [] }, [], null, "not json"]) {
-    resetAggregationLookupStates();
-    await withWorkerGlobals(
-      { fetch: async () => new Response(JSON.stringify(payload), { status: 200 }) },
-      async () => {
-        assert.equal(
-          await convertTmdbRequestFromUrl(
-            new URL("https://worker.test/Items?AnyProviderIdEquals=tmdb.4242"),
-            { TODB_API_KEY: "todb-key" },
-          ),
-          null,
-          JSON.stringify(payload),
-        );
-      },
-    );
-  }
-});
-
-test("todb aggregation keeps movie and series video ids apart", async () => {
-  // TMDB 的电影 id 与剧 id 是两套独立编号，同一整数可能既是电影又是剧；
-  // todb 的 getVideoIdByExternalId 只收 type=tmdb，因此响应里可能同时返回两种类型。
-  const mixed = [
-    { video_id: 500, video_type: "movie", video_title: "一部同名电影" },
-    { video_id: 1001, video_type: "tv", video_title: "权力的游戏" },
-  ];
-  const cases = [
-    ["Series", "1001"],
-    ["Movie", "500"],
-    ["Series,Movie", "500,1001"],
-    ["Series,Season", "1001"],
-    ["Episode", "1001"],
-    ["Season", "1001"],
-  ];
-  for (const [itemTypes, expected] of cases) {
-    resetAggregationLookupStates();
-    await withWorkerGlobals(
-      { fetch: async () => new Response(JSON.stringify(mixed), { status: 200 }) },
-      async () => {
-        const converted = await convertTmdbRequestFromUrl(
-          new URL(
-            `https://worker.test/Items?AnyProviderIdEquals=tmdb.1399&IncludeItemTypes=${itemTypes}`,
-          ),
-          { TODB_API_KEY: "todb-key" },
-        );
-        if (expected === null) {
-          assert.equal(converted, null, itemTypes);
-          return;
-        }
-        assert.equal(converted.searchParams.get("todbvs"), expected, itemTypes);
-      },
-    );
-  }
-});
-
-test("todb aggregation only filters by type when the payload actually carries one", async () => {
-  const cases = [
-    // 无 video_type：无法判断类型，全量保留。
-    [[{ video_id: 1001 }, { video_id: 1002 }], "Series", "1001,1002"],
-    // 大小写与别名归一化。
-    [
-      [
-        { video_id: 1001, video_type: "TV" },
-        { video_id: 500, video_type: "Movie" },
-      ],
-      "Series",
-      "1001",
-    ],
-    [[{ video_id: 1001, video_type: "series" }], "Series", "1001"],
-    [[{ video_id: 1001, video_type: "film" }], "Movie", "1001"],
-    // 未知类型保留，不能因为字段值陌生就把命中丢掉。
-    [[{ video_id: 1, video_type: "anime" }, { video_id: 2 }], "Series", "1,2"],
-    // 全部是另一种媒体类型时视为未命中，交给 TMDB 兜底。
-    [[{ video_id: 500, video_type: "movie" }], "Series", null],
-  ];
-  for (const [payload, itemTypes, expected] of cases) {
-    resetAggregationLookupStates();
-    await withWorkerGlobals(
-      {
-        fetch: async (input) =>
-          String(input).includes("theotherdb")
-            ? new Response(JSON.stringify(payload), { status: 200 })
-            : new Response(JSON.stringify({ name: "兜底标题", first_air_date: "2011-04-17" }), {
-                status: 200,
-              }),
-      },
-      async () => {
-        const converted = await convertTmdbRequestFromUrl(
-          new URL(
-            `https://worker.test/Items?AnyProviderIdEquals=tmdb.1399&IncludeItemTypes=${itemTypes}`,
-          ),
-          { TODB_API_KEY: "todb-key", TMDB_API_READ_TOKEN: "read-token" },
-          {},
-          "emos",
-        );
-        assert.equal(
-          converted?.searchParams?.get("todbvs") ?? null,
-          expected,
-          `${JSON.stringify(payload)} / ${itemTypes}`,
-        );
-      },
-    );
-  }
-});
-
-test("todb aggregation only resolves the first tmdb id in a multi-provider filter", async () => {
-  resetAggregationLookupStates();
-  const lookedUp = [];
-  await withWorkerGlobals(
-    {
-      fetch: async (url) => {
-        lookedUp.push(new URL(String(url)).searchParams.get("value"));
-        return new Response(JSON.stringify({ video_id: 2001 }), { status: 200 });
-      },
-    },
-    async () => {
-      const converted = await convertTmdbRequestFromUrl(
-        new URL("https://worker.test/Items?AnyProviderIdEquals=imdb.tt0944947,tmdb.1399,tmdb.600"),
-        { TODB_API_KEY: "todb-key" },
-      );
-      assert.equal(converted.searchParams.get("todbvs"), "2001");
-      // 和参考实现一致：只认第一个 tmdb id，不做全量解析。
-      assert.deepEqual(lookedUp, ["1399"]);
-    },
-  );
-});
-
-test("todb aggregation memoizes a hit and short-caches a miss", async () => {
-  resetAggregationLookupStates();
-  let hitCount = 0;
-  await withWorkerGlobals(
-    {
-      fetch: async () => {
-        hitCount += 1;
-        return new Response(JSON.stringify({ video_id: 11 }), { status: 200 });
-      },
-    },
-    async () => {
-      for (let attempt = 0; attempt < 3; attempt += 1) {
-        const converted = await convertTmdbRequestFromUrl(
-          new URL("https://worker.test/Items?AnyProviderIdEquals=tmdb.31"),
-          { TODB_API_KEY: "todb-key" },
-        );
-        assert.equal(converted.searchParams.get("todbvs"), "11");
-      }
-      assert.equal(hitCount, 1);
-    },
-  );
-
-  resetAggregationLookupStates();
-  let missCount = 0;
-  await withWorkerGlobals(
-    {
-      fetch: async () => {
-        missCount += 1;
-        return new Response("api 404 :(", { status: 404 });
-      },
-    },
-    async () => {
-      for (let attempt = 0; attempt < 2; attempt += 1) {
-        assert.equal(
-          await convertTmdbRequestFromUrl(
-            new URL("https://worker.test/Items?AnyProviderIdEquals=tmdb.32"),
-            { TODB_API_KEY: "todb-key" },
-          ),
-          null,
-        );
-      }
-      assert.equal(missCount, 1);
-    },
-  );
-});
-
-test("todb aggregation collapses concurrent identical misses into one upstream call", async () => {
-  resetAggregationLookupStates();
-  let fetchCount = 0;
-  let releaseLookup;
-  const lookupGate = new Promise((resolve) => {
-    releaseLookup = resolve;
-  });
-  await withWorkerGlobals(
-    {
-      fetch: async () => {
-        fetchCount += 1;
-        await lookupGate;
-        return new Response(JSON.stringify({ video_id: 31 }), { status: 200 });
-      },
-    },
-    async () => {
-      const pending = Array.from({ length: 20 }, () =>
-        convertTmdbRequestFromUrl(
-          new URL("https://worker.test/Items?AnyProviderIdEquals=tmdb.33&IncludeItemTypes=Movie"),
-          { TODB_API_KEY: "todb-key" },
-        ),
-      );
-      await new Promise((resolve) => setTimeout(resolve, 10));
-      releaseLookup();
-      const converted = await Promise.all(pending);
-      for (const url of converted) assert.equal(url.searchParams.get("todbvs"), "31");
-      // 冷缓存下 20 个并发同 id 请求只应打一次 todb。
-      assert.equal(fetchCount, 1);
-    },
-  );
-});
-
-test("auto aggregation falls back to todb when the TMDB title lookup misses", async () => {
-  resetAggregationLookupStates();
-  const fetched = [];
-  await withWorkerGlobals(
-    {
-      fetch: async (url) => {
-        const href = String(url);
-        fetched.push(href);
-        // TMDB 先查且失败，todb 兜底命中。
-        if (href.startsWith("https://api.themoviedb.org/"))
-          return new Response("{}", { status: 500 });
-        return new Response(JSON.stringify([{ video_id: 5072, video_type: "movie" }]), {
-          status: 200,
-        });
-      },
-    },
-    async () => {
-      const converted = await convertTmdbRequestFromUrl(
-        new URL("https://worker.test/Items?AnyProviderIdEquals=tmdb.27205&IncludeItemTypes=Movie"),
-        { TODB_API_KEY: "todb-key", TMDB_API_READ_TOKEN: "read-token" },
-      );
-      assert.equal(converted.searchParams.get("todbvs"), "5072");
-      assert.equal(converted.searchParams.has("SearchTerm"), false);
-      assert.equal(fetched.length, 2);
-      // TMDB 先，todb 后。
-      assert.equal(fetched[0], "https://api.themoviedb.org/3/movie/27205?language=zh-CN");
-      assert.match(fetched[1], /^https:\/\/api\.theotherdb\.org\//);
-    },
-  );
-});
-
-test("todb aggregation prefers account-settings credentials and skips todb without one", async () => {
-  resetAggregationLookupStates();
-  const seen = [];
-  await withWorkerGlobals(
-    {
-      fetch: async (url, init = {}) => {
-        seen.push({ url: String(url), auth: new Headers(init.headers).get("Authorization") });
-        return new Response(JSON.stringify({ video_id: 42 }), { status: 200 });
-      },
-    },
-    async () => {
-      await convertTmdbRequestFromUrl(
-        new URL("https://worker.test/Items?AnyProviderIdEquals=tmdb.3"),
-        { TODB_API_KEY: "env-key" },
-        { todbApiKey: "config-key" },
-      );
-      assert.equal(seen.length, 1);
-      assert.equal(seen[0].auth, "Bearer config-key");
-    },
-  );
-
-  // 没有 todb 凭据时不发 todb 请求，直接走 TMDB 标题搜索（这里也没配 TMDB 凭据，所以原样透传）。
-  resetAggregationLookupStates();
-  let todbCalls = 0;
-  await withWorkerGlobals(
-    {
-      fetch: async () => {
-        todbCalls += 1;
-        return new Response("{}", { status: 200 });
-      },
-    },
-    async () => {
-      assert.equal(
-        await convertTmdbRequestFromUrl(
-          new URL("https://worker.test/Items?AnyProviderIdEquals=tmdb.4"),
-          {},
-        ),
+        await convertTmdbRequestFromUrl(episodeUrl, { TMDB_API_READ_TOKEN: "read-token" }),
         null,
       );
-    },
-  );
-  assert.equal(todbCalls, 0);
-});
-
-test("todb aggregation resolves episode and season requests as tv", async () => {
-  resetAggregationLookupStates();
-  let fetchCount = 0;
-  await withWorkerGlobals(
-    {
-      fetch: async () => {
-        fetchCount += 1;
-        return new Response(JSON.stringify({ video_id: 1001, video_type: "tv" }), { status: 200 });
-      },
-    },
-    async () => {
-      for (const itemTypes of ["Episode", "Season"]) {
-        const converted = await convertTmdbRequestFromUrl(
-          new URL(
-            `https://worker.test/Items?AnyProviderIdEquals=tmdb.9&IncludeItemTypes=${itemTypes}`,
-          ),
-          { TODB_API_KEY: "todb-key" },
-        );
-        assert.ok(converted instanceof URL, itemTypes);
-        assert.equal(converted.searchParams.get("todbvs"), "1001", itemTypes);
-        assert.equal(converted.searchParams.get("IncludeItemTypes"), itemTypes, itemTypes);
-      }
-      // 同一个 tmdb id 命中缓存，两次请求只打一次 todb。
-      assert.equal(fetchCount, 1);
+      assert.equal(
+        await convertTmdbRequestFromUrl(seasonUrl, { TMDB_API_READ_TOKEN: "read-token" }),
+        null,
+      );
+      assert.equal(fetchCount, 0);
     },
   );
 });
@@ -3966,433 +3609,7 @@ test("medb counts stay out of unrelated nodes, paths, and methods", async () => 
   assert.equal(fetchCount, 0);
 });
 
-test("peer aggregation merges sibling nodes and prefixes their item ids", async () => {
-  const encodeId = (peerName, itemId) =>
-    `n${Buffer.from(peerName, "utf8").toString("base64url")}.${itemId}`;
-  const { kv } = createInMemoryKvStore();
-  const store = kv;
-  await store.put(
-    `${kernel.PREFIX}alpha`,
-    JSON.stringify({
-      name: "alpha",
-      target: "https://alpha.example",
-      headers: { "X-Emby-Token": "configured-fixture-token" },
-      tmdbAggregationEnabled: true,
-      aggregationMode: "auto",
-    }),
-  );
-  await store.put(
-    `${kernel.PREFIX}beta`,
-    JSON.stringify({
-      name: "beta",
-      target: "https://beta.example",
-      headers: { "X-Emby-Token": "configured-fixture-token" },
-      tmdbAggregationEnabled: true,
-      aggregationMode: "auto",
-    }),
-  );
-  await store.put(
-    `${kernel.PREFIX}gamma`,
-    JSON.stringify({
-      name: "gamma",
-      target: "https://gamma.example",
-      tmdbAggregationEnabled: false,
-    }),
-  );
-  await store.put(
-    kernel.NODES_SUMMARY_INDEX_KEY,
-    JSON.stringify([
-      {
-        name: "alpha",
-        target: "https://alpha.example",
-        headers: { "X-Emby-Token": "configured-fixture-token" },
-        tmdbAggregationEnabled: true,
-      },
-      {
-        name: "beta",
-        target: "https://beta.example",
-        headers: { "X-Emby-Token": "configured-fixture-token" },
-        tmdbAggregationEnabled: true,
-      },
-      { name: "gamma", target: "https://gamma.example", tmdbAggregationEnabled: false },
-    ]),
-  );
-  const env = { ENI_KV: store, __CONFIG_CACHE_NAMESPACE: `peer-agg-${Date.now()}` };
-  const calls = [];
-  const fetch = async (input) => {
-    const href = String(input);
-    calls.push(href);
-    if (href.startsWith("https://alpha.example")) {
-      return new Response(
-        JSON.stringify({
-          Items: [{ Id: "a1", Name: "Alpha Movie", SeriesId: "as1" }],
-          TotalRecordCount: 1,
-        }),
-        { headers: { "Content-Type": "application/json" } },
-      );
-    }
-    if (href.startsWith("https://beta.example")) {
-      return new Response(
-        JSON.stringify({
-          Items: [{ Id: "b1", Name: "Beta Movie", SeriesId: "bs1" }],
-          TotalRecordCount: 1,
-        }),
-        { headers: { "Content-Type": "application/json" } },
-      );
-    }
-    return new Response("{}", { status: 404 });
-  };
-  await withWorkerGlobals({ fetch }, async () => {
-    const response = await workerHandler.fetch(
-      new Request("https://worker.test/alpha/emby/Items?Recursive=true", {
-        method: "GET",
-        headers: { "X-Emby-Token": "peer-agg-token" },
-      }),
-      env,
-      { waitUntil() {} },
-    );
-    assert.equal(response.status, 200);
-    const payload = await response.json();
-    assert.equal(payload.Items.length, 2);
-    // 本节点条目保持原 Id。
-    assert.equal(payload.Items[0].Id, "a1");
-    // peer 条目加上可反解的前缀，SeriesId 这类外键也一起加。
-    assert.equal(payload.Items[1].Id, encodeId("beta", "b1"));
-    assert.equal(payload.Items[1].SeriesId, encodeId("beta", "bs1"));
-    assert.equal(payload.TotalRecordCount, 2);
-    // gamma 没开聚合，不参与扇出。
-    assert.equal(
-      calls.some((href) => href.includes("gamma.example")),
-      false,
-    );
-  });
-});
-
-test("peer aggregation passes an oversized own response through untouched", async () => {
-  // 超过 PEER_AGGREGATION_BODY_MAX_BYTES 时彻底放弃聚合，原始流必须完整转发：
-  // 不能出现「body 已被读走、只能返回空响应」。
-  const { kv } = createInMemoryKvStore();
-  for (const name of ["alpha", "beta"]) {
-    await kv.put(
-      `${kernel.PREFIX}${name}`,
-      JSON.stringify({
-        name,
-        target: `https://${name}.example`,
-        headers: { "X-Emby-Token": "configured-fixture-token" },
-        tmdbAggregationEnabled: true,
-      }),
-    );
-  }
-  await kv.put(
-    kernel.NODES_SUMMARY_INDEX_KEY,
-    JSON.stringify([
-      {
-        name: "alpha",
-        target: "https://alpha.example",
-        headers: { "X-Emby-Token": "configured-fixture-token" },
-        tmdbAggregationEnabled: true,
-      },
-      {
-        name: "beta",
-        target: "https://beta.example",
-        headers: { "X-Emby-Token": "configured-fixture-token" },
-        tmdbAggregationEnabled: true,
-      },
-    ]),
-  );
-  const env = { ENI_KV: kv, __CONFIG_CACHE_NAMESPACE: `peer-oversized-${Date.now()}` };
-  // 约 12 MB，明显超过 8 MB 的聚合上限。
-  const oversizedBody = JSON.stringify({
-    Items: Array.from({ length: 200000 }, (_, index) => ({
-      Id: `a${index}`,
-      Name: "x".repeat(40),
-    })),
-    TotalRecordCount: 200000,
-  });
-  let peerFetched = false;
-  const fetch = async (input) => {
-    const href = String(input);
-    if (href.includes("beta.example")) {
-      peerFetched = true;
-      return new Response(JSON.stringify({ Items: [{ Id: "b1" }], TotalRecordCount: 1 }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-    return new Response(oversizedBody, {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
-  };
-  await withWorkerGlobals({ fetch }, async () => {
-    const response = await workerHandler.fetch(
-      new Request("https://worker.test/alpha/emby/Items?Recursive=true", {
-        method: "GET",
-        headers: { "X-Emby-Token": "peer-agg-token" },
-      }),
-      env,
-      { waitUntil() {} },
-    );
-    assert.equal(response.status, 200);
-    const bodyText = await response.text();
-    // 原始内容一字不差地到达客户端。
-    assert.equal(bodyText.length, oversizedBody.length);
-    assert.equal(bodyText, oversizedBody);
-    // 超限后不再打扰 peer。
-    assert.equal(peerFetched, false);
-  });
-});
-
-test("peer aggregation keeps the request alive when a peer is unavailable", async () => {
-  // 兄弟节点 503 / 抛异常 / 返回非 JSON / 节点记录缺失，都只能让它自己缺席，
-  // 绝不能把本节点的 Items 请求变成 502。
-  const cases = [
-    ["peer 503", () => new Response("", { status: 503 }), true],
-    [
-      "peer throws",
-      () => {
-        throw new Error("unreachable");
-      },
-      true,
-    ],
-    ["peer non-json", () => new Response("oops", { status: 200 }), true],
-    ["peer node missing", () => new Response("{}", { status: 200 }), false],
-  ];
-  for (const [label, peerResponse, withPeerNode] of cases) {
-    const { kv } = createInMemoryKvStore();
-    await kv.put(
-      `${kernel.PREFIX}alpha`,
-      JSON.stringify({
-        name: "alpha",
-        target: "https://alpha.example",
-        headers: { "X-Emby-Token": "configured-fixture-token" },
-        tmdbAggregationEnabled: true,
-      }),
-    );
-    if (withPeerNode) {
-      await kv.put(
-        `${kernel.PREFIX}beta`,
-        JSON.stringify({
-          name: "beta",
-          target: "https://beta.example",
-          headers: { "X-Emby-Token": "configured-fixture-token" },
-          tmdbAggregationEnabled: true,
-        }),
-      );
-    }
-    await kv.put(
-      kernel.NODES_SUMMARY_INDEX_KEY,
-      JSON.stringify([
-        {
-          name: "alpha",
-          target: "https://alpha.example",
-          headers: { "X-Emby-Token": "configured-fixture-token" },
-          tmdbAggregationEnabled: true,
-        },
-        {
-          name: "beta",
-          target: "https://beta.example",
-          headers: { "X-Emby-Token": "configured-fixture-token" },
-          tmdbAggregationEnabled: true,
-        },
-      ]),
-    );
-    const env = { ENI_KV: kv, __CONFIG_CACHE_NAMESPACE: `peer-down-${label}-${Date.now()}` };
-    const fetch = async (input) => {
-      const href = String(input);
-      if (href.includes("beta.example")) return peerResponse();
-      return new Response(JSON.stringify({ Items: [{ Id: "a1" }], TotalRecordCount: 1 }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    };
-    await withWorkerGlobals({ fetch }, async () => {
-      const response = await workerHandler.fetch(
-        new Request("https://worker.test/alpha/emby/Items?Recursive=true", {
-          method: "GET",
-          headers: { "X-Emby-Token": "peer-agg-token" },
-        }),
-        env,
-        { waitUntil() {} },
-      );
-      assert.equal(response.status, 200, label);
-      const payload = await response.json();
-      // 本节点结果原样保留，peer 缺席不影响其它条目。
-      assert.deepEqual(payload.Items, [{ Id: "a1" }], label);
-      assert.equal(payload.TotalRecordCount, 1, label);
-    });
-  }
-});
-
-// 权限闸门：扇出会替客户端向兄弟节点出示凭据，所以只允许已经带了 Emby 令牌的请求触发。
-// 节点 secret 不算凭据（它只证明能进本节点），否则一个匿名 GET 就能枚举整个节点池。
-test("peer aggregation only fans out for requests carrying client credentials", async () => {
-  const cases = [
-    { label: "anonymous", url: "", headers: {}, fansOut: false },
-    { label: "blank token", url: "", headers: { "X-Emby-Token": "   " }, fansOut: false },
-    {
-      label: "node secret only",
-      url: "/s-alpha",
-      headers: {},
-      fansOut: false,
-      nodeSecret: "s-alpha",
-    },
-    { label: "x-emby-token", url: "", headers: { "X-Emby-Token": "tok" }, fansOut: true },
-    {
-      label: "authorization",
-      url: "",
-      headers: { Authorization: 'MediaBrowser Token="tok"' },
-      fansOut: true,
-    },
-    {
-      label: "x-emby-authorization",
-      url: "",
-      headers: { "X-Emby-Authorization": 'MediaBrowser Token="tok"' },
-      fansOut: true,
-    },
-    { label: "api_key query", url: "", query: "&api_key=tok", headers: {}, fansOut: true },
-    { label: "ApiKey query", url: "", query: "&ApiKey=tok", headers: {}, fansOut: true },
-  ];
-  for (const testCase of cases) {
-    // 每个用例独立 KV，避免节点 secret 状态互相污染。
-    const caseKv = createInMemoryKvStore();
-    for (const name of ["alpha", "beta"]) {
-      await caseKv.kv.put(
-        `${kernel.PREFIX}${name}`,
-        JSON.stringify({
-          name,
-          target: `https://${name}.example`,
-          secret: name === "alpha" ? testCase.nodeSecret || "" : "",
-          headers: { "X-Emby-Token": "configured-fixture-token" },
-          tmdbAggregationEnabled: true,
-          aggregationMode: "auto",
-        }),
-      );
-    }
-    await caseKv.kv.put(
-      kernel.NODES_SUMMARY_INDEX_KEY,
-      JSON.stringify([
-        {
-          name: "alpha",
-          target: "https://alpha.example",
-          headers: { "X-Emby-Token": "configured-fixture-token" },
-          tmdbAggregationEnabled: true,
-        },
-        {
-          name: "beta",
-          target: "https://beta.example",
-          headers: { "X-Emby-Token": "configured-fixture-token" },
-          tmdbAggregationEnabled: true,
-        },
-      ]),
-    );
-    const calls = [];
-    const fetch = async (input) => {
-      const href = String(input);
-      calls.push(href);
-      const body = href.includes("beta.example")
-        ? { Items: [{ Id: "b1" }], TotalRecordCount: 1 }
-        : { Items: [{ Id: "a1" }], TotalRecordCount: 1 };
-      return new Response(JSON.stringify(body), {
-        headers: { "Content-Type": "application/json" },
-      });
-    };
-    await withWorkerGlobals({ fetch }, async () => {
-      const response = await workerHandler.fetch(
-        new Request(
-          `https://worker.test/alpha${testCase.url}/emby/Items?Recursive=true${testCase.query || ""}`,
-          { method: "GET", headers: testCase.headers },
-        ),
-        {
-          ENI_KV: caseKv.kv,
-          __CONFIG_CACHE_NAMESPACE: `peer-auth-${testCase.label}-${Date.now()}`,
-        },
-        { waitUntil() {} },
-      );
-      const peerCalled = calls.some((href) => href.includes("beta.example"));
-      assert.equal(peerCalled, testCase.fansOut, testCase.label);
-      if (testCase.fansOut) {
-        assert.equal(response.status, 200, testCase.label);
-        const payload = await response.json();
-        assert.equal(payload.Items.length, 2, testCase.label);
-      } else {
-        // 不扇出时本节点自己的结果照常返回，不因闸门变成错误。
-        assert.equal(response.status, 200, testCase.label);
-        const payload = await response.json();
-        assert.equal(payload.Items.length, 1, testCase.label);
-        assert.equal(payload.TotalRecordCount, 1, testCase.label);
-      }
-    });
-  }
-});
-
-test("peer aggregation reroutes a prefixed item id back to its owning node", async () => {
-  const encodeId = (peerName, itemId) =>
-    `n${Buffer.from(peerName, "utf8").toString("base64url")}.${itemId}`;
-  const { kv } = createInMemoryKvStore();
-  await kv.put(
-    `${kernel.PREFIX}alpha`,
-    JSON.stringify({
-      name: "alpha",
-      target: "https://alpha.example",
-      headers: { "X-Emby-Token": "configured-fixture-token" },
-      tmdbAggregationEnabled: true,
-    }),
-  );
-  await kv.put(
-    `${kernel.PREFIX}beta`,
-    JSON.stringify({
-      name: "beta",
-      target: "https://beta.example",
-      headers: { "X-Emby-Token": "configured-fixture-token" },
-      tmdbAggregationEnabled: true,
-    }),
-  );
-  await kv.put(
-    kernel.NODES_SUMMARY_INDEX_KEY,
-    JSON.stringify([
-      {
-        name: "alpha",
-        target: "https://alpha.example",
-        headers: { "X-Emby-Token": "configured-fixture-token" },
-        tmdbAggregationEnabled: true,
-      },
-      {
-        name: "beta",
-        target: "https://beta.example",
-        headers: { "X-Emby-Token": "configured-fixture-token" },
-        tmdbAggregationEnabled: true,
-      },
-    ]),
-  );
-  const env = { ENI_KV: kv, __CONFIG_CACHE_NAMESPACE: `peer-reroute-${Date.now()}` };
-  const calls = [];
-  const fetch = async (input) => {
-    calls.push(String(input));
-    return new Response(JSON.stringify({ Id: "b1", Name: "Beta Movie" }), {
-      headers: { "Content-Type": "application/json" },
-    });
-  };
-  await withWorkerGlobals({ fetch }, async () => {
-    // 客户端拿着合并结果里的 Id 回来要图片：必须改道到 beta 并还原 Id。
-    const response = await workerHandler.fetch(
-      new Request(
-        `https://worker.test/alpha/emby/Items/${encodeURIComponent(encodeId("beta", "b1"))}/Images/Primary`,
-        { method: "GET" },
-      ),
-      env,
-      { waitUntil() {} },
-    );
-    assert.equal(response.status, 200);
-    assert.equal(calls.length, 1);
-    assert.match(calls[0], /^https:\/\/beta\.example\//);
-    // 发往 beta 的请求里是它自己的 Id，不带聚合前缀。
-    assert.equal(calls[0].includes("n"), false);
-    assert.match(calls[0], /\/Items\/b1\/Images\/Primary$/);
-  });
-});
-
-test("node normalization keeps the aggregation flag and mode on the strict values", () => {
+test("node normalization keeps the TMDB aggregation flag as a strict boolean", () => {
   const enabled = kernel.normalizeNode("alpha", {
     target: "https://origin.test",
     tmdbAggregationEnabled: true,
@@ -4408,90 +3625,6 @@ test("node normalization keeps the aggregation flag and mode on the strict value
     tmdbAggregationEnabled: true,
   });
   assert.equal(summary.tmdbAggregationEnabled, true);
-
-  // 聚合策略只有三档，未知值一律回到 auto，避免脏数据把节点锁死在某种模式。
-  assert.equal(normalizeNodeAggregationMode(""), "auto");
-  assert.equal(normalizeNodeAggregationMode("junk"), "auto");
-  assert.equal(normalizeNodeAggregationMode(" EMOS "), "emos");
-  assert.equal(normalizeNodeAggregationMode("tmdb"), "tmdb");
-  const emos = kernel.normalizeNode("alpha", {
-    target: "https://origin.test",
-    aggregationMode: "emos",
-  }).data;
-  assert.equal(emos.aggregationMode, "emos");
-  const unknown = kernel.normalizeNode("alpha", {
-    target: "https://origin.test",
-    aggregationMode: "nope",
-  }).data;
-  assert.equal(unknown.aggregationMode, "auto");
-  assert.equal(
-    kernel.normalizeNodeSummaryPayload("alpha", {
-      target: "https://origin.test",
-      aggregationMode: "tmdb",
-    }).aggregationMode,
-    "tmdb",
-  );
-});
-
-test("aggregation modes gate the todb lookup and the title fallback", async () => {
-  const run = async (mode, payload) => {
-    resetAggregationLookupStates();
-    const fetched = [];
-    let converted = null;
-    await withWorkerGlobals(
-      {
-        fetch: async (url) => {
-          const href = String(url);
-          fetched.push(href);
-          if (href.startsWith("https://api.theotherdb.org/")) {
-            return new Response(JSON.stringify(payload), { status: 200 });
-          }
-          return new Response(
-            JSON.stringify({ title: "Fallback Title", release_date: "1999-10-15" }),
-            {
-              status: 200,
-            },
-          );
-        },
-      },
-      async () => {
-        converted = await convertTmdbRequestFromUrl(
-          new URL("https://worker.test/Items?AnyProviderIdEquals=tmdb.550&IncludeItemTypes=Movie"),
-          { TODB_API_KEY: "todb-key", TMDB_API_READ_TOKEN: "read-token" },
-          {},
-          mode,
-        );
-      },
-    );
-    return { converted, fetched };
-  };
-
-  // tmdb：完全跳过 todb，只按标题 + 年份改写（tmdb-search-converter.js 的通用路径）。
-  const tmdbHit = await run("tmdb", [{ video_id: 6901, video_type: "movie" }]);
-  assert.equal(tmdbHit.fetched.length, 1);
-  assert.equal(tmdbHit.fetched[0], "https://api.themoviedb.org/3/movie/550?language=zh-CN");
-  assert.equal(tmdbHit.converted.searchParams.get("SearchTerm"), "Fallback Title");
-  assert.equal(tmdbHit.converted.searchParams.get("Years"), "1999");
-  assert.equal(tmdbHit.converted.searchParams.has("todbvs"), false);
-
-  // emos：命中时只写 todbvs，不回退标题。
-  const emosHit = await run("emos", [{ video_id: 6901, video_type: "movie" }]);
-  assert.equal(emosHit.fetched.length, 1);
-  assert.equal(emosHit.converted.searchParams.get("todbvs"), "6901");
-  assert.equal(emosHit.converted.searchParams.has("SearchTerm"), false);
-
-  // emos 未命中：原样透传（返回 null），不能偷偷走 TMDB。
-  const emosMiss = await run("emos", []);
-  assert.equal(emosMiss.converted, null);
-  assert.equal(emosMiss.fetched.length, 1);
-  assert.match(emosMiss.fetched[0], /^https:\/\/api\.theotherdb\.org\//);
-
-  // auto：TMDB 优先。TMDB 命中时不再碰 todb。
-  const autoHit = await run("auto", [{ video_id: 6901, video_type: "movie" }]);
-  assert.equal(autoHit.fetched.length, 1);
-  assert.equal(autoHit.fetched[0], "https://api.themoviedb.org/3/movie/550?language=zh-CN");
-  assert.equal(autoHit.converted.searchParams.get("SearchTerm"), "Fallback Title");
-  assert.equal(autoHit.converted.searchParams.has("todbvs"), false);
 });
 
 test("blocked cross-origin image redirects fall back to a client-visible redirect", async () => {
@@ -10789,517 +9922,4 @@ test("backslash-normalized cross-origin redirects still fail closed", async () =
   const blocked = await handle({ Cookie: "emby_session=abc" });
   assert.equal(blocked.status, 409);
   assert.equal(blocked.headers.get("Location"), null);
-});
-
-// ---------------------------------------------------------------------------
-// PlaybackInfo 版本聚合：真实 Emby 客户端的版本选择器数据来自 PlaybackInfo，
-// 不是 /Items 的 MediaSources（线上 tail 实测确认）。
-// ---------------------------------------------------------------------------
-
-function createPlaybackVersionFixture({
-  peers = ["beta"],
-  ownItem,
-  ownPlayback,
-  peerItem,
-  peerPlayback,
-} = {}) {
-  const { kv } = createInMemoryKvStore();
-  const nodes = [{ name: "alpha", target: "https://alpha.example" }];
-  for (const name of peers) nodes.push({ name, target: `https://${name}.example` });
-  for (const node of nodes) {
-    kv.put(
-      `${kernel.PREFIX}${node.name}`,
-      JSON.stringify({
-        name: node.name,
-        target: node.target,
-        headers: { "X-Emby-Token": "configured-fixture-token" },
-        tmdbAggregationEnabled: true,
-        aggregationMode: "auto",
-      }),
-    );
-  }
-  kv.put(
-    kernel.NODES_SUMMARY_INDEX_KEY,
-    JSON.stringify(
-      nodes.map((node) => ({
-        ...node,
-        headers: { "X-Emby-Token": "configured-fixture-token" },
-        tmdbAggregationEnabled: true,
-      })),
-    ),
-  );
-  const calls = [];
-  const json = (body) =>
-    new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" } });
-  const fetch = async (input) => {
-    const href = String(input);
-    calls.push(href);
-    const isOwn = href.startsWith("https://alpha.example");
-    const isPeer = peers.some((name) => href.startsWith(`https://${name}.example`));
-    if (!isOwn && !isPeer) return new Response("{}", { status: 404 });
-    if (isPeer && /\/Users\/Me/.test(href)) return json({ Id: "peer-user" });
-    if (/\/Items\/[^/]+\/PlaybackInfo/i.test(href)) return json(isOwn ? ownPlayback : peerPlayback);
-    // peer 侧搜索（/Items?Recursive=...）必须先判：它没有 /Items/{id} 段。
-    if (/\/Items\?/i.test(href)) return json({ Items: [peerItem], TotalRecordCount: 1 });
-    // 条目元数据查询（/Items/{id}?Fields=...）
-    if (/\/Items\/[^/?]+\?/i.test(href)) return json(isOwn ? ownItem : peerItem);
-    return json({});
-  };
-  return { kv, calls, fetch };
-}
-
-const PLAYBACK_OWN_ITEM = {
-  Id: "a1",
-  Name: "流浪地球2",
-  ProductionYear: 2023,
-  ProviderIds: { Tmdb: "842675" },
-};
-
-const PLAYBACK_PEER_ITEM = {
-  Id: "b1",
-  Name: "流浪地球2",
-  ProductionYear: 2023,
-  ProviderIds: { Tmdb: "842675" },
-};
-
-test("playback version aggregation appends a sibling MediaSource", async () => {
-  const fixture = createPlaybackVersionFixture({
-    ownItem: PLAYBACK_OWN_ITEM,
-    ownPlayback: {
-      MediaSources: [
-        {
-          Id: "a1-src",
-          Path: "https://alpha.example/media/a1.mkv",
-          DirectStreamUrl: "https://alpha.example/media/a1.mkv",
-          Name: "1080p",
-        },
-      ],
-    },
-    peerItem: PLAYBACK_PEER_ITEM,
-    peerPlayback: {
-      MediaSources: [
-        {
-          Id: "b1-src",
-          Path: "https://beta.example/media/b1.mkv",
-          DirectStreamUrl: "https://beta.example/media/b1.mkv",
-          Name: "4K",
-        },
-      ],
-    },
-  });
-  const env = { ENI_KV: fixture.kv, __CONFIG_CACHE_NAMESPACE: `pb-version-${Date.now()}` };
-  await withWorkerGlobals({ fetch: fixture.fetch }, async () => {
-    const response = await workerHandler.fetch(
-      new Request("https://worker.test/alpha/emby/Items/a1/PlaybackInfo?UserId=u-version", {
-        method: "GET",
-        headers: { "X-Emby-Token": "tok" },
-      }),
-      env,
-      { waitUntil() {} },
-    );
-    assert.equal(response.status, 200);
-    const payload = await response.json();
-    assert.equal(payload.MediaSources.length, 2);
-    assert.equal(payload.MediaSources[0].Id, "a1-src");
-    // peer 片源的 Id 必须带节点前缀，且能反解出 peer 条目 Id 与片源 Id。
-    const peerSource = payload.MediaSources[1];
-    assert.match(peerSource.Id, /^n[A-Za-z0-9_-]+\./);
-    {
-      const [namePart, payloadPart] = peerSource.Id.slice(1).split(".");
-      assert.equal(Buffer.from(namePart, "base64url").toString("utf8"), "beta");
-      const [peerItemId, peerSourceId] = JSON.parse(
-        Buffer.from(payloadPart, "base64url").toString("utf8"),
-      );
-      assert.equal(peerItemId, "b1");
-      assert.equal(peerSourceId, "b1-src");
-    }
-    assert.equal(peerSource.Name, "4K");
-    assert.match(peerSource.Path, /^https:\/\/worker\.test\/beta\//);
-    assert.match(peerSource.DirectStreamUrl, /^https:\/\/worker\.test\/beta\//);
-    // peer 上游的主机名不能泄漏给客户端。
-    assert.doesNotMatch(peerSource.Path, /beta\.example/);
-  });
-});
-
-test("playback version aggregation is skipped when the client already picked a source", async () => {
-  // 带 MediaSourceId 说明用户已选定版本，再扇出只会拖慢播放。
-  const fixture = createPlaybackVersionFixture({
-    ownItem: PLAYBACK_OWN_ITEM,
-    ownPlayback: {
-      MediaSources: [{ Id: "a1-src", Path: "https://alpha.example/media/a1.mkv" }],
-    },
-    peerItem: PLAYBACK_PEER_ITEM,
-    peerPlayback: {
-      MediaSources: [{ Id: "b1-src", Path: "https://beta.example/media/b1.mkv" }],
-    },
-  });
-  const env = { ENI_KV: fixture.kv, __CONFIG_CACHE_NAMESPACE: `pb-picked-${Date.now()}` };
-  await withWorkerGlobals({ fetch: fixture.fetch }, async () => {
-    const response = await workerHandler.fetch(
-      new Request(
-        "https://worker.test/alpha/emby/Items/a1/PlaybackInfo?UserId=u1&MediaSourceId=a1-src",
-        { method: "GET", headers: { "X-Emby-Token": "tok" } },
-      ),
-      env,
-      { waitUntil() {} },
-    );
-    const payload = await response.json();
-    assert.equal(payload.MediaSources.length, 1);
-    assert.equal(payload.MediaSources[0].Id, "a1-src");
-    // 不应该为 peer 发起任何请求。
-    assert.equal(fixture.calls.filter((href) => href.includes("beta.example")).length, 0);
-  });
-});
-
-test("playback version aggregation does not merge a different movie", async () => {
-  const fixture = createPlaybackVersionFixture({
-    ownItem: PLAYBACK_OWN_ITEM,
-    ownPlayback: {
-      MediaSources: [{ Id: "a1-src", Path: "https://alpha.example/media/a1.mkv" }],
-    },
-    peerItem: {
-      Id: "b9",
-      Name: "完全不同的片",
-      ProductionYear: 1999,
-      ProviderIds: { Tmdb: "111" },
-    },
-    peerPlayback: {
-      MediaSources: [{ Id: "b9-src", Path: "https://beta.example/media/b9.mkv" }],
-    },
-  });
-  const env = { ENI_KV: fixture.kv, __CONFIG_CACHE_NAMESPACE: `pb-diff-${Date.now()}` };
-  await withWorkerGlobals({ fetch: fixture.fetch }, async () => {
-    const response = await workerHandler.fetch(
-      new Request("https://worker.test/alpha/emby/Items/a1/PlaybackInfo?UserId=u-diff", {
-        method: "GET",
-        headers: { "X-Emby-Token": "tok" },
-      }),
-      env,
-      { waitUntil() {} },
-    );
-    const payload = await response.json();
-    assert.equal(payload.MediaSources.length, 1);
-  });
-});
-
-test("playback version aggregation keeps the response intact when a peer fails", async () => {
-  const { kv } = createInMemoryKvStore();
-  const nodes = [
-    { name: "alpha", target: "https://alpha.example" },
-    { name: "beta", target: "https://beta.example" },
-  ];
-  for (const node of nodes) {
-    kv.put(
-      `${kernel.PREFIX}${node.name}`,
-      JSON.stringify({
-        name: node.name,
-        target: node.target,
-        headers: { "X-Emby-Token": "configured-fixture-token" },
-        tmdbAggregationEnabled: true,
-        aggregationMode: "auto",
-      }),
-    );
-  }
-  kv.put(
-    kernel.NODES_SUMMARY_INDEX_KEY,
-    JSON.stringify(
-      nodes.map((node) => ({
-        ...node,
-        headers: { "X-Emby-Token": "configured-fixture-token" },
-        tmdbAggregationEnabled: true,
-      })),
-    ),
-  );
-  const json = (body) =>
-    new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" } });
-  const fetch = async (input) => {
-    const href = String(input);
-    if (href.startsWith("https://alpha.example")) {
-      if (/PlaybackInfo/i.test(href))
-        return json({
-          MediaSources: [{ Id: "a1-src", Path: "https://alpha.example/media/a1.mkv" }],
-        });
-      return json(PLAYBACK_OWN_ITEM);
-    }
-    // peer 全挂
-    throw new Error("peer unreachable");
-  };
-  const env = { ENI_KV: kv, __CONFIG_CACHE_NAMESPACE: `pb-fail-${Date.now()}` };
-  await withWorkerGlobals({ fetch }, async () => {
-    const response = await workerHandler.fetch(
-      new Request("https://worker.test/alpha/emby/Items/a1/PlaybackInfo?UserId=u-fail", {
-        method: "GET",
-        headers: { "X-Emby-Token": "tok" },
-      }),
-      env,
-      { waitUntil() {} },
-    );
-    // peer 全挂不能让播放请求失败。
-    assert.equal(response.status, 200);
-    const payload = await response.json();
-    assert.equal(payload.MediaSources.length, 1);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// 剧集：同一集跨节点选版本。Episode 通常没有 ProviderIds，身份靠
-// 「所属剧名 + 季号 + 集号」。
-// ---------------------------------------------------------------------------
-
-test("playback version aggregation matches an episode by series and index", async () => {
-  const ownEpisode = {
-    Id: "e1",
-    Name: "第 3 集",
-    SeriesName: "黑袍纠察队",
-    ParentIndexNumber: 2,
-    IndexNumber: 3,
-    // 刻意不给 ProviderIds：真实 Episode 大多没有。
-  };
-  const peerEpisode = {
-    Id: "pe1",
-    // peer 的刮削语言不同，Name 与本节点不一致——只有季号/集号能对上。
-    Name: "Episode 3",
-    SeriesName: "黑袍纠察队",
-    ParentIndexNumber: 2,
-    IndexNumber: 3,
-  };
-  const { kv } = createInMemoryKvStore();
-  const nodes = [
-    { name: "alpha", target: "https://alpha.example" },
-    { name: "beta", target: "https://beta.example" },
-  ];
-  for (const node of nodes) {
-    kv.put(
-      `${kernel.PREFIX}${node.name}`,
-      JSON.stringify({
-        name: node.name,
-        target: node.target,
-        headers: { "X-Emby-Token": "configured-fixture-token" },
-        tmdbAggregationEnabled: true,
-        aggregationMode: "auto",
-      }),
-    );
-  }
-  kv.put(
-    kernel.NODES_SUMMARY_INDEX_KEY,
-    JSON.stringify(
-      nodes.map((node) => ({
-        ...node,
-        headers: { "X-Emby-Token": "configured-fixture-token" },
-        tmdbAggregationEnabled: true,
-      })),
-    ),
-  );
-  const json = (body) =>
-    new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" } });
-  const calls = [];
-  const fetch = async (input) => {
-    const href = String(input);
-    calls.push(href);
-    const isOwn = href.startsWith("https://alpha.example");
-    if (!isOwn && !href.startsWith("https://beta.example"))
-      return new Response("{}", { status: 404 });
-    if (/PlaybackInfo/i.test(href)) {
-      return json(
-        isOwn
-          ? { MediaSources: [{ Id: "e1-src", Path: "https://alpha.example/v/e1.mkv" }] }
-          : { MediaSources: [{ Id: "pe1-src", Path: "https://beta.example/v/pe1.mkv" }] },
-      );
-    }
-    if (/\/Items\?/i.test(href)) return json({ Items: [peerEpisode], TotalRecordCount: 1 });
-    return json(isOwn ? ownEpisode : peerEpisode);
-  };
-  const env = { ENI_KV: kv, __CONFIG_CACHE_NAMESPACE: `pb-episode-${Date.now()}` };
-  await withWorkerGlobals({ fetch }, async () => {
-    const response = await workerHandler.fetch(
-      new Request("https://worker.test/alpha/emby/Items/e1/PlaybackInfo?UserId=u-episode", {
-        method: "GET",
-        headers: { "X-Emby-Token": "tok" },
-      }),
-      env,
-      { waitUntil() {} },
-    );
-    assert.equal(response.status, 200);
-    const payload = await response.json();
-    assert.equal(payload.MediaSources.length, 2);
-    // peer 那一集的片源被收进来了。
-    const peerSource = payload.MediaSources[1];
-    assert.match(peerSource.Id, /^n[A-Za-z0-9_-]+\./);
-    assert.match(peerSource.Path, /^https:\/\/worker\.test\/beta\//);
-  });
-});
-
-test("playback version aggregation does not merge the same episode number from a different show", async () => {
-  // 不同剧的第 2 季第 3 集是两部不同的东西，不能合并。
-  const { kv } = createInMemoryKvStore();
-  const nodes = [
-    { name: "alpha", target: "https://alpha.example" },
-    { name: "beta", target: "https://beta.example" },
-  ];
-  for (const node of nodes) {
-    kv.put(
-      `${kernel.PREFIX}${node.name}`,
-      JSON.stringify({
-        name: node.name,
-        target: node.target,
-        headers: { "X-Emby-Token": "configured-fixture-token" },
-        tmdbAggregationEnabled: true,
-        aggregationMode: "auto",
-      }),
-    );
-  }
-  kv.put(
-    kernel.NODES_SUMMARY_INDEX_KEY,
-    JSON.stringify(
-      nodes.map((node) => ({
-        ...node,
-        headers: { "X-Emby-Token": "configured-fixture-token" },
-        tmdbAggregationEnabled: true,
-      })),
-    ),
-  );
-  const json = (body) =>
-    new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" } });
-  const fetch = async (input) => {
-    const href = String(input);
-    const isOwn = href.startsWith("https://alpha.example");
-    if (!isOwn && !href.startsWith("https://beta.example"))
-      return new Response("{}", { status: 404 });
-    if (/PlaybackInfo/i.test(href))
-      return json({ MediaSources: [{ Id: "s-src", Path: "https://x.example/v.mkv" }] });
-    if (/\/Items\?/i.test(href))
-      return json({
-        Items: [
-          {
-            Id: "other",
-            Name: "第 3 集",
-            SeriesName: "另一部剧",
-            ParentIndexNumber: 2,
-            IndexNumber: 3,
-          },
-        ],
-        TotalRecordCount: 1,
-      });
-    return json({
-      Id: "e1",
-      Name: "第 3 集",
-      SeriesName: "黑袍纠察队",
-      ParentIndexNumber: 2,
-      IndexNumber: 3,
-    });
-  };
-  const env = { ENI_KV: kv, __CONFIG_CACHE_NAMESPACE: `pb-episode-diff-${Date.now()}` };
-  await withWorkerGlobals({ fetch }, async () => {
-    const response = await workerHandler.fetch(
-      new Request("https://worker.test/alpha/emby/Items/e1/PlaybackInfo?UserId=u-ep-diff", {
-        method: "GET",
-        headers: { "X-Emby-Token": "tok" },
-      }),
-      env,
-      { waitUntil() {} },
-    );
-    const payload = await response.json();
-    assert.equal(payload.MediaSources.length, 1);
-  });
-});
-
-test("episode list requests translate the show id before fanning out", async () => {
-  // /Shows/{id}/Episodes 的 {id} 与 SeasonId 都是本节点私有编号，peer 上不存在。
-  // 必须先查本节点剧名，再用剧名在 peer 上找到它自己的剧集 Id。
-  const { kv } = createInMemoryKvStore();
-  const nodes = [
-    { name: "alpha", target: "https://alpha.example" },
-    { name: "beta", target: "https://beta.example" },
-  ];
-  for (const node of nodes) {
-    kv.put(
-      `${kernel.PREFIX}${node.name}`,
-      JSON.stringify({
-        name: node.name,
-        target: node.target,
-        headers: { "X-Emby-Token": "configured-fixture-token" },
-        tmdbAggregationEnabled: true,
-        aggregationMode: "auto",
-      }),
-    );
-  }
-  kv.put(
-    kernel.NODES_SUMMARY_INDEX_KEY,
-    JSON.stringify(
-      nodes.map((node) => ({
-        ...node,
-        headers: { "X-Emby-Token": "configured-fixture-token" },
-        tmdbAggregationEnabled: true,
-      })),
-    ),
-  );
-  const calls = [];
-  const json = (body) =>
-    new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" } });
-  const fetch = async (input) => {
-    const href = String(input);
-    calls.push(href);
-    const isOwn = href.startsWith("https://alpha.example");
-    const isPeer = href.startsWith("https://beta.example");
-    if (!isOwn && !isPeer) return new Response("{}", { status: 404 });
-    // 本节点：查剧集详情拿剧名。
-    if (isOwn && /\/Items\/326659(\?|$)/.test(href)) {
-      return json({ Id: "326659", Name: "某剧", Type: "Series", ProductionYear: 2020 });
-    }
-    if (isOwn && /\/Items\/176016(\?|$)/.test(href))
-      return json({ Id: "176016", Type: "Season", SeriesId: "326659", IndexNumber: 1 });
-    if (isPeer && /\/Users\/Me/.test(href)) return json({ Id: "peer-user" });
-    if (isPeer && /\/Shows\/peer-show-9\/Seasons/.test(href))
-      return json({ Items: [{ Id: "peer-season", Type: "Season", IndexNumber: 1 }] });
-    // 本节点：剧集列表。
-    if (isOwn && /\/Shows\/326659\/Episodes/.test(href)) {
-      return json({
-        Items: [{ Id: "e1", Name: "第 1 集", SeriesName: "某剧", IndexNumber: 1 }],
-        TotalRecordCount: 1,
-      });
-    }
-    // peer：按剧名搜 Series，返回它自己的剧集 Id。
-    if (isPeer && /\/Items\?/.test(href)) {
-      return json({
-        Items: [{ Id: "peer-show-9", Name: "某剧", Type: "Series", ProductionYear: 2020 }],
-      });
-    }
-    // peer：用它自己的剧集 Id 请求剧集列表。
-    if (isPeer && /\/Shows\/peer-show-9\/Episodes/.test(href)) {
-      return json({
-        Items: [{ Id: "pe1", Name: "第 1 集", SeriesName: "某剧", IndexNumber: 1 }],
-        TotalRecordCount: 1,
-      });
-    }
-    return json({ Items: [], TotalRecordCount: 0 });
-  };
-  const env = { ENI_KV: kv, __CONFIG_CACHE_NAMESPACE: `pb-episodes-list-${Date.now()}` };
-  await withWorkerGlobals({ fetch }, async () => {
-    const response = await workerHandler.fetch(
-      new Request(
-        "https://worker.test/alpha/emby/Shows/326659/Episodes?SeasonId=176016&UserId=u1&Fields=ProviderIds",
-        { method: "GET", headers: { "X-Emby-Token": "tok" } },
-      ),
-      env,
-      { waitUntil() {} },
-    );
-    assert.equal(response.status, 200);
-    const payload = await response.json();
-    // 本节点 1 集 + peer 1 集（Id 带前缀）。
-    assert.equal(payload.Items.length, 2);
-    assert.equal(payload.Items[0].Id, "e1");
-    assert.match(payload.Items[1].Id, /^n/);
-    // peer 收到的必须是它自己的剧集 Id，且不能带本节点的 SeasonId / UserId。
-    const peerEpisodesCall = calls.find((href) =>
-      /beta\.example.*\/Shows\/peer-show-9\/Episodes/.test(href),
-    );
-    assert.ok(peerEpisodesCall, "peer 应该用翻译后的剧集 Id 请求剧集列表");
-    assert.match(peerEpisodesCall, /SeasonId=peer-season/);
-    assert.match(peerEpisodesCall, /UserId=peer-user/);
-    // 绝不能把本节点剧集 Id 原样发给 peer。
-    assert.ok(
-      !calls.some((href) => /beta\.example.*\/Shows\/326659\//.test(href)),
-      "不能把本节点剧集 Id 转发给 peer",
-    );
-  });
 });

@@ -77,8 +77,6 @@ flowchart TD
 
 节点代理需要特别注意播放关键路径：PlaybackInfo、manifest、segment、视频下载和播放会话路径会走更严格的 body 上限、缓存分区、重写和生命周期控制；相关代码位于 `worker/runtime/proxy/playback/` 及 facade 中的 `proxy/playback` region。
 
-TMDB 查询转换、跨节点鉴权与搜索范围映射见 [`tmdb-aggregation.md`](tmdb-aggregation.md)。
-
 ## 4. 管理端 API 与管理端 HTML
 
 ### 路由和认证
@@ -143,7 +141,15 @@ D1 保存日志、统计聚合、DNS/IP 工作区数据、运行状态、缓存/
 - 应用版本号唯一来源是 `worker/core/build-info.js` 的 `APP_VERSION`；Worker 落地页标题与管理端标题/徽章占位符 `__APP_VERSION__` 都由它派生。发布时改这一处，并同步 `README.md`、`AGENTS.md` 的版本字样，`npm.cmd run check` 的 version consistency 项会校验三者一致。
 - 前端环境变量位于 `frontend/.env.example`，主要控制 API base、admin path、release channel 和开发代理目标；CDN 地址由 Worker 的 `indexUrl`/远端壳配置决定，不经过前端构建。
 - 前端外部 vendor 资源由 CDN path 检查器约束；不要在生产模板中引入 inline dynamic import 或未声明的相对发布资源。
-- 这 4 个 vendor 脚本的**内容**不再来自浏览器直连 CDN：`frontend/scripts/build-admin-vendor.mjs` 摇树后按 Worker 的 `assetKey` 落到 `frontend/vendor/`（随 `ASSETS` 部署到 `dist/vendor/`），Worker 投递壳时把 4 个绝对 URL 改写成 `/ADMIN_PATH/__release/<rev>/vendor/<assetKey>` 并优先从本地存储返回。内置 ASSETS 壳因此和上传壳走同一条同源路径，手机网络连不上 `cdn.jsdelivr.net` 也不会白屏。收益与两个已知坑见 [`docs/tech-stack.md`](tech-stack.md) §1.1。
+- 这 4 个 vendor 脚本的**内容**不再来自浏览器直连 CDN：`frontend/scripts/build-admin-vendor.mjs` 摇树后按 Worker 的 `assetKey` 落到 `frontend/vendor/`（随 `ASSETS` 部署到 `dist/vendor/`）。Worker 投递壳时把 4 个绝对 URL 改写成 `/ADMIN_PATH/__release/<rev>/vendor/<assetKey>`，`<rev>` 有三种来源：
+
+  | 壳来源 | `<rev>` | 资产从哪读 |
+  | --- | --- | --- |
+  | 远程 GitHub release 壳 | release tag | 回源 `cdn.jsdelivr.net`（edge 缓存；可变 ref 走 `no-store`） |
+  | 本地上传壳 | `local-<index.html sha256>` | KV 上传记录里的 manifest，同样回源 |
+  | 内置 ASSETS 壳 | 固定 `bundled` | 直接 `env.ASSETS.fetch("/vendor/<assetKey>")`，不经过 KV 与 edge 缓存 |
+
+  内置壳没有 tag 也没有上传记录，所以用独立的 `bundled` revision 复用同一套改写逻辑；这条分支缺失时，壳里会保留 4 个 `cdn.jsdelivr.net` 绝对 URL，手机网络连不上就是整页白屏。`__warm` 对内置壳同样从壳 HTML 现算 manifest 并预热这 4 个资产。收益与两个已知坑见 [`docs/tech-stack.md`](tech-stack.md) §1.1。
 
 ## 8. 设置项与绑定/键映射
 
@@ -157,9 +163,9 @@ D1 保存日志、统计聚合、DNS/IP 工作区数据、运行状态、缓存/
 | 安全防护 | `geoAllowlist`、`geoBlocklist`、`ipBlacklist`、`rateLimitRpm` | KV `ENI_KV` → `sys:theme` | 代理访问策略 |
 | 日志设置 | `logEnabled`、`logSearchMode`、`logWrite*`、`logDisplay*`、`logRetentionDays`、`logWriteDelayMinutes`、`logFlushCountThreshold`、`logBatch*`、`scheduledLeaseMs` | KV `ENI_KV` → `sys:theme` | 写 D1 `proxy_logs` / 定时清理 |
 | 监控告警 | `tgBotToken`、`tgChatId`、`tgAlert*`、`tgDailyReport*`、`scheduleUtcOffsetMinutes`、`cfQuotaPlan*` | KV `ENI_KV` → `sys:theme` | 定时任务 / Telegram |
-| 账号设置 | `jwtExpiryDays`、`cfAccountId`、`cfZoneId`、`cfApiToken`、`cfKvNamespaceId`、`cfD1DatabaseId`、`tmdb*`、`todbApiKey`、`indexUrl` | KV `ENI_KV` → `sys:theme` | 登录态 / Cloudflare API |
+| 账号设置 | `jwtExpiryDays`、`cfAccountId`、`cfZoneId`、`cfApiToken`、`cfKvNamespaceId`、`cfD1DatabaseId`、`tmdb*`、`indexUrl` | KV `ENI_KV` → `sys:theme` | 登录态 / Cloudflare API |
 | 备份与恢复 | 无设置字段 | KV `sys:theme` + `sys:config_meta:v1`；节点 `node:*` + `sys:nodes_index:v1` | `exportConfig` / `exportSettings` / `importFull` / `importSettings` action；不保留设置变更历史 |
 
 节点级字段写入 `node:{name}`、不进 `sys:theme`：`nodeName`、`entryMode`、`secret`、`orderedTargets`、`headers`、`tags`、`remark`、`activeLineId`，以及可选的 `playbackInfoMode`、`mediaAuthMode`、`realClientIpMode`、`routingDecisionMode`、`mainVideoStreamMode`。索引 `sys:nodes_index:v1` 是列表/导入导出的读入口，缺失时可由 `node:*` 重建。
 
-敏感字段 `cfApiToken`、`tgBotToken`、`tmdbApiReadToken`、`tmdbApiV3Key`、`todbApiKey` 属于 `CONFIG_SECRET_FIELDS`：普通导出与日志都会脱敏，只有经过二次确认的“含密钥”导出才保留原值。
+敏感字段 `cfApiToken`、`tgBotToken`、`tmdbApiReadToken`、`tmdbApiV3Key` 属于 `CONFIG_SECRET_FIELDS`：普通导出与日志都会脱敏，只有经过二次确认的“含密钥”导出才保留原值。

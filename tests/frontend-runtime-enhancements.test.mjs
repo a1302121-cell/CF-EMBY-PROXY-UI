@@ -29,7 +29,7 @@ function loadEnhancementTestHooks(documentOverrides = {}, windowOverrides = {}) 
   assert.notEqual(closureEnd, -1, "enhancement script must use the expected closure");
   const instrumentedScript =
     inlineScript.slice(0, closureEnd) +
-    "window.__enhancementTestHooks = { formatD1SchemaStatus, formatD1InitializationResult, formatD1RepairPlan, formatD1RepairError, patchSafetyContractMethods, patchTmdbNodeMethods, normalizeAggregationModeValue, getDashboardMonthPeriodKey, isDashboardMonthlyTrafficCacheFresh, toggleDashboardTrafficPeriod, dashboardTrafficState, normalizeHeadProbeResult, formatHeadProbeResult, formatHeadProbeTitle, normalizeHeadProbePath, normalizeHostPrefixDnsHostname, isHostPrefixNodeLinkActive, runWithConcurrency, NODE_GET_PROBE_CONCURRENCY, readStoredUiSkin, readBootstrapUiSkin, normalizeUiSkin, applyUiSkin, resolveInitialUiThemeMode, applyUiThemeMode, swapUiTheme, patchThemeTransitionMethods, resolveCurrentUiSkin, syncServerUiSkin, persistUiSkinPreference, syncDialogAccessibility, handleDialogEscapeKey, withUiRequestTimeout, installAdminBootstrapFetchDedupe, patchLogPageCache, dashboardLayerState, readFreshSettingsBootstrap, updateAdminBootstrapCache, buildCurrentLogPageSignature, fetch: window.fetch };\n" +
+    "window.__enhancementTestHooks = { formatD1SchemaStatus, formatD1InitializationResult, formatD1RepairPlan, formatD1RepairError, patchSafetyContractMethods, getDashboardMonthPeriodKey, isDashboardMonthlyTrafficCacheFresh, toggleDashboardTrafficPeriod, dashboardTrafficState, normalizeHeadProbeResult, formatHeadProbeResult, formatHeadProbeTitle, normalizeHeadProbePath, normalizeHostPrefixDnsHostname, isHostPrefixNodeLinkActive, runWithConcurrency, NODE_GET_PROBE_CONCURRENCY, readStoredUiSkin, readBootstrapUiSkin, normalizeUiSkin, applyUiSkin, resolveInitialUiThemeMode, applyUiThemeMode, swapUiTheme, patchThemeTransitionMethods, resolveCurrentUiSkin, syncServerUiSkin, persistUiSkinPreference, syncDialogAccessibility, handleDialogEscapeKey, withUiRequestTimeout, installAdminBootstrapFetchDedupe, patchLogPageCache, dashboardLayerState, readFreshSettingsBootstrap, updateAdminBootstrapCache, buildCurrentLogPageSignature, fetch: window.fetch };\n" +
     inlineScript.slice(closureEnd);
   const window = {
     addEventListener() {},
@@ -1506,85 +1506,20 @@ test("daily report kind checkboxes and the master switch stay in sync", async ()
   assert.equal(kvTarget.checked, true);
 });
 
-test("account settings expose TMDB aggregation credentials", async () => {
+test("account settings keep TMDB credentials without the aggregation UI", async () => {
   const template = await readFile(
     new URL("../frontend/admin-runtime.template.html", import.meta.url),
     "utf8",
   );
-  assert.match(
-    template,
-    /\{key:"tmdbApiReadToken",id:"cfg-tmdb-read-token",kind:"trim",defaultValue:""\}/,
-  );
-  assert.match(
-    template,
-    /\{key:"tmdbApiV3Key",id:"cfg-tmdb-api-key",kind:"trim",defaultValue:""\}/,
-  );
+  // TMDB 凭证只是配置兼容字段：Worker 侧字段还在，前端不再提供聚合面板。
+  assert.match(template, /"tmdbApiReadToken","tmdbApiV3Key","tmdbLanguage"/);
   assert.match(template, /id:"cfg-tmdb-read-token"/);
   assert.match(template, /id:"cfg-tmdb-api-key"/);
-  assert.match(
-    template,
-    /\{key:"tmdbLanguage",id:"cfg-tmdb-language",kind:"trim",defaultValue:""\}/,
-  );
   assert.match(template, /id:"cfg-tmdb-language"/);
-  assert.match(template, /\{key:"todbApiKey",id:"cfg-todb-api-key",kind:"trim",defaultValue:""\}/);
-  assert.match(template, /id:"cfg-todb-api-key"/);
-  // 账号设置里的 todb key 是密钥：必须走密码输入框，不能明文显示。
-  assert.match(template, /type:"password",id:"cfg-todb-api-key",autocomplete:"new-password"/);
-});
-
-test("aggregation enhancement carries the node flag and mode through form state and save", async () => {
-  const { patchTmdbNodeMethods } = loadEnhancementTestHooks();
-  const app = {
-    nodes: [{ name: "alpha", tmdbAggregationEnabled: true, aggregationMode: "emos" }],
-    nodeModalForm: {
-      name: "alpha",
-      tmdbAggregationEnabled: undefined,
-      aggregationMode: undefined,
-    },
-    nodeModalRenderKey: 1,
-    calls: [],
-    buildNodeModalFormState(node) {
-      return { hydratedNode: node, form: { name: node.name } };
-    },
-    async apiCall(action, payload) {
-      this.calls.push({ action, payload });
-      return { success: true };
-    },
-    async saveNode() {
-      await this.apiCall("save", { name: "alpha" });
-      await this.apiCall("getNodes", {});
-      return true;
-    },
-  };
-
-  patchTmdbNodeMethods(app);
-  const state = app.buildNodeModalFormState(app.nodes[0]);
-  assert.equal(state.form.tmdbAggregationEnabled, true);
-  assert.equal(state.form.aggregationMode, "emos");
-
-  app.nodeModalForm.tmdbAggregationEnabled = true;
-  app.nodeModalForm.aggregationMode = "tmdb";
-  await app.saveNode();
-  assert.equal(app.calls[0].action, "save");
-  assert.equal(app.calls[0].payload.tmdbAggregationEnabled, true);
-  assert.equal(app.calls[0].payload.aggregationMode, "tmdb");
-  assert.equal(app.calls[1].action, "getNodes");
-  assert.equal("tmdbAggregationEnabled" in app.calls[1].payload, false);
-  assert.equal("aggregationMode" in app.calls[1].payload, false);
-
-  app.calls.length = 0;
-  app.nodeModalForm.tmdbAggregationEnabled = false;
-  await app.saveNode();
-  assert.equal(app.calls[0].payload.tmdbAggregationEnabled, false);
-});
-
-test("aggregation mode normalizes unknown values to auto", () => {
-  const { normalizeAggregationModeValue } = loadEnhancementTestHooks();
-  assert.equal(normalizeAggregationModeValue(""), "auto");
-  assert.equal(normalizeAggregationModeValue(undefined), "auto");
-  assert.equal(normalizeAggregationModeValue("junk"), "auto");
-  assert.equal(normalizeAggregationModeValue(" EMOS "), "emos");
-  assert.equal(normalizeAggregationModeValue("tmdb"), "tmdb");
+  // 聚合面板、策略下拉与 todb 凭证已移除，前端不得再出现这些入口。
+  for (const removed of ["EMOS", "todb", "tmdbAggregationEnabled", "aggregationMode"]) {
+    assert.equal(template.includes(removed), false, `聚合 UI 残留：${removed}`);
+  }
 });
 
 test("D1 schema dialog reports only the current schema contract", () => {

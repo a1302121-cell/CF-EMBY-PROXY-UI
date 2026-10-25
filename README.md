@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img alt="version" src="https://img.shields.io/badge/version-V19.9-2563eb">
+  <img alt="version" src="https://img.shields.io/badge/version-V20.0-2563eb">
   <img alt="platform" src="https://img.shields.io/badge/platform-Cloudflare%20Workers-orange">
   <img alt="storage" src="https://img.shields.io/badge/storage-KV%20%2B%20D1-green">
   <img alt="ui" src="https://img.shields.io/badge/panel-SaaS%20UI-purple">
@@ -13,7 +13,7 @@
 
 > 一个以 `worker/` 为生产源码、以根目录 `worker.js` 为单文件部署产物的 Cloudflare Worker 项目：统一多台 Emby 节点入口、隐藏源站 IP、支持直连/反代混合策略、提供 `ADMIN_PATH`（默认 `/admin`）可视化后台，并集成日志、Cloudflare 统计、Telegram 日报与控制面 / 数据面分层优化。
 
-> 当前 **V19.9** 把管理端的重复请求与凭据面一起收口：界面皮肤从浏览器本地偏好升级为 KV 配置字段 `adminUiSkin`（存 `sys:theme`），随 bootstrap 注入首帧即落主题，导入旧备份或局部保存配置时缺失该字段会沿用现值，不再被静默重置；仪表盘分层数据 60 秒内复用（优先 1 小时 D1 快照）、设置 bootstrap 5 秒内合并在飞请求 / 10 秒内直接返回、日志第一页 30 秒内复用，翻页、强刷与跨域一律绕开缓存，保存配置后同时失效仪表盘缓存；强制刷新被后来的普通加载顶掉时也会解锁，刷新按钮不再永久失效；Vue 换成 runtime-only 构建。客户端可见的 `Location` 一律剥离 userinfo，只有与节点基址完全一致（origin + 账号 + 密码）的凭据才保留，路径式跨域写法统一归一为同一绝对目标，非可跟随状态（300/305）同样剥离；跳数预算收敛成单个常量，与 `redirect_limit` 诊断标签不再可能失同步。访问日志改成先判定后构造：命中缓存、进度节流 204、直连 404、探针透传、entry 307 与上游错误等路径都先过 `shouldRecordAccessLog` / `shouldWriteAccessLog`，会被丢弃的行不再构造 `detailJson`，`logWriteMode=error` 下流式中断仍记 502；`Logger.record` 的过滤一处未改，日志行数不变。私有鉴权头名匹配拆出已归一化的 `matchPrivateMediaAuthHeaderName`，元数据缓存身份计算不再对每个头重复 `trim().toLowerCase()`。`worker.js` 标记 `-diff`（压缩器每次重排标识符，产物差异全是改名噪声），新鲜度由 `check-worker-bundle` 守住，bundle 硬守卫提到 1.5 MB、工作目标 1.1 MB，`*.pprof` 进 `.gitignore`。V19.8 的构建期门禁、单文件管理台交付、契约测试与 V19.7 的重定向 / 鉴权加固、控制面与数据面分层、缓存键清洗等能力全部保留。
+> 当前 **V20.0** 是一次减法发布：把 V19.9 之后加进来的聚合层整体撤回，Worker 与后端重新对齐远程主线，管理端只保留界面与交付改进。EMOS 聚合、三档聚合策略（`auto` / `emos` / `tmdb`）、todb 凭证与 `todbvs` 改写、跨节点列表 / 剧集 / 版本聚合全部移除，`worker/`、`worker.js` 与相关测试回到远程仓库版本；`tmdbApiReadToken` / `tmdbApiV3Key` / `tmdbLanguage` 作为配置兼容字段保留，Worker 侧字段与脱敏规则不变，但管理端不再提供聚合开关、策略下拉与 todb 输入框。管理端保留的改进：4 个首屏 CDN 脚本改为同源摇树交付（`frontend/vendor/` 随 `ASSETS` 部署，Worker 按 `assetKey` 改写并代理），内置壳补上 vendor 改写与 `bundled` 投递分支，断网也能启动；颜色统一走 CSS 变量、入口与访问密钥收进高级设置、节点面板与弹窗按同一套间距重排；新增 Playwright 真浏览器冒烟与 5 视图 × 4 主题的视觉基线；仓库换行统一为 LF，`frontend/src/` 继续作为非生产参考源。
 
   ![img](https://web.axuitomo.qzz.io/api/p/img/github/PixPin_2026-08-03_14-00-35.png?download=true&sign=TltPfTfUurzkQ5FsY4rpQ1Wd%2Bwu1Oji3rC%2FVo2NbV%2BM%3D%3A0)
 
@@ -256,8 +256,7 @@ Worker 作为公网入口，外部只能看到 Cloudflare 边缘节点，而不�
 | **`ADMIN_PATH`** | 文本变量 (Var) | **自定义管理入口**。用于修改默认的 `/admin` 路径，有效防范自动化扫描工具的嗅探。 | `/secret_portal_99`<br>\> ⚠️ **注意**：不能以 `/api` 开头。 |
 | **`HOST`** | 文本变量 (Var) | **主访问域名**。启用 host prefix 代理或保存 host prefix 节点前必须配置；只填写合法 DNS 主机名。 | `emby.example.com`，不要带协议、端口、路径、通配符或 IP。 |
 | **`LEGACY_HOST`** | 文本变量 (Var) | **兼容旧访问域名**。迁移主域名时保留旧的路径式节点入口。 | `old-emby.example.com` |
-| **`TMDB_API_READ_TOKEN`** / **`TMDB_API_KEY`** / **`TMDB_LANGUAGE`** | 加密变量 / 文本变量 | **EMOS 聚合的主路径**（`auto` / `tmdb` 档按标题 + 年份搜索）。仅当后台「账号设置」里的 TMDB 凭据为空时才使用；两项凭据都在后台填写后，环境变量会被整组忽略。 | 见 `.dev.vars.example` |
-| **`TODB_API_KEY`** | 加密变量 | **EMOS 聚合的 todbvs 兜底**（`auto` 档 TMDB 未命中时、`emos` 档唯一路径）。仅当后台「账号设置」里的 todb API Key 为空时使用；留空则不查 todb。 | 见 `.dev.vars.example` |
+| **`TMDB_API_READ_TOKEN`** / **`TMDB_API_KEY`** / **`TMDB_LANGUAGE`** | 加密变量 / 文本变量 | **TMDB 聚合兜底**。仅当后台「账号设置」里的 TMDB 凭据为空时才使用；两项凭据都在后台填写后，环境变量会被整组忽略。 | 见 `.dev.vars.example` |
 
 > 💡 **命名兼容性提示**：
 > 核心代码已向下兼容多种旧版命名（如 `KV` / `EMBY_KV` / `EMBY_PROXY` 会自动映射为 `ENI_KV`，`D1` / `PROXY_LOGS` 会映射为 `DB`）。但**强烈建议在新部署时统一使用 `ENI_KV` 和 `DB`**，以确保与后续的更新、README 说明及自动化脚本保持一致。
@@ -739,71 +738,6 @@ https://你的域名/hk/123
 
 ### 6. 直连与省流
 通过节点级“主视频流策略”（`mainVideoStreamMode`，直连 / 代理 / 跟随全局）与“源站直连节点”名单，可以让不适合 Worker 中继的数据直接回到客户端，避免无意义的带宽绕行。跨域 30x 重定向则由鉴权能否随跳转携带自动决定是否继续代理。
-
-### 7. 聚合（EMOS / 通用 TMDB）
-节点打开「启用 EMOS 聚合」后，Worker 会改写 `AnyProviderIdEquals` 里的 `tmdb.<id>` 查询（只对 `GET` / `HEAD` 生效；`IncludeItemTypes` 含 `movie` 时按电影查，其余一律按剧查，`Episode` / `Season` 不做特判）。同一节点的「聚合策略」（`aggregationMode`）决定走哪条链路：
-
-| `aggregationMode` | 链路 | 适用 |
-| --- | --- | --- |
-| `auto`（默认） | 先查 TMDB 换 `SearchTerm` + `Years`，未配置 / 未命中 / 失败时退回 todb 换 `todbvs` | 两种上游都能用，最省心 |
-| `emos` | 只查 todb 换 `todbvs`，查不到就原样透传（不走标题兜底） | 明确只对接 EMOS 源站 |
-| `tmdb` | 只查 TMDB 换 `SearchTerm` + `Years`，完全不碰 todb | 标准 Emby / Jellyfin 等没有 `todbvs` 参数的上游 |
-
-`auto` / `emos` / `tmdb` 的改写结果：
-
-| 顺序 | 条件 | 改写结果 |
-| --- | --- | --- |
-| 1 | `auto` / `tmdb` 且有 TMDB 凭据且查询命中 | 删除 `AnyProviderIdEquals`，写入 `SearchTerm` 与 `Years` |
-| 2 | `auto` 且 TMDB 未配置 / 未命中 / 失败 | 退回 todb：删除 `AnyProviderIdEquals`，写入 `todbvs=<video_id>[,<video_id>...]` |
-| 3 | `emos` 且有 todb 凭据且命中 | 删除 `AnyProviderIdEquals`，写入 `todbvs=<video_id>[,<video_id>...]` |
-| 4 | 所有可用路径都没有结果（含 `emos` 查不到） | 请求原样透传（`AnyProviderIdEquals` 保持不变） |
-
-todb 查询走 `GET https://api.theotherdb.org/video/getVideoIdByExternalId?type=tmdb&value=<id>`，请求头带 `Authorization: Bearer <todbApiKey>`。注意主机是 `api.theotherdb.org`，接口前缀在根路径上——`theotherdb.org/api/...` 是 404（已实测）。参数与 Bearer 鉴权来自 todb 官方 Postman 集合（[`somebyteorg/todb`](https://www.postman.com/somebyteorg/todb) 的「影视类 → 通过外部ID查询视频ID」），不要改成 `?tmdb=<id>` 之类的变体；无 token 时返回 401 `{"message":"Unauthenticated."}`，查不到时返回 `[]`。响应里的 `video_id` 可能是单个对象、数组或 `{ items: [...] }`，字段名兼容 `video_id` / `videoId` / `video_ids` / `videoIds`（以及兜底的 `id` / `value`），都会合并去重后用 `,` 拼接。
-
-TMDB 的电影 id 和剧 id 是两套独立编号，同一个整数可能既是电影又是剧，所以该接口可能一次返回两条不同类型的结果。Worker 会读条目上的 `video_type`，在请求类型唯一时（`Series` / `Movie`）只保留匹配的那一类；`Movie,Series` 混合查询不做过滤。响应里没有 `video_type`（或值无法识别）时同样不过滤，避免字段缺失导致命中被整体丢弃。
-
-凭据来自账号设置的 `todbApiKey`，为空时读环境变量 `TODB_API_KEY`。命中缓存 24 小时，失败（非 2xx / 空结果 / 超时）缓存 60 秒，单个查询超时 8 秒（实测该接口首次查询常在 3–15 秒，超时过短会让请求白跑一次再回退标题搜索）。
-关于集与季：todb 的季 / 集没有外部 ID 字段（`external_ids` 只出现在影片与人物上），所以「集的 tmdb id」在 todb 里查不到，这类请求会自然落到透传。反过来说，只要请求里带的是**剧级** tmdb id（哪怕 `IncludeItemTypes` 是 `Episode` / `Season`），Worker 仍会按剧解析出 `todbvs` 并保留 `IncludeItemTypes`，由上游在剧内筛集 / 季。不做 `Episode` / `Season` 特判是刻意与上游参考实现保持一致。
-`tmdb` 策略只做标题 + 年份改写：删除 `AnyProviderIdEquals`，写入 `SearchTerm` 与 TMDB 的精确年份 `Years`，其余查询参数（`Fields` / `SortBy` / `Limit` / `Recursive` 等）原样保留，与通用 Emby 聚合反代脚本的转换结果一致。
-
-#### 跨节点聚合（节点间共享列表）
-
-节点打开「启用 EMOS 聚合」后，它的 `GET /Items` 查询会**自动扇出**到其它同样开启聚合的节点，把兄弟节点的条目合并进同一个响应。不需要额外配置，也不存在白名单：开了就参与，关了就不参与。
-
-- 合并只发生在 `GET` 的 `/Items`（含 `/emby/Items`、`/emby/Users/{id}/Items`）。`POST` 查询带 body 无法重放，播放 / 图片 / 进度路径本来就只打一个节点，都不扇出。
-- 兄弟节点的条目 Id 会加上 `n<base64url(节点名)>.<原 Id>` 前缀，`SeriesId` / `SeasonId` / `ParentId` 这类外键同步加前缀，`TotalRecordCount` 按实际条数重算。
-- 客户端拿着带前缀的 Id 回来时（图片、PlaybackInfo、播放、进度上报），Worker 会把前缀还原成原 Id 并整体改道到对应节点。前缀里编码的是**节点名**而不是序号，所以增删节点不会让旧 Id 路由到错误的上游。
-- 兄弟节点查询**直接打它的上游**，不经 Worker 自己的 HTTP 入口，因此不存在可被客户端伪造的「内部特权参数」，也天然跳过该节点的 Geo / IP / 限速 / 节点密钥。客户端鉴权头与兄弟节点的管理员自定义 Headers 会带上。
-- 最多 8 个兄弟节点，单个查询超时 6 秒。**任何一个兄弟节点失败（503 / 抛异常 / 返回非 JSON / 节点记录缺失）只让它自己缺席**，不会把请求变成 502。
-- 本节点响应超过 8 MB、非 JSON、或不是 Items 载荷时**彻底放弃聚合**，原始流原样转发（用 `clone()` 读副本，原流从未被消费）。
-- 兄弟节点结果**不去重**：同一部片在多个节点都有时会返回多条。想让客户端把多个源当成「同一部片的不同版本」，见下节的 PlaybackInfo 版本聚合。
-- 可聚合的列表路径：`Items`、`Items/{id}`、`Users/{id}/Items`、`Shows/{id}/Episodes`。
-- **剧集列表要翻译身份**：`Shows/{id}/Episodes` 的 `{id}`、`SeasonId`、`ParentId`、`UserId` 全是本节点私有编号，peer 上不存在，原样转发只会拿到 404 或空列表。所以扇出前先用本节点剧集 Id 查剧名，再用剧名在 peer 上搜同名 `Series` 拿到 peer 自己的剧集 Id，最后用它请求；同时丢弃 `SeasonId` / `ParentId` / `UserId`。这一步不做，剧集列表聚合必然为空。
-
-##### 版本级聚合（一条影片、多版本可选）
-
-列表级聚合是「同一部片出现 N 条，每条属于一台服务器」。版本级聚合把它收成「一条片带 N 个源」：同片的兄弟节点片源被追加进本节点的 `PlaybackInfo` 响应，多版本选择交给客户端自己的版本选择器。
-
-**挂在 PlaybackInfo 而不是 `/Items`。** 真实 Emby 客户端（实测 Hills 1.10.1）的流程是：
-
-```
-点播放 → PlaybackInfo（不带 MediaSourceId）→ 拿 MediaSources → 弹版本选择器
-       → 带 MediaSourceId 再请求一次 PlaybackInfo
-```
-
-`/Items` 里的 `MediaSources` 只是列表元数据，客户端不拿它渲染版本选择器；而且客户端的 `Fields` 通常不含 `MediaSources`，peer 的 `/Items` 根本不会返回该字段。早期版本把归并做在 `/Items` 上，实测归并数恒为 0，已移除。
-
-- **触发条件**：节点开了「启用 EMOS 聚合」，请求是 `GET .../PlaybackInfo`，且**没有** `MediaSourceId`。带了 `MediaSourceId` 说明用户已选定版本，再扇出只会拖慢播放。
-- **归并键**：三种身份，两边取交集非空即配对。
-  - `tmdb:<id>` —— 电影最稳，`ProviderIds` 是刮削结果，不受改名影响。
-  - `episode:<剧名>:<季>:<集>` —— 剧集唯一可靠的跨节点身份。Episode 自身通常没有 `ProviderIds`，`Name` 是「第 3 集」这类会随刮削语言变化的值，只有「所属剧 + 季号 + 集号」跨节点稳定。剧集**只用**这个键，不再回退名称键，否则不同剧的第 3 集会互相合并。
-  - `name:<名称>:<年份>` —— 电影兜底。同名同年的不同影片会被错误合并，这是已知代价。
-- **找片流程**：先取本节点条目的 `ProviderIds` / `ProductionYear` / `SeriesName` / `IndexNumber` / `ParentIndexNumber`，再按身份类型选查询入口——电影用 `AnyProviderIdEquals=tmdb.<id>`，剧集用 `SearchTerm=<剧名>&IncludeItemTypes=Episode` 后逐集比对季号与集号，其余用 `SearchTerm=<名称>`。拿到 peer 的条目 Id 后请求它的 `PlaybackInfo`。
-- **片源 Id 自包含**：`n<base64url(节点名)>.<base64url(JSON [peer 条目 Id, peer 片源 Id])>`。必须同时带条目 Id：客户端回传的路径里是本节点的条目 Id，peer 不认识它。
-- **播放地址**：peer 片源的 `Path` / `DirectStreamUrl` 换成本 Worker 的 `/节点名/secret/...` 代理地址，peer 上游主机名不会泄漏给客户端。
-- **播放回程**：客户端选中 peer 片源后回传的 `MediaSourceId` 带前缀，Worker 据此把请求整体改道到那个 peer，并把路径里的条目 Id 与 `MediaSourceId` 分别还原成 peer 自己的编号。
-- **尽力而为**：peer 读不到、超时、返回非 JSON、或找不到同片，都只让它自己缺席，本节点响应照常返回，播放不会失败。
-- 片源追加只发生在本节点 `MediaSources` 数组已存在时；`PlaybackInfo` 一定有这个数组，所以不存在「客户端不渲染选择器」的情况。
 
 ---
 

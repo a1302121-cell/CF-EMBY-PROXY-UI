@@ -23,7 +23,15 @@
 
 1. `frontend/scripts/build-admin-vendor.mjs` 按上面 4 个 URL 下载钉死版本的 npm tarball（`frontend/vendor.lock.json` 记录 sha512），摇树后落到 `frontend/vendor/<assetKey>.js`，`publish-dist.mjs` 再把它拷进 `frontend/dist/vendor/`。
 2. `<assetKey>` 就是 Worker 的 `buildAdminReleaseVendorAssetKey()`：`hashStableText(上游 URL) + ".js"`，与 `tests/admin-vendor-bundle.test.mjs` 用 Worker 真实代码交叉校验。
-3. 壳投递时（内置 ASSETS 壳与上传壳都一样）把 4 个 URL 改写成 `/ADMIN_PATH/__release/<rev>/vendor/<assetKey>`；`renderAdminReleaseVendorAsset` **先查本地 vendor 存储**（`ASSETS/vendor/<assetKey>`），命中即同源返回，未命中才回落到上游代理。
+3. 壳投递时把 4 个 URL 改写成 `/ADMIN_PATH/__release/<rev>/vendor/<assetKey>`。`<rev>` 与资产来源一一对应：
+
+   | 壳来源 | `<rev>` | `renderAdminReleaseVendorAsset` 的行为 |
+   | --- | --- | --- |
+   | 内置 ASSETS 壳 | 固定 `bundled` | 直接 `ASSETS.fetch("/vendor/<assetKey>")` 同源返回，无 KV 查询、无 edge 缓存往返 |
+   | 本地上传壳 | `local-<index.html sha256>` | 读 KV 上传记录里的 manifest，命中缓存即返回，否则回源上游并写 edge 缓存 |
+   | 远程 release 壳 | release tag | 回源上游并写 edge 缓存（可变 ref 走 `no-store`） |
+
+   内置壳这条分支曾经缺失：`renderBundledAdminPage` 不传 `assetRevision`，改写被整体跳过，壳里留着 4 个 `cdn.jsdelivr.net` 绝对 URL，断网即白屏。回归由 `tests/worker-defensive-boundaries.test.mjs` 的「bundled frontend assets render…」与 `tests/e2e/admin-smoke.spec.mjs` 的第二条用例覆盖。
 
 收益（实测，`npm run build:vendor` 会打印同样一张表）：
 

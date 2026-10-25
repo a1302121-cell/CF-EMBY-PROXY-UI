@@ -50,7 +50,6 @@ const requiredChecks = [
     args: [
       "--test",
       "tests/worker-defensive-boundaries.test.mjs",
-      "tests/tmdb-aggregation.test.mjs",
       "tests/config-kv-safety.test.mjs",
       "tests/d1-schema.test.mjs",
       "tests/worker-bundle-smoke.test.mjs",

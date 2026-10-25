@@ -1025,7 +1025,6 @@ function createEmptyForm() {
     tmdbApiReadToken: "",
     tmdbApiV3Key: "",
     tmdbLanguage: "",
-    todbApiKey: "",
     dnsDefaultFallbackCname: "",
     tgBotToken: "",
     tgChatId: "",
@@ -1148,7 +1147,6 @@ function buildFormFromConfig(rawConfig = {}) {
     tmdbApiReadToken: String(currentConfig.tmdbApiReadToken || "").trim(),
     tmdbApiV3Key: String(currentConfig.tmdbApiV3Key || "").trim(),
     tmdbLanguage: String(currentConfig.tmdbLanguage || "").trim(),
-    todbApiKey: String(currentConfig.todbApiKey || "").trim(),
     dnsDefaultFallbackCname: String(currentConfig.dnsDefaultFallbackCname || "").trim(),
     tgBotToken: String(currentConfig.tgBotToken || "").trim(),
     tgChatId: String(currentConfig.tgChatId || "").trim(),
@@ -1362,7 +1360,6 @@ function buildConfigPayload(currentConfig = {}, currentForm = {}) {
     tmdbApiReadToken: String(currentForm.tmdbApiReadToken || "").trim(),
     tmdbApiV3Key: String(currentForm.tmdbApiV3Key || "").trim(),
     tmdbLanguage: String(currentForm.tmdbLanguage || "").trim(),
-    todbApiKey: String(currentForm.todbApiKey || "").trim(),
     dnsDefaultFallbackCname: String(currentForm.dnsDefaultFallbackCname || "").trim(),
     tgBotToken: String(currentForm.tgBotToken || "").trim(),
     tgChatId: String(currentForm.tgChatId || "").trim(),
@@ -1532,7 +1529,6 @@ function buildComparableFormState(value = {}) {
     tmdbApiReadToken: String(value.tmdbApiReadToken || "").trim(),
     tmdbApiV3Key: String(value.tmdbApiV3Key || "").trim(),
     tmdbLanguage: String(value.tmdbLanguage || "").trim(),
-    todbApiKey: String(value.todbApiKey || "").trim(),
     dnsDefaultFallbackCname: String(value.dnsDefaultFallbackCname || "").trim(),
     tgBotToken: String(value.tgBotToken || "").trim(),
     tgChatId: String(value.tgChatId || "").trim(),
@@ -1954,7 +1950,7 @@ function resolveStatusLabel() {
               autocomplete="new-password"
             />
             <span class="field-hint"
-              >用于「EMOS 聚合」。两项都留空时回退到 Worker 环境变量 TMDB_API_READ_TOKEN /
+              >两项都留空时回退到 Worker 环境变量 TMDB_API_READ_TOKEN /
               TMDB_API_KEY；只要填写任意一项，环境变量凭证会被整体忽略。</span
             >
           </label>
@@ -1968,20 +1964,6 @@ function resolveStatusLabel() {
               placeholder="zh-CN"
             />
             <span class="field-hint">TMDB 元数据语言，默认 zh-CN。</span>
-          </label>
-
-          <label class="field-shell">
-            <span class="field-label">todb API Key</span>
-            <input
-              v-model="form.todbApiKey"
-              type="password"
-              class="field-input"
-              autocomplete="new-password"
-            />
-            <span class="field-hint"
-              >用于 EMOS 聚合：把 tmdb Provider ID 换成 todbvs 视频 ID
-              列表；查不到时才回退到标题和年份搜索。留空时读 Worker 环境变量 TODB_API_KEY。</span
-            >
           </label>
 
           <label class="field-shell">

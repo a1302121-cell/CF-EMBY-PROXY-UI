@@ -2833,8 +2833,7 @@ async function copyText(text = "") {
             v-else
             class="mt-5 rounded-2xl border border-dashed border-white/12 bg-white/4 px-4 py-5 text-sm leading-6 text-slate-300"
           >
-            当前节点没有自定义 headers。作为跨节点聚合的目标时，请配置该节点有效的访问凭据，例如
-            X-Emby-Token；不要填入其他节点的令牌。
+            当前节点没有自定义 headers。需要兼容旧上游鉴权时，再按 key / value 补进去即可。
           </div>
 
           <p class="mt-4 text-sm leading-6 text-slate-400">
