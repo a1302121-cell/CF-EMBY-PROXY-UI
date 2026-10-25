@@ -27083,6 +27083,16 @@ function encodePeerAggregationItemId(peerName, itemId) {
 }
 // 递归给 `Id` / `*Id` 这类字符串字段加前缀，只改值不新增字段。
 // `ImageTags` / `ProviderIds` 的值是对象，走不到这个分支。
+// 识别剧集列表请求，取出本节点的剧集 Id。
+// 只认 Shows/{id}/Episodes —— 这是客户端打开一部剧看有哪些集的入口。
+function resolvePeerEpisodesRoute(proxyPath) {
+  const match = /^\/(?:emby\/|mediabrowser\/)?shows\/([^/?]+)\/episodes$/i.exec(
+    String(proxyPath || ""),
+  );
+  if (!match) return null;
+  const showId = safeDecodeSegment(match[1]);
+  return showId ? { showId } : null;
+}
 function rewritePeerAggregationIds(node, peerName, depth = 0) {
   if (node === null || node === void 0 || depth > 6) return node;
   if (Array.isArray(node))
@@ -27184,6 +27194,78 @@ function definePeerAggregationMethods(dependencies = {}, kernel = {}) {
     // peer 的 target 就是它自己的上游基址，secret 属于本 Worker 的入口路径段
     // （/节点名/secret/...），不属于上游 URL。peer 节点若是 host_prefix 入口，它本来
     // 就没有 secret，所以这里也不需要拼。
+    // 剧集列表的身份翻译：把「本节点剧集 Id」换成「peer 自己的剧集 Id」。
+    //
+    // 步骤：用本节点剧集 Id 查本节点拿到剧名 -> 用剧名在 peer 上搜同名的 Series
+    // -> 拿 peer 的剧集 Id 拼 Shows/{peer剧集Id}/Episodes。
+    // 查询串只保留 Fields 一类与节点无关的参数，丢掉 SeasonId / ParentId / UserId：
+    // 这三个都是本节点私有编号，带过去会让 peer 返回空。
+    async buildPeerEpisodesUpstreamUrl(
+      execution,
+      peerTarget,
+      showId,
+      headers,
+      signal,
+      upstreamState,
+    ) {
+      // 查剧名必须问本节点：showId 是本节点的编号，peer 不认识它。
+      const ownTarget =
+        upstreamState?.activeTargetBase || upstreamState?.activeTargetRecord || null;
+      if (!ownTarget) return null;
+      const ownUrl = buildUpstreamProxyUrl(ownTarget, `/Shows/${encodeURIComponent(showId)}`);
+      ownUrl.searchParams.set("Fields", "Name,SeriesName,ProviderIds");
+      const ownResponse = await fetchPort.fetchRequest(ownUrl, { method: "GET", headers, signal });
+      if (!ownResponse?.ok) return null;
+      const ownPayload = await readPeerAggregationJson(
+        ownResponse,
+        PEER_AGGREGATION_BODY_MAX_BYTES,
+      );
+      const seriesName = String(ownPayload?.Name || ownPayload?.SeriesName || "").trim();
+      if (!seriesName) return null;
+      // 在 peer 上找同名剧集。Recursive 关掉，只在顶层 Series 里找。
+      const searchUrl = buildUpstreamProxyUrl(peerTarget, "/Items");
+      searchUrl.searchParams.set("SearchTerm", seriesName);
+      searchUrl.searchParams.set("IncludeItemTypes", "Series");
+      searchUrl.searchParams.set("Recursive", "true");
+      searchUrl.searchParams.set("Limit", "10");
+      searchUrl.searchParams.set("Fields", "ProviderIds");
+      const searchResponse = await fetchPort.fetchRequest(searchUrl, {
+        method: "GET",
+        headers,
+        signal,
+      });
+      if (!searchResponse?.ok) return null;
+      const searchPayload = await readPeerAggregationJson(
+        searchResponse,
+        PEER_AGGREGATION_BODY_MAX_BYTES,
+      );
+      const candidates = Array.isArray(searchPayload?.Items) ? searchPayload.Items : [];
+      const wanted = seriesName.toLowerCase();
+      let peerShowId = "";
+      for (const candidate of candidates) {
+        if (!isPlainObject(candidate)) continue;
+        const name = String(candidate.Name ?? "")
+          .trim()
+          .toLowerCase();
+        if (name !== wanted) continue;
+        peerShowId = String(candidate.Id ?? "").trim();
+        if (peerShowId) break;
+      }
+      if (!peerShowId) return null;
+      const episodesUrl = buildUpstreamProxyUrl(
+        peerTarget,
+        `/Shows/${encodeURIComponent(peerShowId)}/Episodes`,
+      );
+      // 只转发与节点无关的参数。SeasonId / ParentId / UserId 一律丢弃。
+      const original = execution?.requestUrl?.searchParams;
+      for (const [key, value] of original || []) {
+        const lower = String(key).toLowerCase();
+        if (lower === "seasonid" || lower === "parentid" || lower === "userid") continue;
+        if (lower.startsWith("x-emby") || lower.startsWith("x-mediabrowser")) continue;
+        episodesUrl.searchParams.append(key, value);
+      }
+      return episodesUrl;
+    },
     buildPeerAggregationUpstreamUrl(targetRecord, execution) {
       const upstreamUrl = buildUpstreamProxyUrl(targetRecord, execution.proxyPath);
       upstreamUrl.search = String(execution.requestUrl?.search || "");
@@ -27191,15 +27273,15 @@ function definePeerAggregationMethods(dependencies = {}, kernel = {}) {
     },
     // 单个 peer 的任何失败（节点读不到、target 解析失败、网络异常、超时）都只让这个
     // peer 缺席，绝不能让异常冒到调用方把整条 Items 请求变成 502。
-    async fetchPeerAggregationPayload(execution, peer, env) {
+    async fetchPeerAggregationPayload(execution, peer, env, upstreamState) {
       try {
-        return await kernel.fetchPeerAggregationPayloadUnsafe(execution, peer, env);
+        return await kernel.fetchPeerAggregationPayloadUnsafe(execution, peer, env, upstreamState);
       } catch (error) {
         console.warn("peer aggregation skipped:", peer?.name, error?.message || error);
         return null;
       }
     },
-    async fetchPeerAggregationPayloadUnsafe(execution, peer, env) {
+    async fetchPeerAggregationPayloadUnsafe(execution, peer, env, upstreamState) {
       const peerNode = await kernel.readPeerAggregationNode(peer.name, env);
       if (!peerNode) return null;
       const targetRecords = await kernel.resolvePeerAggregationTargets(peerNode);
@@ -27229,6 +27311,52 @@ function definePeerAggregationMethods(dependencies = {}, kernel = {}) {
         PEER_AGGREGATION_TIMEOUT_MS,
       );
       try {
+        // 剧集列表的身份翻译。
+        //
+        // Shows/{id}/Episodes 的 {id}、查询串里的 SeasonId / ParentId / UserId 全是本节点
+        // 私有编号，peer 上不存在。原样转发只会拿到 404 或空列表，聚合必然无效。
+        // 这里先用本节点剧名在 peer 上找到它自己的剧集 id，再用那个 id 请求；同时丢掉
+        // SeasonId（peer 的季 id 不同，带上会把整季过滤成空）和 UserId。
+        const episodesRoute = resolvePeerEpisodesRoute(execution?.proxyPath || "");
+        if (episodesRoute) {
+          for (const targetRecord of targetRecords) {
+            const translatedUrl = await kernel.buildPeerEpisodesUpstreamUrl(
+              execution,
+              targetRecord,
+              episodesRoute.showId,
+              headers,
+              controller.signal,
+              upstreamState,
+            );
+            if (!translatedUrl) continue;
+            const response = await fetchPort.fetchRequest(translatedUrl, {
+              method: "GET",
+              headers,
+              signal: controller.signal,
+            });
+            if (!response?.ok) {
+              console.log("[peer_fanout_probe]", {
+                peer: String(peer?.name || ""),
+                sentPath: String(translatedUrl.pathname || ""),
+                status: Number(response?.status || 0),
+                items: "n/a",
+              });
+              continue;
+            }
+            const payload = await readPeerAggregationJson(
+              response,
+              PEER_AGGREGATION_BODY_MAX_BYTES,
+            );
+            console.log("[peer_fanout_probe]", {
+              peer: String(peer?.name || ""),
+              sentPath: String(translatedUrl.pathname || ""),
+              status: Number(response.status),
+              items: Array.isArray(payload?.Items) ? payload.Items.length : "noItems",
+            });
+            if (isPlainObject(payload) && Array.isArray(payload.Items)) return payload;
+          }
+          return null;
+        }
         // 按顺序试每个 target：单个 peer 失败只影响它自己，聚合是尽力而为。
         for (const targetRecord of targetRecords) {
           const upstreamUrl = kernel.buildPeerAggregationUpstreamUrl(targetRecord, execution);
@@ -27318,7 +27446,9 @@ function definePeerAggregationMethods(dependencies = {}, kernel = {}) {
       // 不是 Items 载荷就不合并，原响应流仍然完整可转发。
       if (!isPlainObject(ownPayload) || !Array.isArray(ownPayload.Items)) return null;
       const peerPayloads = await Promise.all(
-        peers.map((peer) => kernel.fetchPeerAggregationPayload(execution, peer, env)),
+        peers.map((peer) =>
+          kernel.fetchPeerAggregationPayload(execution, peer, env, upstreamState),
+        ),
       );
       // 列表级聚合：peer 条目直接追加进列表，Id 加节点前缀。
       // 版本级（同片多版本）挂在 PlaybackInfo 上，见 buildPeerPlaybackVersionResponse：

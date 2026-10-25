@@ -777,7 +777,8 @@ TMDB 的电影 id 和剧 id 是两套独立编号，同一个整数可能既是�
 - 最多 8 个兄弟节点，单个查询超时 6 秒。**任何一个兄弟节点失败（503 / 抛异常 / 返回非 JSON / 节点记录缺失）只让它自己缺席**，不会把请求变成 502。
 - 本节点响应超过 8 MB、非 JSON、或不是 Items 载荷时**彻底放弃聚合**，原始流原样转发（用 `clone()` 读副本，原流从未被消费）。
 - 兄弟节点结果**不去重**：同一部片在多个节点都有时会返回多条。想让客户端把多个源当成「同一部片的不同版本」，见下节的 PlaybackInfo 版本聚合。
-- 可聚合的列表路径：`Items`、`Items/{id}`、`Users/{id}/Items`、`Shows/{id}/Episodes`。最后一个是剧集列表——打开一部剧看有哪些集，返回的同样是 `{ Items, TotalRecordCount }`，合并逻辑完全复用。
+- 可聚合的列表路径：`Items`、`Items/{id}`、`Users/{id}/Items`、`Shows/{id}/Episodes`。
+- **剧集列表要翻译身份**：`Shows/{id}/Episodes` 的 `{id}`、`SeasonId`、`ParentId`、`UserId` 全是本节点私有编号，peer 上不存在，原样转发只会拿到 404 或空列表。所以扇出前先用本节点剧集 Id 查剧名，再用剧名在 peer 上搜同名 `Series` 拿到 peer 自己的剧集 Id，最后用它请求；同时丢弃 `SeasonId` / `ParentId` / `UserId`。这一步不做，剧集列表聚合必然为空。
 
 ##### 版本级聚合（一条影片、多版本可选）
 

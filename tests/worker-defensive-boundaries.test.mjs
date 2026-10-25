@@ -11114,8 +11114,9 @@ test("playback version aggregation does not merge the same episode number from a
   });
 });
 
-test("episode list requests participate in peer aggregation", async () => {
-  // /Shows/{id}/Episodes 是打开一部剧看有哪些集的入口，之前不在白名单里。
+test("episode list requests translate the show id before fanning out", async () => {
+  // /Shows/{id}/Episodes 的 {id} 与 SeasonId 都是本节点私有编号，peer 上不存在。
+  // 必须先查本节点剧名，再用剧名在 peer 上找到它自己的剧集 Id。
   const { kv } = createInMemoryKvStore();
   const nodes = [
     { name: "alpha", target: "https://alpha.example" },
@@ -11143,16 +11144,37 @@ test("episode list requests participate in peer aggregation", async () => {
     const href = String(input);
     calls.push(href);
     const isOwn = href.startsWith("https://alpha.example");
-    const items = isOwn
-      ? [{ Id: "e1", Name: "第 1 集", SeriesName: "某剧", IndexNumber: 1 }]
-      : [{ Id: "pe1", Name: "第 1 集", SeriesName: "某剧", IndexNumber: 1 }];
-    return json({ Items: items, TotalRecordCount: items.length });
+    const isPeer = href.startsWith("https://beta.example");
+    if (!isOwn && !isPeer) return new Response("{}", { status: 404 });
+    // 本节点：查剧集详情拿剧名。
+    if (isOwn && /\/Shows\/326659(\?|$)/.test(href)) {
+      return json({ Id: "326659", Name: "某剧", Type: "Series" });
+    }
+    // 本节点：剧集列表。
+    if (isOwn && /\/Shows\/326659\/Episodes/.test(href)) {
+      return json({
+        Items: [{ Id: "e1", Name: "第 1 集", SeriesName: "某剧", IndexNumber: 1 }],
+        TotalRecordCount: 1,
+      });
+    }
+    // peer：按剧名搜 Series，返回它自己的剧集 Id。
+    if (isPeer && /\/Items\?/.test(href)) {
+      return json({ Items: [{ Id: "peer-show-9", Name: "某剧", Type: "Series" }] });
+    }
+    // peer：用它自己的剧集 Id 请求剧集列表。
+    if (isPeer && /\/Shows\/peer-show-9\/Episodes/.test(href)) {
+      return json({
+        Items: [{ Id: "pe1", Name: "第 1 集", SeriesName: "某剧", IndexNumber: 1 }],
+        TotalRecordCount: 1,
+      });
+    }
+    return json({ Items: [], TotalRecordCount: 0 });
   };
   const env = { ENI_KV: kv, __CONFIG_CACHE_NAMESPACE: `pb-episodes-list-${Date.now()}` };
   await withWorkerGlobals({ fetch }, async () => {
     const response = await workerHandler.fetch(
       new Request(
-        "https://worker.test/alpha/emby/Shows/326659/Episodes?Fields=ProviderIds,ProductionYear",
+        "https://worker.test/alpha/emby/Shows/326659/Episodes?SeasonId=176016&UserId=u1&Fields=ProviderIds",
         { method: "GET", headers: { "X-Emby-Token": "tok" } },
       ),
       env,
@@ -11164,6 +11186,17 @@ test("episode list requests participate in peer aggregation", async () => {
     assert.equal(payload.Items.length, 2);
     assert.equal(payload.Items[0].Id, "e1");
     assert.match(payload.Items[1].Id, /^n/);
-    assert.ok(calls.some((href) => href.includes("beta.example")));
+    // peer 收到的必须是它自己的剧集 Id，且不能带本节点的 SeasonId / UserId。
+    const peerEpisodesCall = calls.find((href) =>
+      /beta\.example.*\/Shows\/peer-show-9\/Episodes/.test(href),
+    );
+    assert.ok(peerEpisodesCall, "peer 应该用翻译后的剧集 Id 请求剧集列表");
+    assert.doesNotMatch(peerEpisodesCall, /SeasonId=/);
+    assert.doesNotMatch(peerEpisodesCall, /UserId=/);
+    // 绝不能把本节点剧集 Id 原样发给 peer。
+    assert.ok(
+      !calls.some((href) => /beta\.example.*\/Shows\/326659\//.test(href)),
+      "不能把本节点剧集 Id 转发给 peer",
+    );
   });
 });
