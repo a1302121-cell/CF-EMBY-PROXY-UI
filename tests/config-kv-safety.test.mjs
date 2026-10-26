@@ -824,7 +824,7 @@ test("active admin index renders when a remote PoP still sees stale config", asy
     const rendered = await response.text();
 
     assert.equal(response.status, 200);
-    assert.equal(response.headers.get("Cache-Control"), "private, no-store, max-age=0");
+    assert.equal(response.headers.get("Cache-Control"), "private, no-cache, max-age=0");
     assert.equal(response.headers.get("X-Admin-Shell-Revision"), record.revision);
     assert.match(rendered, /active-from-envelope/);
     assert.doesNotMatch(rendered, /admin-gate-shell/);

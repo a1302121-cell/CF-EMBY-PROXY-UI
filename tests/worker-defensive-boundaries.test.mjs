@@ -1852,7 +1852,7 @@ test("bundled frontend assets render when no uploaded admin index is configured"
   );
   const renderedHtml = await getResponse.text();
   assert.equal(getResponse.status, 200);
-  assert.equal(getResponse.headers.get("Cache-Control"), "private, no-store, max-age=0");
+  assert.equal(getResponse.headers.get("Cache-Control"), "private, no-cache, max-age=0");
   assert.match(renderedHtml, /data-source="bundled"/);
   assert.match(renderedHtml, /"adminPath":"\/console"/);
   assert.match(renderedHtml, /"mode":"embedded"/);
@@ -1924,6 +1924,74 @@ test("bundled frontend assets render when no uploaded admin index is configured"
     );
     assert.equal(notFound.status, 404, `assetKey ${JSON.stringify(badKey)} 必须 404`);
   }
+});
+
+test("bundled shell page cache reuses the rendered response until ASSETS validators change", async () => {
+  // 缓存键是 ASSETS 绑定，所以每次测试用新的 env，避免和上一条用例串味。
+  const shellBody = adminShellDocument({
+    head: `<title>Bundled UI</title>${BUNDLED_VENDOR_PINS.map((url) => `<script src="${url}"></script>`).join("")}`,
+    body: '<div id="app">cached</div>',
+  });
+  let assetFetches = 0;
+  let currentEtag = '"bundled-v1"';
+  const env = {
+    ADMIN_PATH: "/console",
+    ASSETS: {
+      async fetch() {
+        assetFetches += 1;
+        return new Response(shellBody, {
+          headers: { "Content-Type": "text/html; charset=utf-8", ETag: currentEtag },
+        });
+      },
+    },
+  };
+  const initHealth = { ok: true, missing: [] };
+
+  const first = await renderAdminPage(
+    new Request("https://worker.test/console"),
+    env,
+    null,
+    initHealth,
+    {},
+  );
+  const firstHtml = await first.text();
+  assert.equal(assetFetches, 1);
+
+  // 同一 ETag：复用渲染结果，不再解析/改写 900 KB 壳。
+  const second = await renderAdminPage(
+    new Request("https://worker.test/console"),
+    env,
+    null,
+    initHealth,
+    {},
+  );
+  assert.equal(await second.text(), firstHtml);
+  assert.equal(assetFetches, 2);
+
+  // 命中缓存时条件请求仍然返回 304，验证器来自缓存下来的头。
+  const etag = second.headers.get("ETag");
+  assert.ok(etag, "cached shell must keep its ETag");
+  const conditional = await renderAdminPage(
+    new Request("https://worker.test/console", { headers: { "If-None-Match": etag } }),
+    env,
+    null,
+    initHealth,
+    {},
+  );
+  assert.equal(conditional.status, 304);
+  assert.equal(await conditional.text(), "");
+
+  // 资产换了验证器就必须重算，不能把旧壳当新壳发出去。
+  currentEtag = '"bundled-v2"';
+  const third = await renderAdminPage(
+    new Request("https://worker.test/console"),
+    env,
+    null,
+    initHealth,
+    {},
+  );
+  assert.notEqual(third.headers.get("ETag"), etag);
+  assert.equal(assetFetches, 4);
 });
 
 test("Tailwind compatibility prelude is targeted and idempotent", () => {

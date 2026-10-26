@@ -150,6 +150,22 @@ D1 保存日志、统计聚合、DNS/IP 工作区数据、运行状态、缓存/
   | 内置 ASSETS 壳 | 固定 `bundled` | 直接 `env.ASSETS.fetch("/vendor/<assetKey>")`，不经过 KV 与 edge 缓存 |
 
   内置壳没有 tag 也没有上传记录，所以用独立的 `bundled` revision 复用同一套改写逻辑；这条分支缺失时，壳里会保留 4 个 `cdn.jsdelivr.net` 绝对 URL，手机网络连不上就是整页白屏。`__warm` 对内置壳同样从壳 HTML 现算 manifest 并预热这 4 个资产。收益与两个已知坑见 [`docs/tech-stack.md`](tech-stack.md) §1.1。
+### 管理端壳的两次缓存
+
+管理端 HTML 有两层缓存，用途不同：
+
+| 层 | 位置 | 存什么 | 失效信号 |
+| --- | --- | --- | --- |
+| 浏览器 | 客户端 | 完整壳 HTML | `Cache-Control: private, no-cache, max-age=0` + `ETag`：每次使用前必须回源，命中验证器时只回 304 |
+| isolate | Worker 内存（按 `env.ASSETS` 绑定的 `WeakMap`） | 已校验、已改写 vendor URL、已注入 bootstrap 的壳 HTML 与响应头 | `ASSETS` 返回的 `ETag` / `Last-Modified` 或 bootstrap 内容变化 |
+
+内置 ASSETS 壳每次投递都要重新校验、改写 4 个 vendor URL、注入 bootstrap，约 7 ms；isolate 缓存把重复请求降到约 1.4 ms，代价是仍需一次 `ASSETS.fetch` 读验证器（约 0.1 ms）。上传壳与远程 release 壳本来就有 edge 缓存，不走这条路径。
+
+两个约束值得记住：
+
+- 验证器优先于内容。`ASSETS` 没给 `ETag` 也没有 `Last-Modified` 时，每个请求都重新渲染，宁可慢也不发旧壳。
+- 响应头必须一起缓存。`ETag` 由 bootstrap 派生，缓存命中时它和 HTML 是同一对，否则 304 会把浏览器钉在过期壳上。
+
 
 ## 8. 设置项与绑定/键映射
 

@@ -2757,7 +2757,9 @@ function defineAdminShellTemplate(dependencies = {}, shell = {}) {
   const ADMIN_APP_ROOT_PLACEHOLDER = "__ADMIN_APP_ROOT__";
   const ADMIN_APP_ROOT_HTML = "";
   const ADMIN_HTML_CACHE_KEY_ORIGIN = "https://admin-shell-cache.invalid";
-  const ADMIN_REMOTE_SHELL_BROWSER_CACHE_CONTROL = "private, no-store, max-age=0";
+  // no-cache 而不是 no-store：浏览器仍可留存壳，但每次使用前必须带 If-None-Match 回源，
+  // 命中时 Worker 只回 304（几十字节）而不是 900 KB。壳本身需要登录态，所以保持 private。
+  const ADMIN_REMOTE_SHELL_BROWSER_CACHE_CONTROL = "private, no-cache, max-age=0";
   const ADMIN_REMOTE_SHELL_EDGE_CACHE_CONTROL = "public, max-age=31536000, immutable";
   const ADMIN_REMOTE_SHELL_REVALIDATE_MS = 300 * 1e3;
   const ADMIN_REMOTE_SHELL_MAX_BYTES = 2 * 1024 * 1024;
@@ -4977,6 +4979,13 @@ function defineAdminShellCache(dependencies = {}, shell = {}) {
 //#region worker/features/admin/shell-delivery.js
 function defineAdminShellDelivery(dependencies = {}, shell = {}) {
   const { indexRepository } = dependencies;
+  // 内置壳每次投递都要重算：校验 900 KB、改写 4 个 vendor URL、注入 bootstrap，约 7ms。
+  // 这里按 ASSETS 绑定缓存渲染结果，只在资产验证器或 bootstrap 变化时重算。
+  // shortcut: ASSETS 不给 ETag/Last-Modified 时不缓存（每请求重算），换取永不发旧壳。
+  const bundledShellPageCache = /* @__PURE__ */ new WeakMap();
+  function buildBundledShellStoredResponse(entry) {
+    return new Response(entry.html, { status: 200, headers: new Headers(entry.headers) });
+  }
   async function renderBundledAdminPage(
     request,
     env,
@@ -4987,6 +4996,10 @@ function defineAdminShellDelivery(dependencies = {}, shell = {}) {
     const assets = env?.ASSETS;
     if (!assets || typeof assets.fetch !== "function") return null;
     const assetUrl = new URL("/index.html", request.url);
+    const shellState = shell.buildAdminShellState(env, initHealth, config);
+    const bootstrap = shell.buildAdminBootstrapPayload(env, initHealth, config);
+    const indexState = buildResolvedAdminIndexState(env, config);
+    const sourceUrl = assetUrl.toString();
     const assetResponse = await assets.fetch(
       new Request(assetUrl, {
         method: "GET",
@@ -5003,34 +5016,59 @@ function defineAdminShellDelivery(dependencies = {}, shell = {}) {
     );
     if (Number.isFinite(contentLength) && contentLength > shell.ADMIN_REMOTE_SHELL_MAX_BYTES)
       throw new Error(`bundled admin shell too large: ${contentLength} bytes`);
-    const assetBody = await readResponseTextWithLimit(
-      assetResponse,
-      shell.ADMIN_REMOTE_SHELL_MAX_BYTES,
-    );
-    if (assetBody.exceeded || !assetBody.text)
-      throw new Error(`bundled admin shell payload invalid: ${assetBody.bytes} bytes`);
-    const shellState = shell.buildAdminShellState(env, initHealth, config);
-    const bootstrap = shell.buildAdminBootstrapPayload(env, initHealth, config);
-    const indexState = buildResolvedAdminIndexState(env, config);
-    const sourceUrl = assetUrl.toString();
-    const shellPayload = shell.buildAdminShellStoredPayloadFromHtml(
-      assetBody.text,
-      bootstrap,
-      initHealth,
-      sourceUrl,
-      {
-        sourceLabel: "bundled admin shell",
-        contentType: assetResponse.headers.get("Content-Type") || "text/html",
-        adminPath: bootstrap.adminPath,
-        // 内置壳没有 release tag / 上传记录，用固定 bundled revision 让 4 个首屏脚本
-        // 改写成 /ADMIN_PATH/__release/bundled/vendor/<assetKey>，由 ASSETS 同源投递。
-        assetRevision: shell.ADMIN_BUNDLED_INDEX_ASSET_REVISION,
-        lastModified: assetResponse.headers.get("Last-Modified") || "Thu, 01 Jan 1970 00:00:00 GMT",
-        originEtag: assetResponse.headers.get("ETag") || "",
-      },
-    );
-    const storedResponse = shellPayload?.storedResponse || null;
-    if (!storedResponse) throw new Error("bundled admin shell response is unavailable");
+    // 资产自身的验证器是唯一失效信号；没有验证器时每请求重算，绝不拿旧壳冒充新壳。
+    const assetEtag = String(assetResponse.headers.get("ETag") || "").trim();
+    const assetLastModified = String(assetResponse.headers.get("Last-Modified") || "").trim();
+    const bootstrapKey = hashStableText(serializeInlineJson(bootstrap));
+    const cachedEntry = bundledShellPageCache.get(assets) || null;
+    let storedResponse = null;
+    if (
+      cachedEntry &&
+      (assetEtag || assetLastModified) &&
+      cachedEntry.sourceUrl === sourceUrl &&
+      cachedEntry.bootstrapKey === bootstrapKey &&
+      cachedEntry.assetEtag === assetEtag &&
+      cachedEntry.assetLastModified === assetLastModified
+    )
+      storedResponse = buildBundledShellStoredResponse(cachedEntry);
+    if (!storedResponse) {
+      const assetBody = await readResponseTextWithLimit(
+        assetResponse,
+        shell.ADMIN_REMOTE_SHELL_MAX_BYTES,
+      );
+      if (assetBody.exceeded || !assetBody.text)
+        throw new Error(`bundled admin shell payload invalid: ${assetBody.bytes} bytes`);
+      const shellPayload = shell.buildAdminShellStoredPayloadFromHtml(
+        assetBody.text,
+        bootstrap,
+        initHealth,
+        sourceUrl,
+        {
+          sourceLabel: "bundled admin shell",
+          contentType: assetResponse.headers.get("Content-Type") || "text/html",
+          adminPath: bootstrap.adminPath,
+          // 内置壳没有 release tag / 上传记录，用固定 bundled revision 让 4 个首屏脚本
+          // 改写成 /ADMIN_PATH/__release/bundled/vendor/<assetKey>，由 ASSETS 同源投递。
+          assetRevision: shell.ADMIN_BUNDLED_INDEX_ASSET_REVISION,
+          lastModified: assetLastModified || "Thu, 01 Jan 1970 00:00:00 GMT",
+          originEtag: assetEtag,
+        },
+      );
+      if (!shellPayload?.storedResponse)
+        throw new Error("bundled admin shell response is unavailable");
+      const html = await shellPayload.storedResponse.clone().text();
+      const headers = [...shellPayload.storedResponse.headers.entries()];
+      if (assetEtag || assetLastModified)
+        bundledShellPageCache.set(assets, {
+          sourceUrl,
+          bootstrapKey,
+          assetEtag,
+          assetLastModified,
+          html,
+          headers,
+        });
+      storedResponse = new Response(html, { status: 200, headers: new Headers(headers) });
+    }
     await shell.patchAdminShellRuntimeStatus(
       env,
       {
