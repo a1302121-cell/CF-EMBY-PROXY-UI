@@ -1994,6 +1994,61 @@ test("bundled shell page cache reuses the rendered response until ASSETS validat
   assert.equal(assetFetches, 4);
 });
 
+test("bundled shell page cache keeps one entry per request origin", async () => {
+  // sourceUrl 进入 ETag 与 X-Admin-Shell-Source-Hash，所以 HOST 与 LEGACY_HOST
+  // 各有一份渲染结果。缓存若只留一条，交替访问会互相击穿，每次全量重渲染 900 KB。
+  const buildShellBody = (marker) =>
+    adminShellDocument({
+      head: `<title>Bundled UI</title>${BUNDLED_VENDOR_PINS.map((url) => `<script src="${url}"></script>`).join("")}`,
+      body: `<div id="app">${marker}</div>`,
+    });
+  // ETag 保持不变、正文换内容：命中缓存必须继续发旧正文，重渲染才会看到新标记。
+  // 这样断言的是「有没有真的复用渲染结果」，而不是 ETag 是否稳定。
+  let assetBody = buildShellBody("gen1");
+  let assetFetches = 0;
+  const env = {
+    ADMIN_PATH: "/console",
+    ASSETS: {
+      async fetch() {
+        assetFetches += 1;
+        return new Response(assetBody, {
+          headers: { "Content-Type": "text/html; charset=utf-8", ETag: '"origin-v1"' },
+        });
+      },
+    },
+  };
+  const initHealth = { ok: true, missing: [] };
+  const render = (origin) =>
+    renderAdminPage(new Request(`${origin}/console`), env, null, initHealth, {});
+
+  const primary = await render("https://primary.test");
+  const primaryHtml = await primary.text();
+  const primaryEtag = primary.headers.get("ETag");
+  assert.match(primaryHtml, /gen1/);
+
+  assetBody = buildShellBody("gen2");
+  const legacy = await render("https://legacy.test");
+  const legacyHtml = await legacy.text();
+  const legacyEtag = legacy.headers.get("ETag");
+  assert.match(legacyHtml, /gen2/);
+  assert.notEqual(primaryEtag, legacyEtag);
+
+  // 交替回到两个源：各自命中缓存，正文停在首次渲染的那一份。
+  // 只留一条缓存时，两个源会互相挤掉，每次都按当前 assetBody 重渲染（gen2）。
+  for (const [origin, expectedHtml, expectedEtag] of [
+    ["https://primary.test", primaryHtml, primaryEtag],
+    ["https://legacy.test", legacyHtml, legacyEtag],
+    ["https://primary.test", primaryHtml, primaryEtag],
+    ["https://legacy.test", legacyHtml, legacyEtag],
+  ]) {
+    const response = await render(origin);
+    assert.equal(response.headers.get("ETag"), expectedEtag, `${origin} 的 ETag 应保持稳定`);
+    assert.equal(await response.text(), expectedHtml, `${origin} 应复用首次渲染的正文`);
+  }
+  assert.match(primaryHtml, /gen1/, "primary 必须仍是最初渲染的壳");
+  assert.equal(assetFetches, 6);
+});
+
 test("Tailwind compatibility prelude is targeted and idempotent", () => {
   const legacyShell =
     '<!doctype html><html><head><script src="https://cdn.tailwindcss.com"></script><script nonce="abc">tailwind.config={darkMode:\'class\'}</script></head><body><div id="app"></div></body></html>';

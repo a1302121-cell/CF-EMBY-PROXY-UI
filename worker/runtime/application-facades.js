@@ -4981,8 +4981,22 @@ function defineAdminShellDelivery(dependencies = {}, shell = {}) {
   const { indexRepository } = dependencies;
   // 内置壳每次投递都要重算：校验 900 KB、改写 4 个 vendor URL、注入 bootstrap，约 7ms。
   // 这里按 ASSETS 绑定缓存渲染结果，只在资产验证器或 bootstrap 变化时重算。
+  // 键必须带请求源：sourceUrl 同时进入 ETag 与 X-Admin-Shell-Source-Hash，HOST 与
+  // LEGACY_HOST 交替访问时各自是一份结果，所以每个绑定下按 sourceUrl 分桶，不能只留一条。
   // shortcut: ASSETS 不给 ETag/Last-Modified 时不缓存（每请求重算），换取永不发旧壳。
   const bundledShellPageCache = /* @__PURE__ */ new WeakMap();
+  const BUNDLED_SHELL_PAGE_CACHE_LIMIT = 4;
+  function readBundledShellPageCacheEntry(assets, sourceUrl) {
+    return bundledShellPageCache.get(assets)?.get(sourceUrl) || null;
+  }
+  function writeBundledShellPageCacheEntry(assets, sourceUrl, entry) {
+    let bucket = bundledShellPageCache.get(assets);
+    if (!bucket) {
+      bucket = /* @__PURE__ */ new Map();
+      bundledShellPageCache.set(assets, bucket);
+    }
+    setBoundedMapEntry(bucket, sourceUrl, entry, BUNDLED_SHELL_PAGE_CACHE_LIMIT);
+  }
   function buildBundledShellStoredResponse(entry) {
     return new Response(entry.html, { status: 200, headers: new Headers(entry.headers) });
   }
@@ -5020,12 +5034,11 @@ function defineAdminShellDelivery(dependencies = {}, shell = {}) {
     const assetEtag = String(assetResponse.headers.get("ETag") || "").trim();
     const assetLastModified = String(assetResponse.headers.get("Last-Modified") || "").trim();
     const bootstrapKey = hashStableText(serializeInlineJson(bootstrap));
-    const cachedEntry = bundledShellPageCache.get(assets) || null;
+    const cachedEntry = readBundledShellPageCacheEntry(assets, sourceUrl);
     let storedResponse = null;
     if (
       cachedEntry &&
       (assetEtag || assetLastModified) &&
-      cachedEntry.sourceUrl === sourceUrl &&
       cachedEntry.bootstrapKey === bootstrapKey &&
       cachedEntry.assetEtag === assetEtag &&
       cachedEntry.assetLastModified === assetLastModified
@@ -5059,8 +5072,7 @@ function defineAdminShellDelivery(dependencies = {}, shell = {}) {
       const html = await shellPayload.storedResponse.clone().text();
       const headers = [...shellPayload.storedResponse.headers.entries()];
       if (assetEtag || assetLastModified)
-        bundledShellPageCache.set(assets, {
-          sourceUrl,
+        writeBundledShellPageCacheEntry(assets, sourceUrl, {
           bootstrapKey,
           assetEtag,
           assetLastModified,
