@@ -430,6 +430,25 @@ function inspectRuntimeAssets(html = "") {
   return { assets, importMapCount, inlineDynamicImports };
 }
 
+// 4 个 CDN pin 会被 Worker 改写成 /ADMIN_PATH/__release/<rev>/vendor/<assetKey>，由本
+// Worker 同源返回。这些 assetKey 对应的摇树产物必须随 dist 一起发出去，少一个就是白屏。
+async function checkAdminVendorStore() {
+  const { ADMIN_VENDOR_PINS, buildAdminVendorAssetKey } = await import("./build-admin-vendor.mjs");
+  const vendorDirectory = path.resolve(process.cwd(), "dist/vendor");
+  const problems = [];
+  for (const pin of ADMIN_VENDOR_PINS) {
+    const assetKey = buildAdminVendorAssetKey(pin.upstreamUrl, "script");
+    let size = 0;
+    try {
+      size = (await readFile(path.join(vendorDirectory, assetKey))).length;
+    } catch {
+      size = 0;
+    }
+    if (size <= 0) problems.push(`${pin.key}: 缺少 dist/vendor/${assetKey}`);
+  }
+  return problems;
+}
+
 async function main() {
   const distHtmlPath = path.resolve(process.cwd(), "dist/index.html");
   const sourceHtmlPath = path.resolve(process.cwd(), "index.html");
@@ -529,6 +548,13 @@ async function main() {
     process.exit(1);
   }
 
+  const vendorProblems = await checkAdminVendorStore();
+  if (vendorProblems.length) {
+    console.error("[check:release] 首屏 vendor 摇树产物不完整：");
+    for (const problem of vendorProblems) console.error(`- ${problem}`);
+    process.exit(1);
+  }
+
   const invalidAssets = assetMatches.filter((url) => isForbiddenRuntimeAsset(url));
   if (invalidAssets.length) {
     console.error("[check:release] 发现不符合外部资源 + Worker 同源代理策略的资源：");
@@ -544,6 +570,7 @@ async function main() {
   console.log(
     `[check:release] dist/index.html 满足单文件管理台 + Worker 同源代理约束（壳 ${shellBytes} B / 上限 ${MAX_ADMIN_SHELL_BYTES} B）。`,
   );
+  console.log("[check:release] dist/vendor 下的摇树产物与 4 个 pin 的 assetKey 对齐。");
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

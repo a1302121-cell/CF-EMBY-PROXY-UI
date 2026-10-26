@@ -4,10 +4,13 @@
   "sortTailwindcss": false,
   "ignorePatterns": [
     "worker.js",
+    "worker (*).js",
     "**/*.html",
+    "frontend/vendor/**",
     "frontend/dist/**",
     ".worker-dist/**",
     "bundled/**",
+    "docs/references/**",
     "node_modules/**",
     "**/*.md",
     ".github/**",

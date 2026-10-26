@@ -29,7 +29,7 @@ function loadEnhancementTestHooks(documentOverrides = {}, windowOverrides = {}) 
   assert.notEqual(closureEnd, -1, "enhancement script must use the expected closure");
   const instrumentedScript =
     inlineScript.slice(0, closureEnd) +
-    "window.__enhancementTestHooks = { formatD1SchemaStatus, formatD1InitializationResult, formatD1RepairPlan, formatD1RepairError, patchSafetyContractMethods, patchTmdbNodeMethods, getDashboardMonthPeriodKey, isDashboardMonthlyTrafficCacheFresh, toggleDashboardTrafficPeriod, dashboardTrafficState, normalizeHeadProbeResult, formatHeadProbeResult, formatHeadProbeTitle, normalizeHeadProbePath, normalizeHostPrefixDnsHostname, isHostPrefixNodeLinkActive, runWithConcurrency, NODE_GET_PROBE_CONCURRENCY, readStoredUiSkin, readBootstrapUiSkin, normalizeUiSkin, applyUiSkin, resolveCurrentUiSkin, syncServerUiSkin, persistUiSkinPreference, syncDialogAccessibility, handleDialogEscapeKey, withUiRequestTimeout, installAdminBootstrapFetchDedupe, patchLogPageCache, dashboardLayerState, readFreshSettingsBootstrap, updateAdminBootstrapCache, buildCurrentLogPageSignature, fetch: window.fetch };\n" +
+    "window.__enhancementTestHooks = { formatD1SchemaStatus, formatD1InitializationResult, formatD1RepairPlan, formatD1RepairError, patchSafetyContractMethods, getDashboardMonthPeriodKey, isDashboardMonthlyTrafficCacheFresh, toggleDashboardTrafficPeriod, dashboardTrafficState, normalizeHeadProbeResult, formatHeadProbeResult, formatHeadProbeTitle, normalizeHeadProbePath, normalizeHostPrefixDnsHostname, isHostPrefixNodeLinkActive, runWithConcurrency, NODE_GET_PROBE_CONCURRENCY, readStoredUiSkin, readBootstrapUiSkin, normalizeUiSkin, applyUiSkin, resolveInitialUiThemeMode, applyUiThemeMode, swapUiTheme, patchThemeTransitionMethods, resolveCurrentUiSkin, syncServerUiSkin, persistUiSkinPreference, syncDialogAccessibility, handleDialogEscapeKey, withUiRequestTimeout, installAdminBootstrapFetchDedupe, patchLogPageCache, dashboardLayerState, readFreshSettingsBootstrap, updateAdminBootstrapCache, buildCurrentLogPageSignature, fetch: window.fetch };\n" +
     inlineScript.slice(closureEnd);
   const window = {
     addEventListener() {},
@@ -154,6 +154,130 @@ test("config save enhancement adds an idempotency token", async () => {
 
   assert.match(requests[1].payload.mutationId, /^cfg-/);
   assert.equal(messages.length, 0);
+});
+
+// 模板是压缩产物，无法整体执行。按「方法签名 → 下一个方法签名」切片，
+// 去掉结尾的逗号后即可作为函数表达式求值，从而测真实语义而不是源码字面量。
+function loadTemplateMethod(template, signature, nextSignature) {
+  const start = template.indexOf(signature);
+  assert.notEqual(start, -1, `模板里找不到 ${signature}`);
+  const next = template.indexOf(nextSignature, start + signature.length);
+  assert.notEqual(next, -1, `模板里找不到 ${nextSignature}`);
+  // 切片形如 `name(args){...}` 或 `async name(args){...}`：拼成对象字面量再取出方法，
+  // 避免 `{` 被当成语句块。对象方法本身支持 async，无需剥离关键字。
+  const body = template.slice(start, next).replace(/,\s*$/, "");
+  const name = body
+    .slice(0, body.indexOf("("))
+    .replace(/^async\s+/, "")
+    .trim();
+  assert.ok(name, `无法解析方法名: ${signature}`);
+  return new Function(`return ({${body}})[${JSON.stringify(name)}];`)();
+}
+
+const SYNC_FORM_SIGNATURE = "syncSettingsFormFromRuntimeConfig(r=this.runtimeConfig){";
+const SYNC_FORM_NEXT = "handleDailyReportEnabledToggle(){";
+const FINALIZE_SIGNATURE = "async finalizePersistedSettings(r,o={}){";
+const FINALIZE_NEXT = "async prepareConfigChangePreview(";
+
+function createSyncFormApp(overrides = {}) {
+  return {
+    adminRevisions: { configRevision: "rev-fresh" },
+    runtimeStatus: {},
+    settingsExperienceMode: "expert",
+    settingsFormBaseRevision: "rev-stale",
+    nodes: [],
+    appliedSections: [],
+    sanitizeRuntimeConfigCompat: (value) => value,
+    applyConfigSectionToForm(section) {
+      this.appliedSections.push(section);
+    },
+    syncReleaseSourcePreviewInSettingsForm() {},
+    normalizeSettingsNumberInputs() {},
+    syncProxySettingsGuardrails() {},
+    syncSourceDirectNodesSelection() {},
+    getMainVideoStreamShortcutSelection: () => [],
+    ...overrides,
+  };
+}
+
+test("settings form revision follows the latest adminRevisions", async () => {
+  const template = await readFile(
+    new URL("../frontend/admin-runtime.template.html", import.meta.url),
+    "utf8",
+  );
+  const syncForm = loadTemplateMethod(template, SYNC_FORM_SIGNATURE, SYNC_FORM_NEXT);
+  const app = createSyncFormApp();
+
+  syncForm.call(app, { rateLimitRpm: 20 });
+
+  // 保存用的是 settingsFormBaseRevision，它必须来自刚下发的 revision，
+  // 否则下一次保存会拿旧基线做乐观锁校验，误报 CONFIG_REVISION_CONFLICT。
+  assert.equal(app.settingsFormBaseRevision, "rev-fresh");
+  for (const section of [
+    "ui",
+    "dns",
+    "proxy",
+    "cache",
+    "security",
+    "logs",
+    "monitoring",
+    "account",
+  ])
+    assert.ok(app.appliedSections.includes(section), `应刷新 ${section} 分区`);
+});
+
+test("settings form revision falls back to empty when revisions are missing", async () => {
+  const template = await readFile(
+    new URL("../frontend/admin-runtime.template.html", import.meta.url),
+    "utf8",
+  );
+  const syncForm = loadTemplateMethod(template, SYNC_FORM_SIGNATURE, SYNC_FORM_NEXT);
+  const app = createSyncFormApp({ adminRevisions: null });
+
+  syncForm.call(app, {});
+
+  // 缺失时清空而不是沿用旧值：空基线等于「无期望版本」，不会误判冲突。
+  assert.equal(app.settingsFormBaseRevision, "");
+});
+
+test("settings save refreshes the form without re-fetching settings", async () => {
+  const template = await readFile(
+    new URL("../frontend/admin-runtime.template.html", import.meta.url),
+    "utf8",
+  );
+  const finalize = loadTemplateMethod(template, FINALIZE_SIGNATURE, FINALIZE_NEXT);
+
+  const calls = [];
+  const app = {
+    applyRuntimeConfig(config) {
+      calls.push(["applyRuntimeConfig", config]);
+    },
+    syncSettingsFormFromRuntimeConfig(config) {
+      calls.push(["syncSettingsFormFromRuntimeConfig", config]);
+    },
+    async loadActiveSettingsSidecars() {
+      calls.push(["loadActiveSettingsSidecars"]);
+    },
+    async loadSettings() {
+      calls.push(["loadSettings"]);
+    },
+    showMessage(message, options) {
+      calls.push(["showMessage", options?.tone]);
+    },
+  };
+
+  await finalize.call(app, { rateLimitRpm: 20 }, { successMessage: "ok" });
+
+  const names = calls.map(([name]) => name);
+  assert.deepEqual(names, [
+    "applyRuntimeConfig",
+    "syncSettingsFormFromRuntimeConfig",
+    "loadActiveSettingsSidecars",
+    "showMessage",
+  ]);
+  // saveConfig 的响应已经带回 config 与 revisions，再拉一次只是多一个 HTTP 往返。
+  assert.ok(!names.includes("loadSettings"), "保存成功后不应重新拉取设置");
+  assert.equal(calls.at(-1)[1], "success");
 });
 
 test("settings save sends the revision the form was built from", async () => {
@@ -319,6 +443,183 @@ test("ui skin runtime reads storage, persists the choice and marks the document"
   assert.equal(applyUiSkin("unknown"), "classic");
 });
 
+test("theme mode lands on the root element before the app boots", () => {
+  const classes = new Set(["light"]);
+  const document = {
+    readyState: "loading",
+    addEventListener() {},
+    getElementById() {
+      return null;
+    },
+    querySelector() {
+      return null;
+    },
+    documentElement: {
+      classList: {
+        add: (name) => classes.add(name),
+        remove: (...names) => names.forEach((name) => classes.delete(name)),
+      },
+    },
+  };
+  const storedThemeHooks = loadEnhancementTestHooks(document, {
+    localStorage: { getItem: (key) => (key === "theme" ? "dark" : null), setItem() {} },
+    matchMedia: () => ({ matches: false }),
+  });
+
+  // 脚本注入 head 时已经落过主题，不需要等 app 挂载。
+  assert.equal(classes.has("dark"), true);
+  assert.equal(classes.has("light"), false);
+  assert.equal(storedThemeHooks.resolveInitialUiThemeMode(), "dark");
+
+  // 没存过偏好才跟系统媒体查询走。
+  assert.equal(
+    loadEnhancementTestHooks(document, {
+      localStorage: { getItem: () => null, setItem() {} },
+      matchMedia: (query) => ({ matches: query.includes("prefers-color-scheme") }),
+    }).resolveInitialUiThemeMode(),
+    "dark",
+  );
+});
+
+test("theme switching kills per-element color transitions and cross-fades once", async () => {
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_STYLE,
+    /html\[data-theme-switching\][\s\S]{0,160}\{transition:none !important\}/,
+  );
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_STYLE,
+    /::view-transition-old\(root\)[\s\S]*?\{animation-duration:\.22s/,
+  );
+  assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /patchThemeTransitionMethods\(window\.App\)/);
+});
+
+test("theme swap settles the transition guard once the cross-fade ends", async () => {
+  const attributes = {};
+  const document = {
+    readyState: "loading",
+    addEventListener() {},
+    getElementById() {
+      return null;
+    },
+    querySelector() {
+      return null;
+    },
+    documentElement: {
+      setAttribute(name, value) {
+        attributes[name] = String(value);
+      },
+      getAttribute(name) {
+        return attributes[name] ?? null;
+      },
+      removeAttribute(name) {
+        delete attributes[name];
+      },
+    },
+    startViewTransition(callback) {
+      callback();
+      return { finished: Promise.resolve() };
+    },
+  };
+  const { swapUiTheme, patchThemeTransitionMethods } = loadEnhancementTestHooks(document, {
+    localStorage: { getItem: () => null, setItem() {} },
+    matchMedia: () => ({ matches: false }),
+  });
+
+  const seenGuards = [];
+  swapUiTheme(() => seenGuards.push(attributes["data-theme-switching"] ?? null));
+  // 落色那一刻过渡已经被关掉，颜色不会再逐元素插值。
+  assert.deepEqual(seenGuards, ["1"]);
+  await Promise.resolve();
+  assert.equal(attributes["data-theme-switching"], undefined);
+
+  // 工具栏按钮经 App.toggleTheme() 走同一条通道。
+  const toggles = [];
+  const app = {
+    isDarkTheme: false,
+    toggleTheme() {
+      // 换色那一刻守护已经就位，按钮路径也走这条通道。
+      toggles.push(attributes["data-theme-switching"] ?? null);
+    },
+  };
+  patchThemeTransitionMethods(app);
+  patchThemeTransitionMethods(app);
+  app.toggleTheme();
+  assert.deepEqual(toggles, ["1"]);
+  await Promise.resolve();
+  assert.equal(attributes["data-theme-switching"], undefined);
+});
+
+test("theme swap stays atomic when View Transitions or motion are unavailable", () => {
+  const attributes = {};
+  const document = {
+    readyState: "loading",
+    addEventListener() {},
+    getElementById() {
+      return null;
+    },
+    querySelector() {
+      return null;
+    },
+    documentElement: {
+      setAttribute(name, value) {
+        attributes[name] = String(value);
+      },
+      getAttribute(name) {
+        return attributes[name] ?? null;
+      },
+      removeAttribute(name) {
+        delete attributes[name];
+      },
+    },
+  };
+  const { swapUiTheme } = loadEnhancementTestHooks(document, {
+    localStorage: { getItem: () => null, setItem() {} },
+    matchMedia: () => ({ matches: false }),
+    requestAnimationFrame: (callback) => {
+      callback();
+      return 1;
+    },
+  });
+
+  const seenGuards = [];
+  swapUiTheme(() => seenGuards.push(attributes["data-theme-switching"] ?? null));
+  assert.deepEqual(seenGuards, ["1"]);
+  // 守住在换色那一帧之后才放开，放开时已没有属性变化可以过渡。
+  assert.equal(attributes["data-theme-switching"], undefined);
+
+  const reducedMotionAttributes = {};
+  const reducedMotionDocument = {
+    ...document,
+    documentElement: {
+      setAttribute(name, value) {
+        reducedMotionAttributes[name] = String(value);
+      },
+      getAttribute(name) {
+        return reducedMotionAttributes[name] ?? null;
+      },
+      removeAttribute(name) {
+        delete reducedMotionAttributes[name];
+      },
+    },
+    startViewTransition() {
+      throw new Error("prefers-reduced-motion must not start a view transition");
+    },
+  };
+  const reducedMotionHooks = loadEnhancementTestHooks(reducedMotionDocument, {
+    localStorage: { getItem: () => null, setItem() {} },
+    matchMedia: (query) => ({ matches: query.includes("prefers-reduced-motion") }),
+    requestAnimationFrame: (callback) => {
+      callback();
+      return 1;
+    },
+  });
+  const reducedSeenGuards = [];
+  reducedMotionHooks.swapUiTheme(() =>
+    reducedSeenGuards.push(reducedMotionAttributes["data-theme-switching"] ?? null),
+  );
+  assert.deepEqual(reducedSeenGuards, ["1"]);
+});
+
 test("ui skin honors the server bootstrap value and saves the choice back to config", async () => {
   const attributes = {};
   const document = {
@@ -388,6 +689,139 @@ test("ui skin honors the server bootstrap value and saves the choice back to con
   assert.equal(requests[0].payload.expectedConfigRevision, "2026-01-01T00:00:00.000Z.abc123");
   assert.equal(app.adminRevisions.configRevision, "next");
   assert.equal(app.runtimeConfig.adminUiSkin, "claude");
+});
+
+test("ui skin save refreshes the config revision and retries once after a conflict", async () => {
+  const { persistUiSkinPreference } = loadEnhancementTestHooks();
+  const calls = [];
+  const messages = [];
+  const app = {
+    runtimeConfig: { rateLimitRpm: 20, adminUiSkin: "classic" },
+    adminRevisions: { configRevision: "2026-01-01T00:00:00.000Z.stale" },
+    async apiCall(action, payload) {
+      calls.push({ action, payload });
+      if (action === "getSettingsBootstrap") {
+        return {
+          config: { rateLimitRpm: 20, adminUiSkin: "classic" },
+          revisions: { configRevision: "2026-01-01T00:00:00.000Z.current" },
+        };
+      }
+      if (payload.expectedConfigRevision.endsWith("stale")) {
+        const error = new Error("配置版本已变化，请刷新设置后重新提交");
+        error.code = "CONFIG_REVISION_CONFLICT";
+        throw error;
+      }
+      return {
+        config: { ...payload.config },
+        revisions: { configRevision: "2026-01-01T00:00:01.000Z.current" },
+      };
+    },
+    applyAdminRevisions(revisions) {
+      app.adminRevisions = revisions;
+    },
+    showMessage(message, options) {
+      messages.push({ message, options });
+    },
+  };
+
+  await persistUiSkinPreference(app, "claude");
+
+  // 冲突后必须回源拿版本号：本地 adminRevisions 正是过期的那一份。
+  assert.deepEqual(
+    calls.map((call) => call.action),
+    ["saveConfig", "getSettingsBootstrap", "saveConfig"],
+  );
+  assert.equal(calls[1].payload.forceRefresh, true);
+  assert.equal(calls[2].payload.expectedConfigRevision, "2026-01-01T00:00:00.000Z.current");
+  assert.equal(calls[2].payload.config.adminUiSkin, "claude");
+  assert.equal(calls[2].payload.config.rateLimitRpm, 20);
+  assert.equal(app.adminRevisions.configRevision, "2026-01-01T00:00:01.000Z.current");
+  assert.equal(app.runtimeConfig.adminUiSkin, "claude");
+  assert.deepEqual(messages, [], "重试成功后不应该再报保存失败");
+});
+
+test("ui skin saves are serialized so a second click cannot collide with the first", async () => {
+  const { persistUiSkinPreference } = loadEnhancementTestHooks();
+  const saves = [];
+  let releaseFirstSave;
+  const firstSaveGate = new Promise((resolve) => {
+    releaseFirstSave = resolve;
+  });
+  const app = {
+    runtimeConfig: { adminUiSkin: "classic" },
+    adminRevisions: { configRevision: "r1" },
+    async apiCall(action, payload) {
+      assert.equal(action, "saveConfig");
+      saves.push(payload);
+      if (saves.length === 1) {
+        await firstSaveGate;
+        return { config: { adminUiSkin: "claude" }, revisions: { configRevision: "r2" } };
+      }
+      return {
+        config: { adminUiSkin: payload.config.adminUiSkin },
+        revisions: { configRevision: "r3" },
+      };
+    },
+    applyAdminRevisions(revisions) {
+      app.adminRevisions = revisions;
+    },
+    showMessage(message, options) {
+      throw new Error(`unexpected warning: ${message} ${JSON.stringify(options)}`);
+    },
+  };
+
+  const firstClick = persistUiSkinPreference(app, "claude");
+  const secondClick = persistUiSkinPreference(app, "classic");
+  releaseFirstSave();
+  await Promise.all([firstClick, secondClick]);
+
+  // 只保留最后一次选择，并且第二次写入用的是第一次返回的新版本号。
+  assert.equal(saves.length, 2);
+  assert.equal(saves[0].expectedConfigRevision, "r1");
+  assert.equal(saves[1].expectedConfigRevision, "r2");
+  assert.equal(saves[1].config.adminUiSkin, "classic");
+  assert.equal(app.runtimeConfig.adminUiSkin, "classic");
+
+  // 重复点已经生效的主题不再产生写入。
+  await persistUiSkinPreference(app, "classic");
+  assert.equal(saves.length, 2);
+});
+
+test("forced settings bootstrap bypasses the short settings cache", async () => {
+  const { patchSafetyContractMethods } = loadEnhancementTestHooks();
+  const calls = [];
+  const app = {
+    adminBootstrapCache: {
+      cachedAt: 1,
+      data: {
+        config: { rateLimitRpm: 20 },
+        nodes: [],
+        runtimeStatus: {},
+        hostDomain: "example.test",
+        revisions: { configRevision: "cached" },
+      },
+    },
+    adminRevisions: {},
+    showMessage() {},
+    async apiCallImpl(action, payload) {
+      calls.push({ action, payload });
+      return { config: { rateLimitRpm: 20 }, revisions: { configRevision: `r${calls.length}` } };
+    },
+  };
+  app.apiCall = function apiCall(action, payload) {
+    return this.apiCallImpl(action, payload);
+  };
+  patchSafetyContractMethods(app);
+
+  await app.apiCall("getSettingsBootstrap");
+  await app.apiCall("getSettingsBootstrap");
+  await app.apiCall("getSettingsBootstrap", { forceRefresh: true });
+
+  assert.deepEqual(
+    calls.map((call) => call.action),
+    ["getSettingsBootstrap", "getSettingsBootstrap"],
+  );
+  assert.equal(calls[1].payload.forceRefresh, true);
 });
 
 test("node health probes carry the line port into the ping target", async () => {
@@ -492,6 +926,27 @@ test("node line editor stacks its heading and actions on mobile", () => {
   );
 });
 
+test("nodes toolbar offers DB initialization right under the create button", () => {
+  // 初始化 DB 是动作组的第一个按钮，和上面一行的「新建节点」共用同一起点，
+  // 所以动作组网格必须是 4 列：3 列会把新按钮挤到第二行之外。
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_STYLE,
+    /#view-nodes \[data-admin-node-toolbar-actions="1"\]\{display:grid;grid-template-columns:repeat\(4,max-content\)/,
+  );
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_STYLE,
+    /@media \(min-width:768px\) and \(max-width:1535px\)\{#view-nodes \[data-admin-node-toolbar-actions="1"\]\{grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/,
+  );
+  assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /ensureNodeToolbarDbInitButton\(actionGroup\)/);
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_SCRIPT,
+    /actionGroup\.insertBefore\(button, actionGroup\.firstElementChild\)/,
+  );
+  // 复用日志页那条两阶段修复流程，不另开 action。
+  assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /typeof app\.initLogsDbFromUi !== 'function'/);
+  assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, />初始化 DB'/);
+});
+
 test("theme B tidy buttons fill solid red bean and center icon with text", async () => {
   const template = await readFile(
     new URL("../frontend/admin-runtime.template.html", import.meta.url),
@@ -503,15 +958,15 @@ test("theme B tidy buttons fill solid red bean and center icon with text", async
   );
   assert.match(
     ADMIN_RUNTIME_ENHANCEMENT_STYLE,
-    /#view-settings button\.border-amber-300\.text-amber-700\{display:inline-flex;align-items:center;justify-content:center;gap:\.375rem;white-space:nowrap;text-align:center;border-color:#964742;background:#964742;color:#fff\}/,
+    /#view-settings button\.border-amber-300\.text-amber-700\{display:inline-flex;align-items:center;justify-content:center;gap:\.375rem;white-space:nowrap;text-align:center;border-color:var\(--d1-bean\);background:var\(--d1-bean\);color:var\(--d1-on-accent\)\}/,
   );
   assert.match(
     ADMIN_RUNTIME_ENHANCEMENT_STYLE,
-    /#view-settings button\.border-amber-300\.text-amber-700>i\{margin-right:0;color:#fff\}/,
+    /#view-settings button\.border-amber-300\.text-amber-700>i\{margin-right:0;color:var\(--d1-on-accent\)\}/,
   );
   assert.match(
     ADMIN_RUNTIME_ENHANCEMENT_STYLE,
-    /\.dark #view-settings button\.border-amber-300\.text-amber-700\{border-color:#964742;background:#964742;color:#fff\}/,
+    /\.dark #view-settings button\.border-amber-300\.text-amber-700\{border-color:var\(--d1-bean\);background:var\(--d1-bean\);color:var\(--d1-on-accent\)\}/,
   );
 });
 
@@ -529,11 +984,11 @@ test("theme B migration backup import and export buttons share one solid red bea
   );
   assert.match(
     ADMIN_RUNTIME_ENHANCEMENT_STYLE,
-    /#view-settings \.flex\.gap-4\.flex-wrap>button\[class\*="bg-brand-600"\]\{display:inline-flex;align-items:center;justify-content:center;gap:\.375rem;white-space:nowrap;text-align:center;flex:0 0 auto;border:0 !important;background:#964742 !important;color:#fff !important\}/,
+    /#view-settings \.flex\.gap-4\.flex-wrap>button\[class\*="bg-brand-600"\]\{display:inline-flex;align-items:center;justify-content:center;gap:\.375rem;white-space:nowrap;text-align:center;flex:0 0 auto;border:0 !important;background:var\(--d1-bean\) !important;color:var\(--d1-on-accent\) !important\}/,
   );
   assert.match(
     ADMIN_RUNTIME_ENHANCEMENT_STYLE,
-    /\.settings-secondary-label:hover,\n:where\(html\[data-theme="claude"\]\) #view-settings \.flex\.gap-4\.flex-wrap>button\[class\*="bg-brand-600"\]:hover\{background:#7f3b37 !important;color:#fff !important\}/,
+    /\.settings-secondary-label:hover,\n:where\(html\[data-theme="claude"\]\) #view-settings \.flex\.gap-4\.flex-wrap>button\[class\*="bg-brand-600"\]:hover\{background:var\(--d1-bean-deep\) !important;color:var\(--d1-on-accent\) !important\}/,
   );
 });
 
@@ -545,11 +1000,11 @@ test("theme B purge cache button joins the same solid red bean family", async ()
   assert.equal(template.match(/border border-red-200 text-red-600 rounded-xl/g)?.length, 1);
   assert.match(
     ADMIN_RUNTIME_ENHANCEMENT_STYLE,
-    /#view-settings button\.border-red-200\.text-red-600\{display:inline-flex;align-items:center;justify-content:center;gap:\.375rem;white-space:nowrap;text-align:center;border-color:#964742 !important;background:#964742 !important;color:#fff !important\}/,
+    /#view-settings button\.border-red-200\.text-red-600\{display:inline-flex;align-items:center;justify-content:center;gap:\.375rem;white-space:nowrap;text-align:center;border-color:var\(--d1-bean\) !important;background:var\(--d1-bean\) !important;color:var\(--d1-on-accent\) !important\}/,
   );
   assert.match(
     ADMIN_RUNTIME_ENHANCEMENT_STYLE,
-    /#view-settings button\.border-red-200\.text-red-600:hover\{border-color:#7f3b37 !important;background:#7f3b37 !important;color:#fff !important\}/,
+    /#view-settings button\.border-red-200\.text-red-600:hover\{border-color:var\(--d1-bean-deep\) !important;background:var\(--d1-bean-deep\) !important;color:var\(--d1-on-accent\) !important\}/,
   );
 });
 
@@ -567,11 +1022,11 @@ test("settings panel head tags stay right-aligned on the title baseline without 
 test("theme B skin option buttons use warm paper fill instead of blue highlight", () => {
   assert.match(
     ADMIN_RUNTIME_ENHANCEMENT_STYLE,
-    /#view-settings \.settings-theme-skin-card \[data-admin-skin-option\]\[aria-pressed="true"\]\{border-color:#964742;background:rgb\(245,244,237\);color:#964742\}/,
+    /#view-settings \.settings-theme-skin-card \[data-admin-skin-option\]\[aria-pressed="true"\]\{border-color:var\(--d1-bean\);background:rgb\(var\(--ui-c-n-50\)\);color:var\(--d1-bean\)\}/,
   );
   assert.match(
     ADMIN_RUNTIME_ENHANCEMENT_STYLE,
-    /\.dark #view-settings \.settings-theme-skin-card \[data-admin-skin-option\]\[aria-pressed="true"\]\{border-color:#964742;background:#242420;color:#fa9a80\}/,
+    /\.dark #view-settings \.settings-theme-skin-card \[data-admin-skin-option\]\[aria-pressed="true"\]\{border-color:var\(--d1-bean\);background:var\(--d1-raised-dark\);color:#fa9a80\}/,
   );
 });
 
@@ -603,6 +1058,220 @@ test("node advanced settings stay within the mobile modal width", () => {
     ADMIN_RUNTIME_ENHANCEMENT_STYLE,
     /\[data-admin-node-advanced-headers="1"\] #headers-container>div>input\{flex:1 1 100%;width:100%\}/,
   );
+});
+
+test("node modal keeps one compact spacing scale and a footer bar", () => {
+  // 24px 页面内边距、20px 分组间距、16px 字段间距、44px 控件高度。
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_STYLE,
+    /#node-modal>div\[data-ui-dialog-surface="1"\]\{padding:1\.5rem !important\}/,
+  );
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_STYLE,
+    /#node-modal form>\*\+\*\{margin-top:1\.25rem !important\}/,
+  );
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_STYLE,
+    /#node-modal form>\[class\*="grid"\]\{gap:1rem !important;align-items:start\}/,
+  );
+  assert.match(ADMIN_RUNTIME_ENHANCEMENT_STYLE, /#node-modal form label\{margin-bottom:\.375rem\}/);
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_STYLE,
+    /#node-modal form select\{min-height:2\.75rem;padding-top:\.5rem !important;padding-bottom:\.5rem !important\}/,
+  );
+  // 底部操作栏：48px 按钮 + 16px 间距，右对齐且不再被两个 flex-1 拉满。
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_STYLE,
+    /#node-modal form>div:last-child\{margin-top:1\.25rem !important;gap:1rem !important;padding:\.75rem 0 !important;justify-content:flex-end\}/,
+  );
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_STYLE,
+    /#node-modal form>div:last-child>button\{flex:0 0 auto !important;min-width:7\.5rem;min-height:3rem/,
+  );
+});
+
+test("node modal folds long hints and keeps long help one line", () => {
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_STYLE,
+    /#node-modal \[data-admin-hint="1"\]\{display:-webkit-box;-webkit-line-clamp:1/,
+  );
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_STYLE,
+    /#node-modal \[data-admin-hint="1"\]~\[data-admin-hint="1"\]\{display:none\}/,
+  );
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_STYLE,
+    /\[data-admin-hint-toggle="1"\]\{position:absolute;right:0/,
+  );
+  assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /function applyNodeModalHintFold\(\)/);
+  assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /applyNodeModalHintFold\(\);/);
+  // 红字错误提示不能折叠，否则校验失败时看不到原因。
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_SCRIPT,
+    /if \(\/text-red\/\.test\(String\(hint\.className \|\| ''\)\)\) return false;/,
+  );
+  // 入口模式与访问密钥的提示是操作指引，不做折叠（否则关键信息默认被截断）。
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_SCRIPT,
+    /const inAdvancedEntry = field\.hasAttribute\('data-admin-node-advanced-entry'\);/,
+  );
+  assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /const needsToggle = !inAdvancedEntry && \(/);
+});
+
+test("node lines table shares one column template and shows its count", () => {
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_STYLE,
+    /#node-modal \[data-admin-node-lines-head="1"\],#node-modal \[data-admin-node-line-grid="1"\]\{grid-template-columns:88px minmax\(0,1fr\) minmax\(0,1\.8fr\) 104px 88px 176px !important\}/,
+  );
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_STYLE,
+    /#node-modal \[data-admin-node-lines-panel="1"\]>div:first-child>div:first-child>label\{display:inline-block;margin-bottom:0\}/,
+  );
+  assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /data-admin-node-lines-head/);
+  assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /data-admin-node-line-grid/);
+  assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /data-admin-node-line-count/);
+});
+
+test("node advanced settings start collapsed", () => {
+  assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /advancedSection\.open = false;/);
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_SCRIPT,
+    /if \(nodeModalIsOpen && !nodeModalWasOpen\) \{[\s\S]*?advancedSection\.open = false;[\s\S]*?\}/,
+  );
+});
+test("node entry mode and access key move into the advanced settings block", async () => {
+  const nodesPanel = await readFile(
+    new URL("../frontend/src/features/nodes/NodesPanel.vue", import.meta.url),
+    "utf8",
+  );
+  // 生产端在增强脚本里把这两个字段整组搬进高级设置，参考源保持同样的分区。
+  assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /data-admin-node-advanced-entry/);
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_SCRIPT,
+    /const entryFields = \['#form-entry-mode', '#form-secret'\]/,
+  );
+  assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /content\.insertBefore\(field, advancedFields\)/);
+  assert.match(nodesPanel, /<h4 class="text-sm font-medium text-white">入口与访问密钥<\/h4>/);
+  assert.match(nodesPanel, /<span class="field-label">访问密钥<\/span>/);
+  // 基础字段区（从「基础字段」标题到下一个分区标题）里不再有入口模式。
+  const basicSection = nodesPanel.slice(
+    nodesPanel.indexOf('<h4 class="text-sm font-medium text-white">基础字段</h4>'),
+    nodesPanel.indexOf('<h4 class="text-sm font-medium text-white">代理与播放策略</h4>'),
+  );
+  assert.ok(basicSection.length > 0);
+  assert.doesNotMatch(basicSection, /入口模式/);
+  assert.doesNotMatch(basicSection, /form\.secret/);
+});
+
+test("tag color is embedded into the tag input row", () => {
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_STYLE,
+    /#node-modal \[data-admin-node-tag-field="1"\]>#form-tag\{width:100%;padding-right:6\.25rem\}/,
+  );
+  // 原生 select 隐藏起来只当状态源，可见的是自绘按钮（原生弹出菜单改不动颜色）。
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_STYLE,
+    /#node-modal \[data-admin-node-tag-field="1"\]>#form-tag-color\{position:absolute;width:1px;height:1px/,
+  );
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_STYLE,
+    /\[data-admin-node-tag-color-trigger="1"\]\{position:absolute;top:\.3125rem;right:\.3125rem/,
+  );
+  assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /function mountTagColorTrigger/);
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_SCRIPT,
+    /select\.dispatchEvent\(new Event\('change', \{ bubbles: true \}\)\)/,
+  );
+  assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /applyTagColorDropdown\(\);/);
+  // 面板是 fixed 独立层，必须有外部点击/Esc 收起。
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_SCRIPT,
+    /window\.addEventListener\?\.\('scroll', closeTagColorPanel, true\)/,
+  );
+  assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /data-admin-node-tag-field/);
+  assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /tagColor\.parentElement === tagRow/);
+});
+
+test("inherit options show the current global value", async () => {
+  const [nodesPanel, styleSheet] = await Promise.all([
+    readFile(new URL("../frontend/src/features/nodes/NodesPanel.vue", import.meta.url), "utf8"),
+    readFile(new URL("../frontend/src/style.css", import.meta.url), "utf8"),
+  ]);
+  // 三个策略字段的「继承全局」都要带上当前全局值。
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_SCRIPT,
+    /'\u7ee7\u627f\u5168\u5c40\uff08' \+ label \+ '\uff09'/,
+  );
+  assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /'form-playback-info-mode'/);
+  assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /'form-media-auth-mode'/);
+  assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /'form-real-client-ip-mode'/);
+  assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /syncNodeInheritCopy\(window\.App\)/);
+  assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /syncNodeInheritCopy\(app\);/);
+  assert.match(nodesPanel, /function formatInheritGlobalLabel/);
+  assert.match(nodesPanel, /formatInheritGlobalLabel\("defaultPlaybackInfoMode"\)/);
+  assert.match(nodesPanel, /formatInheritGlobalLabel\("defaultMediaAuthMode"\)/);
+  assert.match(nodesPanel, /formatInheritGlobalLabel\("defaultRealClientIpMode"\)/);
+  assert.match(styleSheet, /\.tag-color-select \{/);
+  // 未知/缺失的全局值回落到不带括号的「继承全局」，不能把内部标识（如 something_unknown）直接渲染给用户。
+  assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /return labelMap\[value\] \|\| '';/);
+  assert.match(nodesPanel, /const current = labelMap\[value\] \|\| "";/);
+  assert.match(nodesPanel, /: optionLabel;/);
+});
+
+test("main video stream inherit label follows the node's own direct marker", async () => {
+  const nodesPanel = await readFile(
+    new URL("../frontend/src/features/nodes/NodesPanel.vue", import.meta.url),
+    "utf8",
+  );
+  // 主视频流策略没有全局默认值：inherit 由节点自身的直连标记决定，不能套用前三个字段的全局文案。
+  assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /function formatNodeVideoStreamInheritLabel/);
+  assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /function isNodeMarkedDirectSource/);
+  assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /'form-main-video-stream-mode'/);
+  assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /继承全局（直连）/);
+  assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /继承全局（反代）/);
+  // 标签/备注改动要立即重算。
+  assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /bindNodeVideoStreamInheritInputs/);
+  assert.match(nodesPanel, /function formatMainVideoStreamInheritLabel/);
+  assert.match(nodesPanel, /formatMainVideoStreamInheritLabel\(\)/);
+});
+
+test("admin runtime enhancement script parses as a whole", () => {
+  // 脚本整体是模板字符串，外层 mjs 的 node --check 看不到内部语法；
+  // 内部少一个大括号也会让整个管理台白屏（曾发生）。这里把 <script> 内容真正解析一遍。
+  const inner = ADMIN_RUNTIME_ENHANCEMENT_SCRIPT.replace(/^<script[^>]*>/, "").replace(
+    /<\/script>\s*$/,
+    "",
+  );
+  assert.doesNotThrow(() => new Function(inner));
+});
+
+test("admin runtime enhancement script survives template-literal escaping", () => {
+  // 增强脚本整体是一个模板字符串：源码里的 \s \d 之类必须写成 \\s \\d，
+  // 否则生成物里只剩字面 s/d，正则会被破坏（曾导致整段脚本 SyntaxError、管理台白屏）。
+  // 被吃掉的转义（\s → 字面 s）仍然构成合法正则，编译不会报错，只能按形态识别：
+  // 字符类里出现孤立的 s/d/w/b（本意是 \s \d \w \b）就是模板字符串吃掉反斜杠的痕迹。
+  const suspicious = [
+    ...ADMIN_RUNTIME_ENHANCEMENT_SCRIPT.matchAll(
+      /(?:return\s+|\()\/((?:[^\/\\\n[]|\\.|\[(?:[^\]\\]|\\.)*\])+)\/([gimsuy]*)\.test\(/g,
+    ),
+  ].filter(([, body]) => /\[[^\]]*(?<![\\A-Za-z])[sdwb](?![A-Za-z])/.test(body));
+  assert.deepEqual(
+    suspicious.map(([literal]) => literal),
+    [],
+    "template literal ate a backslash escape inside a regex character class",
+  );
+  const literals = [
+    ...ADMIN_RUNTIME_ENHANCEMENT_SCRIPT.matchAll(
+      /(?:return\s+|\()\/((?:[^\/\\\n[]|\\.|\[(?:[^\]\\]|\\.)*\])+)\/([gimsuy]*)\.test\(/g,
+    ),
+  ];
+  assert.ok(literals.length > 0, "no regex literals found in generated script");
+  for (const [, body, flags] of literals) {
+    assert.doesNotThrow(
+      () => new RegExp(body, flags),
+      "generated regex literal is invalid: /" + body + "/" + flags,
+    );
+  }
 });
 
 test("settings dirty tracking compares normalized state without JSON serialization", async () => {
@@ -836,6 +1505,16 @@ test("admin runtime keeps scoped migration, node-only, and release contracts", a
   assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /navigateWithAdminCacheBust/);
   assert.doesNotMatch(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /window\.location\.reload\(\)/);
   assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /必须同时选择 worker\.js 和 index\.html/);
+  // 文件选择框的 ::file-selector-button 样式必须覆盖经典皮肤，否则只有 claude 皮肤有按钮外观，
+  // 经典皮肤下 "Choose File" 退化成裸文字（浏览器默认透明背景 + 黑边），用户看不出这是选择框。
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_STYLE,
+    /\[data-admin-worker-file-input="1"\]::file-selector-button,[\s\S]*?\[data-admin-index-file-input="1"\]::file-selector-button\{[^}]*background:rgb\(var\(--ui-c-a-600\)\)/,
+  );
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_STYLE,
+    /\[data-admin-worker-file-input="1"\],\n#view-settings \.settings-worker-html-update-card \[data-admin-index-file-input="1"\]\{display:block;width:100%/,
+  );
   assert.doesNotMatch(vueRuntimeConfig, /VITE_INDEX_URL|VITE_RELEASE_INDEX_URL/);
   assert.doesNotMatch(
     vueAdminConsole,
@@ -1084,64 +1763,20 @@ test("daily report kind checkboxes and the master switch stay in sync", async ()
   assert.equal(kvTarget.checked, true);
 });
 
-test("account settings expose TMDB aggregation credentials", async () => {
+test("account settings keep TMDB credentials without the aggregation UI", async () => {
   const template = await readFile(
     new URL("../frontend/admin-runtime.template.html", import.meta.url),
     "utf8",
   );
-  assert.match(
-    template,
-    /\{key:"tmdbApiReadToken",id:"cfg-tmdb-read-token",kind:"trim",defaultValue:""\}/,
-  );
-  assert.match(
-    template,
-    /\{key:"tmdbApiV3Key",id:"cfg-tmdb-api-key",kind:"trim",defaultValue:""\}/,
-  );
+  // TMDB 凭证只是配置兼容字段：Worker 侧字段还在，前端不再提供聚合面板。
+  assert.match(template, /"tmdbApiReadToken","tmdbApiV3Key","tmdbLanguage"/);
   assert.match(template, /id:"cfg-tmdb-read-token"/);
   assert.match(template, /id:"cfg-tmdb-api-key"/);
-  assert.match(
-    template,
-    /\{key:"tmdbLanguage",id:"cfg-tmdb-language",kind:"trim",defaultValue:""\}/,
-  );
   assert.match(template, /id:"cfg-tmdb-language"/);
-});
-
-test("TMDB aggregation enhancement carries the node flag through form state and save", async () => {
-  const { patchTmdbNodeMethods } = loadEnhancementTestHooks();
-  const app = {
-    nodes: [{ name: "alpha", tmdbAggregationEnabled: true }],
-    nodeModalForm: { name: "alpha", tmdbAggregationEnabled: undefined },
-    nodeModalRenderKey: 1,
-    calls: [],
-    buildNodeModalFormState(node) {
-      return { hydratedNode: node, form: { name: node.name } };
-    },
-    async apiCall(action, payload) {
-      this.calls.push({ action, payload });
-      return { success: true };
-    },
-    async saveNode() {
-      await this.apiCall("save", { name: "alpha" });
-      await this.apiCall("getNodes", {});
-      return true;
-    },
-  };
-
-  patchTmdbNodeMethods(app);
-  const state = app.buildNodeModalFormState(app.nodes[0]);
-  assert.equal(state.form.tmdbAggregationEnabled, true);
-
-  app.nodeModalForm.tmdbAggregationEnabled = true;
-  await app.saveNode();
-  assert.equal(app.calls[0].action, "save");
-  assert.equal(app.calls[0].payload.tmdbAggregationEnabled, true);
-  assert.equal(app.calls[1].action, "getNodes");
-  assert.equal("tmdbAggregationEnabled" in app.calls[1].payload, false);
-
-  app.calls.length = 0;
-  app.nodeModalForm.tmdbAggregationEnabled = false;
-  await app.saveNode();
-  assert.equal(app.calls[0].payload.tmdbAggregationEnabled, false);
+  // 聚合面板、策略下拉与 todb 凭证已移除，前端不得再出现这些入口。
+  for (const removed of ["EMOS", "todb", "tmdbAggregationEnabled", "aggregationMode"]) {
+    assert.equal(template.includes(removed), false, `聚合 UI 残留：${removed}`);
+  }
 });
 
 test("D1 schema dialog reports only the current schema contract", () => {
@@ -1744,7 +2379,17 @@ test("publish-dist replaces stale bundler output with the composed shell", async
       shell: false,
     });
     assert.equal(published.status, 0, published.stderr);
-    assert.deepEqual(await readdir(outputDirectory), ["index.html"]);
+    // dist 里只允许 index.html + vendor/（Worker 同源代理用的摇树产物）；历史打包残留
+    // （assets/、.vite/manifest.json）必须被清掉。
+    assert.deepEqual((await readdir(outputDirectory)).sort(), ["index.html", "vendor"]);
+    assert.deepEqual(
+      (await readdir(path.join(outputDirectory, "vendor")))
+        .filter((name) => name.endsWith(".js"))
+        .sort(),
+      (await readdir(new URL("../frontend/vendor", import.meta.url)))
+        .filter((name) => name.endsWith(".js"))
+        .sort(),
+    );
     assert.equal(
       await readFile(path.join(outputDirectory, "index.html"), "utf8"),
       await readFile(new URL("../frontend/index.html", import.meta.url), "utf8"),

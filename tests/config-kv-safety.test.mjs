@@ -129,6 +129,104 @@ test("an older settings backup cannot silently reset the global admin skin", asy
   }
 });
 
+test("applyKvMutationsWithRollback reads rollback snapshots in parallel and skips pure deletes", async () => {
+  // 设置保存的主要成本是 KV 往返次数。回滚快照之间没有依赖，必须并行；
+  // 目标本来就不存在的纯 delete 不需要快照（回滚动作就是"保持不存在"）。
+  const { kv } = createKv({ keep: "old-keep", overwrite: "old-overwrite" });
+  const reads = [];
+  // 用「同时在场」而不是耗时判断并行：串行实现里第一个 get 结束时第二个还没开始。
+  let inFlight = 0;
+  let maxInFlight = 0;
+  const originalGet = kv.get;
+  kv.get = async (key, options) => {
+    reads.push(key);
+    inFlight += 1;
+    maxInFlight = Math.max(maxInFlight, inFlight);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    inFlight -= 1;
+    return originalGet(key, options);
+  };
+
+  await kernel.applyKvMutationsWithRollback(kv, [
+    { type: "put", key: "keep", value: "new-keep" },
+    { type: "put", key: "overwrite", value: "new-overwrite" },
+    { type: "delete", key: "absent-a", value: "" },
+    { type: "delete", key: "absent-b", value: "" },
+  ]);
+
+  assert.equal(maxInFlight, 2, "两个快照读应同时在飞");
+  assert.deepEqual(reads.sort(), ["keep", "overwrite"], "纯 delete 不存在的 key 不应读取");
+});
+
+test("runtime config saves stop paying for legacy key deletes once they are gone", async () => {
+  // 设置保存每次都会清理 V19 遗留的 sys:cf_dash_cache 系列与配置快照。
+  // 这些 key 清空后不该继续占用往返次数：快照用一次读取判断存在性，
+  // 遗留缓存用一次 list 判断，而不是固定发出 N 次 delete。
+  // 快照 key 已彻底不存在（不是空数组）时，才不该再安排 delete。
+  const { kv } = createKv({ [kernel.CONFIG_KEY]: { rateLimitRpm: 20 } });
+  const env = { ENI_KV: kv, __CONFIG_CACHE_NAMESPACE: "legacy-delete-skip" };
+  invalidateRuntimeConfigCache();
+
+  try {
+    const plan = await kernel.buildRuntimeConfigMutationPlan(
+      kv,
+      { rateLimitRpm: 20 },
+      { rateLimitRpm: 30 },
+    );
+    assert.deepEqual(
+      plan.filter((mutation) => mutation.type === "delete").map((mutation) => mutation.key),
+      [],
+      "遗留 key 不存在时不应安排任何 delete",
+    );
+
+    // 空数组也算 key 存在：必须继续清理，否则残留一个空快照 key。
+    const present = createKv({
+      [kernel.CONFIG_KEY]: { rateLimitRpm: 20 },
+      [kernel.CONFIG_SNAPSHOTS_KEY]: [],
+    });
+    const presentPlan = await kernel.buildRuntimeConfigMutationPlan(
+      present.kv,
+      { rateLimitRpm: 20 },
+      { rateLimitRpm: 30 },
+    );
+    assert.ok(
+      presentPlan.some(
+        (mutation) => mutation.type === "delete" && mutation.key === kernel.CONFIG_SNAPSHOTS_KEY,
+      ),
+      "空数组快照仍应被删除",
+    );
+  } finally {
+    invalidateRuntimeConfigCache();
+  }
+});
+
+test("runtime config saves still purge legacy keys that are actually present", async () => {
+  const { kv, values } = createKv({
+    [kernel.CONFIG_KEY]: { rateLimitRpm: 20 },
+    [kernel.CONFIG_SNAPSHOTS_KEY]: [{ revision: "old.abc" }],
+    "sys:cf_dash_cache": "legacy-1",
+    "sys:cf_dash_cache:default:current": "legacy-2",
+  });
+  const env = { ENI_KV: kv, __CONFIG_CACHE_NAMESPACE: "legacy-delete-present" };
+  invalidateRuntimeConfigCache();
+
+  try {
+    await kernel.persistRuntimeConfig(
+      { rateLimitRpm: 30 },
+      { env, kv, ctx: null, forceKvCommit: true },
+    );
+    for (const key of [
+      kernel.CONFIG_SNAPSHOTS_KEY,
+      kernel.CONFIG_SNAPSHOTS_META_KEY,
+      "sys:cf_dash_cache",
+      "sys:cf_dash_cache:default:current",
+    ])
+      assert.equal(values.has(key), false, `${key} 应被清理`);
+  } finally {
+    invalidateRuntimeConfigCache();
+  }
+});
+
 test("applyKvMutationsWithRollback restores only mutations that completed", async () => {
   const {
     kv,
@@ -698,6 +796,68 @@ test("concurrent settings saves cannot both commit the same config revision", as
   }
 });
 
+test("a skin save retried with a fresh revision keeps the concurrent change", async () => {
+  // 管理端皮肤按钮原来拿着旧 configRevision 直接保存，一旦别处刚改过配置就报“配置版本已变化”。
+  // 修复后的路径是：冲突 -> 重新取 bootstrap 的配置与版本号 -> 再写一次。
+  const { kv } = createKv({
+    [kernel.CONFIG_KEY]: { rateLimitRpm: 20, adminUiSkin: "classic" },
+  });
+  const env = {
+    ENI_KV: kv,
+    __CONFIG_CACHE_NAMESPACE: "config-kv-safety-skin-retry",
+  };
+  invalidateRuntimeConfigCache();
+
+  try {
+    const stale = await (
+      await adminActions.getSettingsBootstrap({}, { env, kv, db: null, ctx: null })
+    ).json();
+    // 另一处先改了一版，皮肤保存手里的版本号就作废了。
+    const concurrentSave = await adminActions.saveConfig(
+      { config: { ...stale.config, rateLimitRpm: 42 } },
+      { env, kv, ctx: null, meta: {} },
+    );
+    assert.equal(concurrentSave.status, 200);
+
+    await assert.rejects(
+      adminActions.saveConfig(
+        {
+          config: { ...stale.config, adminUiSkin: "claude" },
+          expectedConfigRevision: stale.revisions.configRevision,
+        },
+        { env, kv, ctx: null, meta: {} },
+      ),
+      (error) => error?.code === "CONFIG_REVISION_CONFLICT" && error?.status === 409,
+    );
+    assert.equal((await kv.get(kernel.CONFIG_KEY, { type: "json" })).adminUiSkin, "classic");
+
+    // 前端补丁的重试：forceRefresh 绕过短缓存，拿到当前配置与当前版本号。
+    const fresh = await (
+      await adminActions.getSettingsBootstrap(
+        { forceRefresh: true },
+        { env, kv, db: null, ctx: null },
+      )
+    ).json();
+    assert.notEqual(fresh.revisions.configRevision, stale.revisions.configRevision);
+
+    const retried = await adminActions.saveConfig(
+      {
+        config: { ...fresh.config, adminUiSkin: "claude" },
+        expectedConfigRevision: fresh.revisions.configRevision,
+      },
+      { env, kv, ctx: null, meta: {} },
+    );
+    assert.equal(retried.status, 200);
+
+    const stored = await kv.get(kernel.CONFIG_KEY, { type: "json" });
+    assert.equal(stored.adminUiSkin, "claude");
+    // 重试必须基于重新读到的配置，否则会把别人刚改的 rateLimitRpm 覆盖回去。
+    assert.equal(stored.rateLimitRpm, 42);
+  } finally {
+    invalidateRuntimeConfigCache();
+  }
+});
+
 test("active admin index renders when a remote PoP still sees stale config", async () => {
   const record = await buildAdminLocalIndexUploadRecord(
     adminShellHtml("active-from-envelope"),
@@ -726,7 +886,7 @@ test("active admin index renders when a remote PoP still sees stale config", asy
     const rendered = await response.text();
 
     assert.equal(response.status, 200);
-    assert.equal(response.headers.get("Cache-Control"), "private, no-store, max-age=0");
+    assert.equal(response.headers.get("Cache-Control"), "private, no-cache, max-age=0");
     assert.equal(response.headers.get("X-Admin-Shell-Revision"), record.revision);
     assert.match(rendered, /active-from-envelope/);
     assert.doesNotMatch(rendered, /admin-gate-shell/);

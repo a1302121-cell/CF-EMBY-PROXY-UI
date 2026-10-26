@@ -96,7 +96,6 @@ var cacheState = {
   PlaybackInfoResponseCache: /* @__PURE__ */ new Map(),
   PlaybackProgressRelay: /* @__PURE__ */ new Map(),
   MetadataPrewarmTasks: /* @__PURE__ */ new Map(),
-  TmdbLookupCache: /* @__PURE__ */ new Map(),
   MedbItemsCountsCache: /* @__PURE__ */ new Map(),
   DashboardMonthlyTrafficCache: /* @__PURE__ */ new Map(),
   SingleFlightTasks: /* @__PURE__ */ new Map(),
@@ -144,7 +143,6 @@ var runtimeState = {
   OpsStatusWriteChain: Promise.resolve(),
   NodeIndexMutationChain: Promise.resolve(),
   InitCheckWarnedFingerprints: /* @__PURE__ */ new Set(),
-  TmdbCredentialOverrideWarned: false,
 };
 for (const key of ["CleanupState"])
   Object.defineProperty(runtimeState, key, {
@@ -2056,6 +2054,9 @@ function scoreHostnameCandidate(hostname, options = {}) {
 //#region worker/features/admin/index-source.js
 var ADMIN_LOCAL_INDEX_SOURCE_ORIGIN = "https://admin-local-index.invalid";
 var ADMIN_LOCAL_INDEX_ASSET_REVISION_PREFIX = "local-";
+// 内置壳（env.ASSETS 里的 index.html）没有 release tag，也没有上传记录：
+// 它需要一个自己的 revision 命名空间，才能复用同一套 vendor 改写与投递路径。
+var ADMIN_BUNDLED_INDEX_ASSET_REVISION = "bundled";
 var ADMIN_LOCAL_INDEX_KV_PREFIX = "sys:admin_index_upload:v1:";
 var ADMIN_ACTIVE_INDEX_KV_KEY = "sys:admin_index_active:v2";
 function normalizeHttpUrl(value = "") {
@@ -2756,7 +2757,9 @@ function defineAdminShellTemplate(dependencies = {}, shell = {}) {
   const ADMIN_APP_ROOT_PLACEHOLDER = "__ADMIN_APP_ROOT__";
   const ADMIN_APP_ROOT_HTML = "";
   const ADMIN_HTML_CACHE_KEY_ORIGIN = "https://admin-shell-cache.invalid";
-  const ADMIN_REMOTE_SHELL_BROWSER_CACHE_CONTROL = "private, no-store, max-age=0";
+  // no-cache 而不是 no-store：浏览器仍可留存壳，但每次使用前必须带 If-None-Match 回源，
+  // 命中时 Worker 只回 304（几十字节）而不是 900 KB。壳本身需要登录态，所以保持 private。
+  const ADMIN_REMOTE_SHELL_BROWSER_CACHE_CONTROL = "private, no-cache, max-age=0";
   const ADMIN_REMOTE_SHELL_EDGE_CACHE_CONTROL = "public, max-age=31536000, immutable";
   const ADMIN_REMOTE_SHELL_REVALIDATE_MS = 300 * 1e3;
   const ADMIN_REMOTE_SHELL_MAX_BYTES = 2 * 1024 * 1024;
@@ -3495,6 +3498,7 @@ function defineAdminShellTemplate(dependencies = {}, shell = {}) {
     ADMIN_REMOTE_SHELL_SOURCE_HASH_HEADER,
     ADMIN_RELEASE_PROXY_PATH_SEGMENT,
     ADMIN_RELEASE_VENDOR_PATH_SEGMENT,
+    ADMIN_BUNDLED_INDEX_ASSET_REVISION,
     ADMIN_WARM_PATH_SEGMENT,
     ADMIN_RELEASE_VENDOR_CACHE_KEY_ORIGIN,
     ADMIN_RELEASE_VENDOR_MANIFEST_CACHE_KEY_ORIGIN,
@@ -4975,6 +4979,27 @@ function defineAdminShellCache(dependencies = {}, shell = {}) {
 //#region worker/features/admin/shell-delivery.js
 function defineAdminShellDelivery(dependencies = {}, shell = {}) {
   const { indexRepository } = dependencies;
+  // 内置壳每次投递都要重算：校验 900 KB、改写 4 个 vendor URL、注入 bootstrap，约 7ms。
+  // 这里按 ASSETS 绑定缓存渲染结果，只在资产验证器或 bootstrap 变化时重算。
+  // 键必须带请求源：sourceUrl 同时进入 ETag 与 X-Admin-Shell-Source-Hash，HOST 与
+  // LEGACY_HOST 交替访问时各自是一份结果，所以每个绑定下按 sourceUrl 分桶，不能只留一条。
+  // shortcut: ASSETS 不给 ETag/Last-Modified 时不缓存（每请求重算），换取永不发旧壳。
+  const bundledShellPageCache = /* @__PURE__ */ new WeakMap();
+  const BUNDLED_SHELL_PAGE_CACHE_LIMIT = 4;
+  function readBundledShellPageCacheEntry(assets, sourceUrl) {
+    return bundledShellPageCache.get(assets)?.get(sourceUrl) || null;
+  }
+  function writeBundledShellPageCacheEntry(assets, sourceUrl, entry) {
+    let bucket = bundledShellPageCache.get(assets);
+    if (!bucket) {
+      bucket = /* @__PURE__ */ new Map();
+      bundledShellPageCache.set(assets, bucket);
+    }
+    setBoundedMapEntry(bucket, sourceUrl, entry, BUNDLED_SHELL_PAGE_CACHE_LIMIT);
+  }
+  function buildBundledShellStoredResponse(entry) {
+    return new Response(entry.html, { status: 200, headers: new Headers(entry.headers) });
+  }
   async function renderBundledAdminPage(
     request,
     env,
@@ -4985,6 +5010,10 @@ function defineAdminShellDelivery(dependencies = {}, shell = {}) {
     const assets = env?.ASSETS;
     if (!assets || typeof assets.fetch !== "function") return null;
     const assetUrl = new URL("/index.html", request.url);
+    const shellState = shell.buildAdminShellState(env, initHealth, config);
+    const bootstrap = shell.buildAdminBootstrapPayload(env, initHealth, config);
+    const indexState = buildResolvedAdminIndexState(env, config);
+    const sourceUrl = assetUrl.toString();
     const assetResponse = await assets.fetch(
       new Request(assetUrl, {
         method: "GET",
@@ -5001,32 +5030,61 @@ function defineAdminShellDelivery(dependencies = {}, shell = {}) {
     );
     if (Number.isFinite(contentLength) && contentLength > shell.ADMIN_REMOTE_SHELL_MAX_BYTES)
       throw new Error(`bundled admin shell too large: ${contentLength} bytes`);
-    const assetBody = await readResponseTextWithLimit(
-      assetResponse,
-      shell.ADMIN_REMOTE_SHELL_MAX_BYTES,
-    );
-    if (assetBody.exceeded || !assetBody.text)
-      throw new Error(`bundled admin shell payload invalid: ${assetBody.bytes} bytes`);
-    const shellState = shell.buildAdminShellState(env, initHealth, config);
-    const bootstrap = shell.buildAdminBootstrapPayload(env, initHealth, config);
-    const indexState = buildResolvedAdminIndexState(env, config);
-    const sourceUrl = assetUrl.toString();
-    const shellPayload = shell.buildAdminShellStoredPayloadFromHtml(
-      assetBody.text,
-      bootstrap,
-      initHealth,
-      sourceUrl,
-      {
-        sourceLabel: "bundled admin shell",
-        contentType: assetResponse.headers.get("Content-Type") || "text/html",
-        adminPath: bootstrap.adminPath,
-        lastModified: assetResponse.headers.get("Last-Modified") || "Thu, 01 Jan 1970 00:00:00 GMT",
-        originEtag: assetResponse.headers.get("ETag") || "",
-      },
-    );
-    const storedResponse = shellPayload?.storedResponse || null;
-    if (!storedResponse) throw new Error("bundled admin shell response is unavailable");
-    await shell.patchAdminShellRuntimeStatus(
+    // 资产自身的验证器是唯一失效信号；没有验证器时每请求重算，绝不拿旧壳冒充新壳。
+    const assetEtag = String(assetResponse.headers.get("ETag") || "").trim();
+    const assetLastModified = String(assetResponse.headers.get("Last-Modified") || "").trim();
+    const bootstrapKey = hashStableText(serializeInlineJson(bootstrap));
+    const cachedEntry = readBundledShellPageCacheEntry(assets, sourceUrl);
+    let storedResponse = null;
+    if (
+      cachedEntry &&
+      (assetEtag || assetLastModified) &&
+      cachedEntry.bootstrapKey === bootstrapKey &&
+      cachedEntry.assetEtag === assetEtag &&
+      cachedEntry.assetLastModified === assetLastModified
+    )
+      storedResponse = buildBundledShellStoredResponse(cachedEntry);
+    if (!storedResponse) {
+      const assetBody = await readResponseTextWithLimit(
+        assetResponse,
+        shell.ADMIN_REMOTE_SHELL_MAX_BYTES,
+      );
+      if (assetBody.exceeded || !assetBody.text)
+        throw new Error(`bundled admin shell payload invalid: ${assetBody.bytes} bytes`);
+      const shellPayload = shell.buildAdminShellStoredPayloadFromHtml(
+        assetBody.text,
+        bootstrap,
+        initHealth,
+        sourceUrl,
+        {
+          sourceLabel: "bundled admin shell",
+          contentType: assetResponse.headers.get("Content-Type") || "text/html",
+          adminPath: bootstrap.adminPath,
+          // 内置壳没有 release tag / 上传记录，用固定 bundled revision 让 4 个首屏脚本
+          // 改写成 /ADMIN_PATH/__release/bundled/vendor/<assetKey>，由 ASSETS 同源投递。
+          assetRevision: shell.ADMIN_BUNDLED_INDEX_ASSET_REVISION,
+          lastModified: assetLastModified || "Thu, 01 Jan 1970 00:00:00 GMT",
+          originEtag: assetEtag,
+        },
+      );
+      if (!shellPayload?.storedResponse)
+        throw new Error("bundled admin shell response is unavailable");
+      const html = await shellPayload.storedResponse.clone().text();
+      const headers = [...shellPayload.storedResponse.headers.entries()];
+      if (assetEtag || assetLastModified)
+        writeBundledShellPageCacheEntry(assets, sourceUrl, {
+          bootstrapKey,
+          assetEtag,
+          assetLastModified,
+          html,
+          headers,
+        });
+      storedResponse = new Response(html, { status: 200, headers: new Headers(headers) });
+    }
+    // 状态写不阻塞页面：这里只登记 waitUntil，不 await。状态里没有本次响应需要读的字段，
+    // 而 D1 单次写比渲染本身还贵，放在关键路径上会把命中缓存的 1.4ms 拉成几十 ms。
+    // throttleStableWrites 让状态没变时跳过重复写，和远程壳缓存命中路径保持一致。
+    const statusPatchTask = shell.patchAdminShellRuntimeStatus(
       env,
       {
         shellState,
@@ -5046,9 +5104,12 @@ function defineAdminShellDelivery(dependencies = {}, shell = {}) {
         indexUrlSource: "worker_assets",
         effectiveRef: "frontend/dist/index.html",
         effectiveRefType: "static_assets",
+        throttleStableWrites: true,
       },
-      ctx,
+      null,
     );
+    if (ctx && typeof ctx.waitUntil === "function") ctx.waitUntil(statusPatchTask);
+    else await statusPatchTask;
     if (shell.requestMatchesAdminHtmlResponse(request, storedResponse))
       return shell.buildConditionalNotModifiedResponseFromStoredResponse(
         storedResponse,
@@ -5402,14 +5463,19 @@ function defineAdminShellDelivery(dependencies = {}, shell = {}) {
     const assetKey = String(routeMatch?.assetKey || "").trim();
     if (!releaseTag || !assetKey)
       return buildAdminReleaseVendorErrorResponse("Release vendor asset not found", 404);
+    // 内置壳：4 个首屏脚本就在 ASSETS 的 vendor/ 里，直接从部署产物读，
+    // 不经过 KV 上传记录、manifest 拉取与 edge 缓存。
+    if (releaseTag === shell.ADMIN_BUNDLED_INDEX_ASSET_REVISION)
+      return renderBundledAdminReleaseVendorAsset(request, env, assetKey);
     const edgeCache = getDefaultCacheHandle();
     const localRevision = parseAdminLocalIndexAssetRevision(releaseTag);
     if (!localRevision)
       return buildAdminReleaseVendorErrorResponse("Local index vendor asset not found", 404);
-    const localRecord = localRevision
-      ? await indexRepository.getAdminIndexUploadRecord(indexRepository.getKV(env), localRevision)
-      : null;
-    if (localRevision && !localRecord)
+    const localRecord = await indexRepository.getAdminIndexUploadRecord(
+      indexRepository.getKV(env),
+      localRevision,
+    );
+    if (!localRecord)
       return buildAdminReleaseVendorErrorResponse("Local index vendor asset not found", 404);
     const releaseIndexUrl = localRecord?.sourceUrl || "";
     if (!releaseIndexUrl)
@@ -5547,6 +5613,90 @@ function defineAdminShellDelivery(dependencies = {}, shell = {}) {
       return shell.buildConditionalNotModifiedResponseFromStoredResponse(
         storedResponse,
         vendorCacheControl,
+      );
+    return shell.buildAdminReleaseVendorClientResponse(storedResponse, request.method);
+  }
+  // 内置 vendor 产物文件名就是 Worker 的 assetKey（见 frontend/scripts/build-admin-vendor.mjs），
+  // 因此只需拼路径即可；assetKey 只允许十六进制 + 扩展名，杜绝路径穿越。
+  async function renderBundledAdminReleaseVendorAsset(request, env, assetKey = "") {
+    const normalizedAssetKey = String(assetKey || "").trim();
+    if (!/^[a-z0-9]+\.(?:js|css)$/i.test(normalizedAssetKey))
+      return buildAdminReleaseVendorErrorResponse("Bundled vendor asset not found", 404);
+    const assets = env?.ASSETS;
+    if (!assets || typeof assets.fetch !== "function")
+      return buildAdminReleaseVendorErrorResponse("Bundled vendor assets are unavailable", 503);
+    let assetResponse = null;
+    try {
+      assetResponse = await assets.fetch(
+        new Request(new URL(`/vendor/${normalizedAssetKey}`, request.url), {
+          method: "GET",
+          headers: { Accept: "*/*" },
+        }),
+      );
+    } catch (error) {
+      return buildAdminReleaseVendorErrorResponse(
+        `Bundled vendor asset fetch failed: ${String(error?.message || error || "unknown_error").trim() || "unknown_error"}`,
+        502,
+      );
+    }
+    if (!assetResponse?.ok)
+      return buildAdminReleaseVendorErrorResponse(
+        assetResponse?.status === 404
+          ? "Bundled vendor asset not found"
+          : `Bundled vendor asset fetch failed (HTTP ${Number(assetResponse?.status) || 0})`,
+        assetResponse?.status === 404 ? 404 : 502,
+      );
+    const assetKind = normalizedAssetKey.toLowerCase().endsWith(".css") ? "css" : "script";
+    const contentType = String(assetResponse.headers.get("Content-Type") || "").trim();
+    if (!shell.isAcceptedAdminReleaseVendorContentType(contentType, assetKind))
+      return buildAdminReleaseVendorErrorResponse(
+        `Bundled vendor asset content-type invalid: ${contentType || "unknown"}`,
+        502,
+      );
+    const contentLength = Number.parseInt(
+      String(assetResponse.headers.get("Content-Length") || ""),
+      10,
+    );
+    if (Number.isFinite(contentLength) && contentLength > shell.ADMIN_RELEASE_VENDOR_MAX_BYTES)
+      return buildAdminReleaseVendorErrorResponse(
+        `Bundled vendor asset too large: ${contentLength} bytes`,
+        502,
+      );
+    const assetBody = await readResponseBytesWithLimit(
+      assetResponse,
+      shell.ADMIN_RELEASE_VENDOR_MAX_BYTES,
+    );
+    if (
+      assetBody.exceeded ||
+      !assetBody.bytes ||
+      assetBody.bytes > shell.ADMIN_RELEASE_VENDOR_MAX_BYTES
+    )
+      return buildAdminReleaseVendorErrorResponse(
+        `Bundled vendor asset payload invalid: ${assetBody.bytes} bytes`,
+        502,
+      );
+    // 内置产物随部署一起换，不需要 edge 缓存；浏览器按 immutable 缓存，key 里含内容哈希。
+    const storedHeaders = new Headers({
+      "Cache-Control": shell.ADMIN_RELEASE_VENDOR_CACHE_CONTROL,
+    });
+    const etag = shell.normalizeEtagToken(assetResponse.headers.get("ETag") || "");
+    const lastModified = shell.normalizeAdminHttpDateHeader(
+      assetResponse.headers.get("Last-Modified") || "",
+    );
+    if (contentType) storedHeaders.set("Content-Type", contentType);
+    if (etag) storedHeaders.set("ETag", shell.formatAdminHtmlEtag(etag));
+    if (lastModified) storedHeaders.set("Last-Modified", lastModified);
+    const storedResponse = new Response(
+      stripAdminReleaseVendorSourceMapComment(assetBody.bodyBytes),
+      {
+        status: 200,
+        headers: storedHeaders,
+      },
+    );
+    if (shell.requestMatchesAdminHtmlResponse(request, storedResponse))
+      return shell.buildConditionalNotModifiedResponseFromStoredResponse(
+        storedResponse,
+        shell.ADMIN_RELEASE_VENDOR_CACHE_CONTROL,
       );
     return shell.buildAdminReleaseVendorClientResponse(storedResponse, request.method);
   }
@@ -7980,7 +8130,9 @@ function defineAdminShellViews(dependencies = {}, shell = {}) {
       ? sanitizeRuntimeConfig(config)
       : sanitizeRuntimeConfig(await getRuntimeConfigStrict(env));
     const indexState = buildResolvedAdminIndexState(env, runtimeConfig);
-    if (!indexState.indexUrl)
+    // 没有上传壳时 /admin 走内置 ASSETS 壳；warm 也要暖它的 4 个同源 vendor 资产。
+    const bundledShellActive = !indexState.indexUrl;
+    if (!indexState.indexUrl && !(env?.ASSETS && typeof env.ASSETS.fetch === "function"))
       return jsonError("ADMIN_INDEX_NOT_CONFIGURED", "管理台 index.html 尚未配置", 409);
     const backgroundTasks = [];
     const warmContext = {
@@ -7992,25 +8144,47 @@ function defineAdminShellViews(dependencies = {}, shell = {}) {
     const shellRequestUrl = new URL(request.url);
     shellRequestUrl.pathname = adminPath;
     shellRequestUrl.search = "";
-    const shellResponse = await shell.renderRemoteAdminPage(
-      buildAdminWarmSubrequest(shellRequestUrl),
-      env,
-      warmContext,
-      initHealth,
-      indexState.indexUrl,
-      runtimeConfig,
-    );
+    const shellResponse = await (bundledShellActive
+      ? shell.renderBundledAdminPage(
+          buildAdminWarmSubrequest(shellRequestUrl),
+          env,
+          warmContext,
+          initHealth,
+          runtimeConfig,
+        )
+      : shell.renderRemoteAdminPage(
+          buildAdminWarmSubrequest(shellRequestUrl),
+          env,
+          warmContext,
+          initHealth,
+          indexState.indexUrl,
+          runtimeConfig,
+        ));
     await Promise.all(backgroundTasks.splice(0));
     const edgeCache = getDefaultCacheHandle();
-    const assetRevision = indexState.assetRevision || indexState.releaseTag;
+    const assetRevision = bundledShellActive
+      ? shell.ADMIN_BUNDLED_INDEX_ASSET_REVISION
+      : indexState.assetRevision || indexState.releaseTag;
     const localRecord = indexState.isLocalUpload
       ? await indexRepository.getAdminIndexUploadRecord(
           indexRepository.getKV(env),
           indexState.localUploadRevision,
         )
       : null;
+    // 内置壳的 manifest 从壳 HTML 里现算（4 个 CDN pin → assetKey），不进 edge 缓存。
     let manifest = null;
-    if (localRecord?.manifest) {
+    if (bundledShellActive) {
+      const bundledShellHtml = await readResponseTextWithLimit(
+        shellResponse,
+        shell.ADMIN_REMOTE_SHELL_MAX_BYTES,
+      );
+      manifest = shell.normalizeAdminReleaseVendorManifestRecord(
+        shell.buildAdminReleaseVendorManifest(bundledShellHtml.text, {
+          releaseTag: assetRevision,
+          sourceUrl: shellRequestUrl.toString(),
+        }),
+      );
+    } else if (localRecord?.manifest) {
       manifest = await shell.readAdminReleaseVendorManifestFromCache(
         edgeCache,
         assetRevision,
@@ -11511,7 +11685,13 @@ function defineConfigActions(dependencies = {}, actions = {}) {
             },
           )
         : currentConfig;
-      const revisions = await kernel.getAdminRevisions(env, { ctx, config: savedConfig });
+      // 保存路径只需要回显 revisions：getAdminRevisions 会顺带重建节点索引并查两次 ops status，
+      // 稳定态要 8 次 KV。getAdminRevisionsForRead 读同一批 meta 得出完全相同的 configRevision
+      // 与 nodesRevision（只差每次现算的 logs/dns 时间戳），稳定态 2 次 KV。
+      const revisions = await kernel.getAdminRevisionsForRead(env, {
+        ctx,
+        config: savedConfig,
+      });
       return jsonResponse({
         success: true,
         committed: true,
@@ -18953,6 +19133,8 @@ function defineConfigPersistenceMethods(dependencies = {}, kernel = {}) {
         throw error;
       }
       assertHostPrefixCnameTargetValid(rawConfig?.defaultHostPrefixCnameTarget);
+      // 这次读取是乐观锁（expectedConfigRevision）的新鲜基线，不能复用调用方早先读到的配置：
+      // 并发保存时两者可能读到同一份旧值，导致两个请求都通过校验。
       const prevConfig = env
         ? await getRuntimeConfigStrict(env)
         : sanitizeRuntimeConfig((await kvGetStrict(kv, kernel.CONFIG_KEY, { type: "json" })) || {});
@@ -18988,19 +19170,24 @@ function defineConfigPersistenceMethods(dependencies = {}, kernel = {}) {
       };
     },
     async buildRuntimeConfigMutationPlan(kv, prevConfig, nextConfig) {
-      const legacySnapshotRecords = await kernel.readLegacyConfigSnapshotRecordsStrict(kv);
+      // 只读一次：原始值同时用于判断 key 是否存在（决定是否安排删除）与解析旧快照记录。
+      // 非法形状（非数组）沿用 readLegacyConfigSnapshotRecordsStrict 的 fail-closed 语义。
+      const legacySnapshotRaw = await kvGetStrict(kv, kernel.CONFIG_SNAPSHOTS_KEY, {
+        type: "json",
+      });
+      if (
+        legacySnapshotRaw !== null &&
+        legacySnapshotRaw !== void 0 &&
+        !Array.isArray(legacySnapshotRaw)
+      ) {
+        const error = new Error("Stored legacy config snapshot records are invalid");
+        error.code = "CONFIG_SNAPSHOTS_INVALID";
+        error.status = 409;
+        throw error;
+      }
+      const legacySnapshotRecords = Array.isArray(legacySnapshotRaw) ? legacySnapshotRaw : [];
       const configMeta = kernel.normalizeRevisionMeta(buildHashedMetaPayload(nextConfig));
       const mutationPlan = [
-        {
-          type: "delete",
-          key: kernel.CONFIG_SNAPSHOTS_KEY,
-          value: "",
-        },
-        {
-          type: "delete",
-          key: kernel.CONFIG_SNAPSHOTS_META_KEY,
-          value: "",
-        },
         {
           type: "put",
           key: kernel.CONFIG_KEY,
@@ -19012,7 +19199,26 @@ function defineConfigPersistenceMethods(dependencies = {}, kernel = {}) {
           value: JSON.stringify(configMeta),
         },
       ];
-      for (const key of kernel.buildLegacyConfigCacheKeys(prevConfig, nextConfig))
+      // 旧版配置快照只在 V19 之前的部署里存在。上一次保存已经删掉，此后每次保存都白做 2 次 delete。
+      // 用原始值判断存在性（空数组也算存在），避免为判断再读一次 KV。
+      if (legacySnapshotRaw !== null && legacySnapshotRaw !== void 0) {
+        mutationPlan.unshift(
+          { type: "delete", key: kernel.CONFIG_SNAPSHOTS_KEY, value: "" },
+          { type: "delete", key: kernel.CONFIG_SNAPSHOTS_META_KEY, value: "" },
+        );
+      }
+      // 遗留 KV 缓存（V19 之前的 sys:cf_dash_cache 系列）已经改用 D1 表，这里只负责清理。
+      // 逐个 delete 每次保存都要 3 次往返；list 一次就能确认是否还有残留，清空后只剩 1 次。
+      const staleCacheKeys = await kernel
+        .listKvKeys(kv, { prefix: LEGACY_CF_DASH_CACHE_KV_KEY_PREFIX })
+        .catch(() => null);
+      const legacyCacheKeysToDelete =
+        staleCacheKeys === null
+          ? kernel.buildLegacyConfigCacheKeys(prevConfig, nextConfig)
+          : staleCacheKeys
+              .map((entry) => String(entry?.name || entry || "").trim())
+              .filter(Boolean);
+      for (const key of legacyCacheKeysToDelete)
         mutationPlan.push({
           type: "delete",
           key,
@@ -20832,9 +21038,11 @@ function defineNodeMutationMethods(dependencies = {}, kernel = {}) {
         n.displayName = "";
         changed = true;
       }
-      const tmdbAggregationEnabled = n.tmdbAggregationEnabled === true;
-      if (n.tmdbAggregationEnabled !== tmdbAggregationEnabled) changed = true;
-      n.tmdbAggregationEnabled = tmdbAggregationEnabled;
+      // TMDB 查询转换已移除：字段保留为兼容占位，读取时一律清空并写回，旧节点不会留下 true。
+      if (n.tmdbAggregationEnabled !== false) {
+        n.tmdbAggregationEnabled = false;
+        changed = true;
+      }
       const normalizedEntryMode = normalizeNodeEntryMode(n.entryMode);
       if (String(n.entryMode || "") !== normalizedEntryMode) changed = true;
       n.entryMode = normalizedEntryMode;
@@ -21017,10 +21225,8 @@ function defineNodeMutationMethods(dependencies = {}, kernel = {}) {
           rawNode?.displayName !== void 0
             ? String(rawNode.displayName || "").trim()
             : existingNode.displayName || "",
-        tmdbAggregationEnabled:
-          rawNode?.tmdbAggregationEnabled !== void 0
-            ? rawNode.tmdbAggregationEnabled === true
-            : existingNode.tmdbAggregationEnabled === true,
+        // 兼容字段：写入恒为 false，且不再从 existingNode 继承历史 true。
+        tmdbAggregationEnabled: false,
         playbackInfoMode:
           rawNode?.playbackInfoMode !== void 0
             ? normalizeNodePlaybackInfoMode(rawNode.playbackInfoMode)
@@ -22626,16 +22832,14 @@ function defineDatabaseStatusMethods(dependencies = {}) {
       if (!initTask) {
         initTask = (async () => {
           try {
-            await db
-              .prepare(
+            await db.batch([
+              db.prepare(
                 `CREATE TABLE IF NOT EXISTS ${SCHEDULED_LOCKS_TABLE} (scope TEXT PRIMARY KEY, token TEXT NOT NULL, owner TEXT NOT NULL, acquired_at INTEGER NOT NULL, renewed_at INTEGER, expires_at INTEGER NOT NULL)`,
-              )
-              .run();
-            await db
-              .prepare(
+              ),
+              db.prepare(
                 `CREATE INDEX IF NOT EXISTS idx_sys_locks_expires_at ON ${SCHEDULED_LOCKS_TABLE} (expires_at DESC)`,
-              )
-              .run();
+              ),
+            ]);
             schemaReadinessPort.markD1SchemaReady(db, "scheduledLeaseTable");
             return true;
           } catch (error) {
@@ -26006,111 +26210,6 @@ function defineProxyObservabilityMethods(dependencies = {}, kernel = {}) {
 }
 //#endregion
 //#region worker/features/proxy/playback/execution-cache-methods.js
-var TMDB_LOOKUP_CACHE_MAX = 4096;
-var TMDB_LOOKUP_CACHE_TTL_MS = 24 * 60 * 60 * 1e3;
-var TMDB_LOOKUP_FAILURE_TTL_MS = 60 * 1e3;
-function buildTmdbConvertedRequestUrl(requestUrl, title, year) {
-  const nextUrl = new URL(requestUrl.toString());
-  nextUrl.searchParams.delete("AnyProviderIdEquals");
-  nextUrl.searchParams.set("SearchTerm", title);
-  if (/^\d{4}$/.test(year)) nextUrl.searchParams.set("Years", year);
-  else nextUrl.searchParams.delete("Years");
-  return nextUrl;
-}
-async function convertTmdbRequestFromUrl(requestUrl, env = {}, config = {}) {
-  const providerId = requestUrl?.searchParams?.get?.("AnyProviderIdEquals");
-  const tmdbMatch = providerId?.match(/tmdb\.(\d+)/i);
-  if (!tmdbMatch) return null;
-  const configReadToken = String(config?.tmdbApiReadToken || "").trim();
-  const configApiKey = String(config?.tmdbApiV3Key || "").trim();
-  const envReadToken = String(env?.TMDB_API_READ_TOKEN || "").trim();
-  const envApiKey = String(env?.TMDB_API_KEY || "").trim();
-  const useConfigCredentials = Boolean(configReadToken || configApiKey);
-  const readToken = useConfigCredentials ? configReadToken : envReadToken;
-  const apiKey = useConfigCredentials ? configApiKey : envApiKey;
-  if (!readToken && !apiKey) return null;
-  // 账号设置凭证是整组生效的：只在面板填了任意一项，env 凭证就被整体忽略。
-  // 每个 isolate 只显式记录一次，避免 env 凭证静默失效而无人察觉，也避免逐请求刷屏。
-  if (
-    useConfigCredentials &&
-    (envReadToken || envApiKey) &&
-    runtimeState.TmdbCredentialOverrideWarned !== true
-  ) {
-    runtimeState.TmdbCredentialOverrideWarned = true;
-    logRuntimeFailure(
-      "tmdb.credentials_override",
-      "account settings TMDB credentials override TMDB_* environment variables",
-      {
-        configReadToken: configReadToken ? "set" : "unset",
-        configApiKey: configApiKey ? "set" : "unset",
-        envReadToken: envReadToken ? "set" : "unset",
-        envApiKey: envApiKey ? "set" : "unset",
-      },
-    );
-  }
-  const itemTypes = String(requestUrl.searchParams.get("IncludeItemTypes") || "").toLowerCase();
-  if (itemTypes.includes("episode") || itemTypes.includes("season")) return null;
-  const isMovie = itemTypes.includes("movie");
-  const mediaType = isMovie ? "movie" : "tv";
-  const language = String(config?.tmdbLanguage || env?.TMDB_LANGUAGE || "zh-CN").trim() || "zh-CN";
-  const cacheKey = `${language}:${mediaType}:${tmdbMatch[1]}`;
-  const cached = cacheState.TmdbLookupCache.get(cacheKey);
-  if (cached && Number(cached.expiresAt) > nowMs()) {
-    if (cached.failed === true) return null;
-    return buildTmdbConvertedRequestUrl(requestUrl, cached.title, cached.year);
-  }
-  const rememberLookupFailure = () =>
-    setBoundedMapEntry(
-      cacheState.TmdbLookupCache,
-      cacheKey,
-      {
-        failed: true,
-        expiresAt: nowMs() + TMDB_LOOKUP_FAILURE_TTL_MS,
-      },
-      TMDB_LOOKUP_CACHE_MAX,
-    );
-  const tmdbUrl = new URL(`https://api.themoviedb.org/3/${mediaType}/${tmdbMatch[1]}`);
-  tmdbUrl.searchParams.set("language", language);
-  if (apiKey && !readToken) tmdbUrl.searchParams.set("api_key", apiKey);
-  const headers = new Headers({ accept: "application/json" });
-  if (readToken) headers.set("Authorization", `Bearer ${readToken}`);
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort("tmdb_timeout"), 5e3);
-  try {
-    const response = await fetch(tmdbUrl, { headers, signal: controller.signal });
-    if (!response.ok) {
-      console.warn(`TMDB ${mediaType} lookup failed: ${response.status}`);
-      rememberLookupFailure();
-      return null;
-    }
-    const payload = await response.json();
-    const title = String(isMovie ? payload?.title || "" : payload?.name || "").trim();
-    const year = String(
-      isMovie ? payload?.release_date || "" : payload?.first_air_date || "",
-    ).slice(0, 4);
-    if (!title) {
-      rememberLookupFailure();
-      return null;
-    }
-    setBoundedMapEntry(
-      cacheState.TmdbLookupCache,
-      cacheKey,
-      {
-        title,
-        year,
-        expiresAt: nowMs() + TMDB_LOOKUP_CACHE_TTL_MS,
-      },
-      TMDB_LOOKUP_CACHE_MAX,
-    );
-    return buildTmdbConvertedRequestUrl(requestUrl, title, year);
-  } catch (error) {
-    console.warn("TMDB request conversion failed:", error?.message || error);
-    rememberLookupFailure();
-    return null;
-  } finally {
-    clearTimeout(timeoutId);
-  }
-}
 function definePlaybackExecutionCacheMethods(dependencies = {}, kernel = {}) {
   const { CacheManager } = dependencies;
   const playbackInfoCacheStore = new PlaybackInfoCacheStore({
@@ -26213,13 +26312,6 @@ function definePlaybackExecutionCacheMethods(dependencies = {}, kernel = {}) {
       }
       if (playbackAbsoluteFallbackEligible)
         requestUrl.searchParams.delete(PLAYBACK_ABSOLUTE_FALLBACK_QUERY_PARAM);
-      if (
-        node.tmdbAggregationEnabled === true &&
-        (requestMethod === "GET" || requestMethod === "HEAD")
-      ) {
-        const tmdbConvertedUrl = await convertTmdbRequestFromUrl(requestUrl, env, currentConfig);
-        if (tmdbConvertedUrl) requestUrl = tmdbConvertedUrl;
-      }
       const nodeDirectSource = isNodeVideoStreamDirectEnabled(node, currentConfig, name);
       const baseRequestTraits = kernel.classifyRequest(
         request,
@@ -29357,6 +29449,8 @@ function defineAnalyticsStatsMethods(dependencies = {}, kernel = {}) {
         await db.prepare(`DROP TABLE IF EXISTS ${kernel.LOGS_FTS_TABLE}`).run();
         recreated = true;
       }
+      // 注意顺序：forceRecreate 时必须先删旧触发器，再建虚表与触发器，
+      // 否则旧触发器会指向被 DROP 掉的虚表。因此这里不能把两句合进同一个 batch。
       await db
         .prepare(
           `CREATE VIRTUAL TABLE IF NOT EXISTS ${kernel.LOGS_FTS_TABLE} USING fts5(node_name, request_path, user_agent, error_detail, detail_json, content='${kernel.LOGS_TABLE}', content_rowid='id', tokenize='unicode61')`,
@@ -29394,8 +29488,10 @@ function defineAnalyticsDnsMethods(dependencies = {}, kernel = {}) {
       let initTask = databaseReadinessState.DnsIpWorkspaceDbReady.get(db);
       if (!initTask) {
         initTask = (async () => {
-          await db
-            .prepare(`CREATE TABLE IF NOT EXISTS ${kernel.DNS_IP_POOL_ITEMS_TABLE} (
+          // 4 张表 + 5 个索引合并成一次往返；D1 batch 是事务语义，任一失败整体回滚，
+          // 避免出现「表建好但索引缺失」的半成品 schema。
+          await db.batch([
+            db.prepare(`CREATE TABLE IF NOT EXISTS ${kernel.DNS_IP_POOL_ITEMS_TABLE} (
                 id TEXT PRIMARY KEY,
                 ip TEXT NOT NULL UNIQUE,
                 ip_type TEXT NOT NULL,
@@ -29405,15 +29501,11 @@ function defineAnalyticsDnsMethods(dependencies = {}, kernel = {}) {
                 remark TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
-              )`)
-            .run();
-          await db
-            .prepare(
+              )`),
+            db.prepare(
               `CREATE INDEX IF NOT EXISTS idx_dns_ip_pool_items_updated_ip ON ${kernel.DNS_IP_POOL_ITEMS_TABLE} (updated_at DESC, ip ASC)`,
-            )
-            .run();
-          await db
-            .prepare(`CREATE TABLE IF NOT EXISTS ${kernel.DNS_IP_POOL_SOURCES_TABLE} (
+            ),
+            db.prepare(`CREATE TABLE IF NOT EXISTS ${kernel.DNS_IP_POOL_SOURCES_TABLE} (
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
                 url TEXT NOT NULL,
@@ -29430,15 +29522,11 @@ function defineAnalyticsDnsMethods(dependencies = {}, kernel = {}) {
                 last_fetch_count INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
-              )`)
-            .run();
-          await db
-            .prepare(
+              )`),
+            db.prepare(
               `CREATE INDEX IF NOT EXISTS idx_dns_ip_pool_sources_sort ON ${kernel.DNS_IP_POOL_SOURCES_TABLE} (sort_order ASC, updated_at ASC)`,
-            )
-            .run();
-          await db
-            .prepare(`CREATE TABLE IF NOT EXISTS ${kernel.DNS_IP_POOL_FETCH_CACHE_TABLE} (
+            ),
+            db.prepare(`CREATE TABLE IF NOT EXISTS ${kernel.DNS_IP_POOL_FETCH_CACHE_TABLE} (
                 signature TEXT PRIMARY KEY,
                 items_json TEXT NOT NULL,
                 source_results_json TEXT NOT NULL,
@@ -29448,15 +29536,11 @@ function defineAnalyticsDnsMethods(dependencies = {}, kernel = {}) {
                 expires_at INTEGER NOT NULL,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
-              )`)
-            .run();
-          await db
-            .prepare(
+              )`),
+            db.prepare(
               `CREATE INDEX IF NOT EXISTS idx_dns_ip_pool_fetch_cache_expires ON ${kernel.DNS_IP_POOL_FETCH_CACHE_TABLE} (expires_at)`,
-            )
-            .run();
-          await db
-            .prepare(`CREATE TABLE IF NOT EXISTS ${kernel.DNS_IP_PROBE_CACHE_TABLE} (
+            ),
+            db.prepare(`CREATE TABLE IF NOT EXISTS ${kernel.DNS_IP_PROBE_CACHE_TABLE} (
                 ip TEXT NOT NULL,
                 entry_colo TEXT NOT NULL,
                 probe_status TEXT NOT NULL,
@@ -29469,18 +29553,14 @@ function defineAnalyticsDnsMethods(dependencies = {}, kernel = {}) {
                 probed_at TEXT NOT NULL,
                 expires_at INTEGER NOT NULL,
                 PRIMARY KEY (ip, entry_colo)
-              )`)
-            .run();
-          await db
-            .prepare(
+              )`),
+            db.prepare(
               `CREATE INDEX IF NOT EXISTS idx_dns_ip_probe_cache_expire ON ${kernel.DNS_IP_PROBE_CACHE_TABLE} (expires_at)`,
-            )
-            .run();
-          await db
-            .prepare(
+            ),
+            db.prepare(
               `CREATE INDEX IF NOT EXISTS idx_dns_ip_probe_cache_colo_ip_expires ON ${kernel.DNS_IP_PROBE_CACHE_TABLE} (entry_colo, ip, expires_at)`,
-            )
-            .run();
+            ),
+          ]);
           kernel.markD1SchemaReady(db, "dnsIpWorkspaceSchema");
           return true;
         })().catch((error) => {
@@ -30147,19 +30227,18 @@ function defineAnalyticsStatusMethods(dependencies = {}, kernel = {}) {
       if (!initTask) {
         initTask = (async () => {
           try {
-            await db
-              .prepare(`CREATE TABLE IF NOT EXISTS ${kernel.AUTH_FAILURES_TABLE} (
+            // 建表与建索引合并成一次往返：D1 batch 是事务语义，DDL 全成功或全回滚。
+            await db.batch([
+              db.prepare(`CREATE TABLE IF NOT EXISTS ${kernel.AUTH_FAILURES_TABLE} (
                   ip TEXT PRIMARY KEY,
                   fail_count INTEGER NOT NULL,
                   expires_at INTEGER NOT NULL,
                   updated_at INTEGER NOT NULL
-                )`)
-              .run();
-            await db
-              .prepare(
+                )`),
+              db.prepare(
                 `CREATE INDEX IF NOT EXISTS idx_auth_failures_expires_at ON ${kernel.AUTH_FAILURES_TABLE} (expires_at)`,
-              )
-              .run();
+              ),
+            ]);
             kernel.markD1SchemaReady(db, "authFailuresTable");
             return true;
           } catch (error) {
@@ -30251,8 +30330,8 @@ function defineAnalyticsCacheMethods(dependencies = {}, kernel = {}) {
       if (!initTask) {
         initTask = (async () => {
           try {
-            await db
-              .prepare(`CREATE TABLE IF NOT EXISTS ${kernel.CF_DASH_CACHE_TABLE} (
+            await db.batch([
+              db.prepare(`CREATE TABLE IF NOT EXISTS ${kernel.CF_DASH_CACHE_TABLE} (
                   cache_key TEXT PRIMARY KEY,
                   zone_id TEXT NOT NULL,
                   bucket_date TEXT NOT NULL,
@@ -30261,13 +30340,11 @@ function defineAnalyticsCacheMethods(dependencies = {}, kernel = {}) {
                   cached_at INTEGER NOT NULL,
                   expires_at INTEGER NOT NULL,
                   updated_at INTEGER NOT NULL
-                )`)
-              .run();
-            await db
-              .prepare(
+                )`),
+              db.prepare(
                 `CREATE INDEX IF NOT EXISTS idx_cf_dashboard_cache_expires_at ON ${kernel.CF_DASH_CACHE_TABLE} (expires_at)`,
-              )
-              .run();
+              ),
+            ]);
             kernel.markD1SchemaReady(db, "cfDashboardCacheTable");
             return true;
           } catch (error) {
@@ -30409,8 +30486,8 @@ function defineAnalyticsCacheMethods(dependencies = {}, kernel = {}) {
       if (!initTask) {
         initTask = (async () => {
           try {
-            await db
-              .prepare(`CREATE TABLE IF NOT EXISTS ${kernel.CF_RUNTIME_CACHE_TABLE} (
+            await db.batch([
+              db.prepare(`CREATE TABLE IF NOT EXISTS ${kernel.CF_RUNTIME_CACHE_TABLE} (
                   cache_key TEXT PRIMARY KEY,
                   cache_group TEXT NOT NULL,
                   resource_id TEXT NOT NULL,
@@ -30418,13 +30495,11 @@ function defineAnalyticsCacheMethods(dependencies = {}, kernel = {}) {
                   cached_at INTEGER NOT NULL,
                   expires_at INTEGER NOT NULL,
                   updated_at INTEGER NOT NULL
-                )`)
-              .run();
-            await db
-              .prepare(
+                )`),
+              db.prepare(
                 `CREATE INDEX IF NOT EXISTS idx_cf_runtime_cache_expires_at ON ${kernel.CF_RUNTIME_CACHE_TABLE} (expires_at)`,
-              )
-              .run();
+              ),
+            ]);
             kernel.markD1SchemaReady(db, "cfRuntimeCacheTable");
             return true;
           } catch (error) {
@@ -34190,31 +34265,24 @@ function defineSchemaRecordMethods(dependencies = {}, kernel = {}) {
       let initTask = databaseReadinessState.LogsBaseDbReady.get(db);
       if (!initTask) {
         initTask = (async () => {
-          await db
-            .prepare(
+          // 建表 + 4 个索引合并成一次往返。
+          await db.batch([
+            db.prepare(
               `CREATE TABLE IF NOT EXISTS ${kernel.LOGS_TABLE} (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp INTEGER NOT NULL, node_name TEXT NOT NULL, request_path TEXT NOT NULL, request_method TEXT NOT NULL, status_code INTEGER NOT NULL, response_time INTEGER NOT NULL, client_ip TEXT NOT NULL, inbound_colo TEXT, outbound_colo TEXT, user_agent TEXT, referer TEXT, category TEXT DEFAULT 'api', error_detail TEXT, detail_json TEXT, created_at TEXT NOT NULL, inbound_ip TEXT, outbound_ip TEXT)`,
-            )
-            .run();
-          await db
-            .prepare(
+            ),
+            db.prepare(
               `CREATE INDEX IF NOT EXISTS idx_proxy_logs_timestamp ON ${kernel.LOGS_TABLE} (timestamp)`,
-            )
-            .run();
-          await db
-            .prepare(
+            ),
+            db.prepare(
               `CREATE INDEX IF NOT EXISTS idx_proxy_logs_client_time ON ${kernel.LOGS_TABLE} (client_ip, timestamp DESC)`,
-            )
-            .run();
-          await db
-            .prepare(
+            ),
+            db.prepare(
               `CREATE INDEX IF NOT EXISTS idx_proxy_logs_status_time ON ${kernel.LOGS_TABLE} (status_code, timestamp)`,
-            )
-            .run();
-          await db
-            .prepare(
+            ),
+            db.prepare(
               `CREATE INDEX IF NOT EXISTS idx_proxy_logs_category_time ON ${kernel.LOGS_TABLE} (category, timestamp)`,
-            )
-            .run();
+            ),
+          ]);
           kernel.markD1SchemaReady(db, "logsBaseSchema");
           kernel.markD1SchemaReady(db, "logsTableExists");
           cacheState.LogsReadinessProbeCache.delete(db);
@@ -34380,16 +34448,26 @@ function defineSchemaBootstrapMethods(dependencies = {}, kernel = {}) {
                 },
               ]
             : [...runtimeSteps, ...logSteps];
-      const stepResults = [];
+      // 各 step 建的是互不相同的表，彼此没有依赖，可以并行；只有 FTS 例外：
+      // 它建在 proxy_logs 之上，必须等其余 step 完成后再跑，否则会撞上「表还不存在」。
+      const ftsStep = steps.find((step) => step.name === "ensureLogsFtsSchema") || null;
+      const parallelSteps = steps.filter((step) => step !== ftsStep);
+      const settled = await Promise.all(
+        parallelSteps.map(async (step) => {
+          const result = await step.run();
+          return { name: step.name, ready: result === true };
+        }),
+      );
+      const stepResults = [...settled];
       let ftsResult = {
         migratedRows: 0,
         droppedTriggers: 0,
         rebuilt: false,
         recreated: false,
       };
-      for (const step of steps) {
-        const result = await step.run();
-        if (step.name === "ensureLogsFtsSchema" && isPlainObject(result))
+      if (ftsStep) {
+        const result = await ftsStep.run();
+        if (isPlainObject(result))
           ftsResult = {
             migratedRows: Math.max(0, Number(result.migratedRows) || 0),
             droppedTriggers: Math.max(0, Number(result.droppedTriggers) || 0),
@@ -34397,9 +34475,8 @@ function defineSchemaBootstrapMethods(dependencies = {}, kernel = {}) {
             recreated: result.recreated === true,
           };
         stepResults.push({
-          name: step.name,
-          ready:
-            step.name === "ensureLogsFtsSchema" ? await kernel.isLogsFtsReady(db) : result === true,
+          name: ftsStep.name,
+          ready: await kernel.isLogsFtsReady(db),
         });
       }
       cacheState.LogsReadinessProbeCache.delete(db);
@@ -35358,7 +35435,7 @@ function defineNodeIndexMethods(dependencies = {}, kernel = {}) {
         tags: normalizeNodeTags(rawNode.tags, rawNode.tag),
         tagColor: String(rawNode.tagColor ?? ""),
         remark: String(rawNode.remark ?? ""),
-        tmdbAggregationEnabled: rawNode.tmdbAggregationEnabled === true,
+        tmdbAggregationEnabled: false,
         lines: normalizedLines.map((line) => ({
           id: String(line.id || "").trim(),
           name: String(line.name || "").trim(),
@@ -36484,11 +36561,21 @@ function defineKvSafetyMethods(dependencies = {}, kernel = {}) {
         });
         if (seenKeys.has(key)) continue;
         seenKeys.add(key);
-        rollbackEntries.set(key, {
-          key,
-          ...(await kernel.readRawKvEntry(kv, key)),
-        });
       }
+      // 回滚快照之间没有依赖：并行读，避免 N 次串行往返。
+      // 纯 delete 的目标如果本来就不存在，回滚动作等于"保持不存在"，快照读可以省掉。
+      const deletedKeys = new Set(
+        normalizedMutations.filter((m) => m.type === "delete").map((m) => m.key),
+      );
+      const putKeys = new Set(
+        normalizedMutations.filter((m) => m.type === "put").map((m) => m.key),
+      );
+      const needSnapshot = [...seenKeys].filter((key) => putKeys.has(key) || !deletedKeys.has(key));
+      await Promise.all(
+        needSnapshot.map(async (key) => {
+          rollbackEntries.set(key, { key, ...(await kernel.readRawKvEntry(kv, key)) });
+        }),
+      );
       const appliedKeys = [];
       const appliedExpectedEntries = /* @__PURE__ */ new Map();
       try {
@@ -37741,7 +37828,6 @@ export {
   buildWorkerMetadataCachePolicyRevision,
   buildWorkerMetadataPrewarmIdentityPartition,
   cacheState,
-  convertTmdbRequestFromUrl,
   defineAnalyticsCacheMethods,
   defineDatabaseStatusMethods,
   defineKvTidyMethods,

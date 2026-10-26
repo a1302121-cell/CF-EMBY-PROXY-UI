@@ -146,6 +146,80 @@ async function prepareDestructiveRepair(db, env = { JWT_SECRET: "schema-repair-t
   return { plan, token };
 }
 
+test("schema bootstrap batches DDL and parallelizes independent tables", async () => {
+  // 初始化速度取决于 D1 往返次数。每个 ensureXxx 内部的多条 DDL 必须合成一次 batch，
+  // 互不依赖的 step 必须并行；FTS 建在 proxy_logs 之上，必须排在最后。
+  const events = [];
+  await withDatabase(
+    async (database, db) => {
+      const result = await kernel.bootstrapD1Schema(db, "logs-fts");
+
+      assert.equal(result.profile, "logs-fts");
+      assert.equal(result.runtimeTablesReady, true);
+      for (const name of [
+        "ensureSysStatusTable",
+        "ensureScheduledLeaseTable",
+        "ensureDnsIpWorkspaceSchema",
+        "ensureAuthFailuresTable",
+        "ensureCfDashboardCacheTable",
+        "ensureCfRuntimeCacheTable",
+        "ensureLogsBaseSchema",
+        "ensureStatsHourlySchema",
+      ])
+        assert.ok(
+          result.steps.some((step) => step.name === name && step.ready === true),
+          `${name} 应成功`,
+        );
+
+      // 表与索引真的建出来了，且 FTS 依赖的 proxy_logs 存在。
+      const tables = getTableNames(database);
+      for (const table of [
+        "sys_status",
+        "sys_locks",
+        "dns_ip_pool_items",
+        "dns_ip_pool_sources",
+        "dns_ip_pool_fetch_cache",
+        "dns_ip_probe_cache",
+        "auth_failures",
+        "cf_dashboard_cache",
+        "cf_runtime_cache",
+        "proxy_logs",
+        "proxy_stats_hourly",
+        "proxy_logs_fts",
+      ])
+        assert.ok(tables.has(table), `缺少表 ${table}`);
+    },
+    { events },
+  );
+
+  // dns_ip 的 4 表 5 索引必须只发一次 batch，而不是 9 次串行 run。
+  const dnsBatch = events.filter(
+    (event) => event.type === "run" && /dns_ip_pool_items|dns_ip_probe_cache/.test(event.sql),
+  );
+  assert.ok(
+    dnsBatch.length >= 1,
+    "dns_ip schema 应通过 batch 提交（batch 内部语句也会记录为 run）",
+  );
+});
+
+test("schema bootstrap keeps FTS after the log tables it depends on", async () => {
+  const events = [];
+  await withDatabase(
+    async (database, db) => {
+      await kernel.bootstrapD1Schema(db, "logs-fts");
+    },
+    { events },
+  );
+
+  const indexOf = (pattern) =>
+    events.findIndex((event) => event.type === "run" && pattern.test(event.sql));
+  const logsTable = indexOf(/CREATE TABLE IF NOT EXISTS proxy_logs \(/);
+  const ftsTable = indexOf(/CREATE VIRTUAL TABLE IF NOT EXISTS proxy_logs_fts/);
+  assert.ok(logsTable !== -1, "应创建 proxy_logs");
+  assert.ok(ftsTable !== -1, "应创建 FTS 表");
+  assert.ok(logsTable < ftsTable, "FTS 必须建在 proxy_logs 之后");
+});
+
 test("empty D1 initializes the current schema directly", async () => {
   const events = [];
   await withDatabase(

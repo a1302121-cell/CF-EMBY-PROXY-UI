@@ -21,9 +21,12 @@
     "format": "oxfmt .",
     "format:check": "oxfmt --check .",
     "check": "node ./scripts/check-project.mjs",
-    "tail": "node --env-file-if-exists=.env ./node_modules/wrangler/bin/wrangler.js tail"
+    "tail": "node --env-file-if-exists=.env ./node_modules/wrangler/bin/wrangler.js tail",
+    "test:e2e": "playwright test tests/e2e/admin-smoke.spec.mjs",
+    "test:visual": "playwright test tests/e2e/visual.spec.mjs"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.1",
     "acorn": "^8.15.0",
     "acorn-walk": "^8.3.5",
     "miniflare": "^4.20260722.1",

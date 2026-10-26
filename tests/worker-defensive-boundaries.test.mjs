@@ -21,7 +21,6 @@ import {
   buildWorkerMetadataPrewarmIdentityPartition,
   fetchDnsIpItemsFromUrlSource,
   createTargetRecord,
-  convertTmdbRequestFromUrl,
   createWorkerApplication,
   defineAnalyticsCacheMethods,
   defineDatabaseStatusMethods,
@@ -52,6 +51,14 @@ import {
   inspectPlaybackInfoResponse,
 } from "../worker/runtime/proxy/playback/contract.js";
 import { PlaybackInfoCacheStore } from "../worker/runtime/proxy/playback/cache.js";
+import { hashStableText } from "../worker/core/hashing.js";
+// 与 frontend/scripts/build-admin-vendor.mjs 的 pins 一致：vendor 产物文件名 = hashStableText(upstreamUrl)。
+const BUNDLED_VENDOR_PINS = [
+  "https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.2.2/dist/index.global.js",
+  "https://cdn.jsdelivr.net/npm/vue@3.5.32/dist/vue.runtime.global.prod.js",
+  "https://cdn.jsdelivr.net/npm/lucide@1.8.0/dist/umd/lucide.min.js",
+  "https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js",
+];
 
 // 生产管理台壳由 sync-admin-runtime 注入 enhancement 层；Worker 会拒绝缺失该层的壳。
 const ADMIN_SHELL_ENHANCEMENT_MARKUP =
@@ -1816,8 +1823,9 @@ test("manual setup renders GET and HEAD as no-store with the recovery reason", a
 
 test("bundled frontend assets render when no uploaded admin index is configured", async () => {
   const assetRequests = [];
+  // 真实内置壳的头里有 4 个 CDN pin；这里放同样的 4 个 URL，验证改写与投递。
   const bundledHtml = adminShellDocument({
-    head: "<title>Bundled UI</title>",
+    head: `<title>Bundled UI</title>${BUNDLED_VENDOR_PINS.map((url) => `<script src="${url}"></script>`).join("")}`,
     body: '<div id="app" data-source="bundled"></div>',
   });
   const env = {
@@ -1844,7 +1852,7 @@ test("bundled frontend assets render when no uploaded admin index is configured"
   );
   const renderedHtml = await getResponse.text();
   assert.equal(getResponse.status, 200);
-  assert.equal(getResponse.headers.get("Cache-Control"), "private, no-store, max-age=0");
+  assert.equal(getResponse.headers.get("Cache-Control"), "private, no-cache, max-age=0");
   assert.match(renderedHtml, /data-source="bundled"/);
   assert.match(renderedHtml, /"adminPath":"\/console"/);
   assert.match(renderedHtml, /"mode":"embedded"/);
@@ -1861,6 +1869,245 @@ test("bundled frontend assets render when no uploaded admin index is configured"
   );
   assert.equal(headResponse.status, 200);
   assert.equal(await headResponse.text(), "");
+
+  // 内置壳的 4 个首屏脚本必须改写成 bundled revision 的同源 vendor 路径，
+  // 否则浏览器连不上 cdn.jsdelivr.net 时 Vue 直接缺失，整页白屏。
+  const bundledRevision = adminShell.ADMIN_BUNDLED_INDEX_ASSET_REVISION;
+  const vendorPrefix = `/console/__release/${bundledRevision}/vendor/`;
+  for (const pin of BUNDLED_VENDOR_PINS) {
+    assert.ok(bundledHtml.includes(pin), `测试壳缺少 CDN pin：${pin}`);
+    const assetKey = `${hashStableText(pin)}.js`;
+    assert.ok(
+      renderedHtml.includes(`${vendorPrefix}${assetKey}`),
+      `内置壳没有把 ${pin} 改写成 ${vendorPrefix}${assetKey}`,
+    );
+  }
+  assert.equal((renderedHtml.match(/https:\/\/cdn\.jsdelivr\.net/g) || []).length, 0);
+
+  // 改写到同源路径后必须有真实投递：直接从 ASSETS 的 vendor/ 读，不走 KV / edge 缓存。
+  const assetKey = `${hashStableText(BUNDLED_VENDOR_PINS[0])}.js`;
+  const vendorResponse = await renderAdminReleaseVendorAsset(
+    new Request(`https://worker.test${vendorPrefix}${assetKey}`),
+    {
+      ...env,
+      ASSETS: {
+        async fetch(request) {
+          assetRequests.push(request);
+          if (new URL(request.url).pathname === `/vendor/${assetKey}`)
+            return new Response("var bundledVendorLoaded=1;", {
+              headers: { "Content-Type": "application/javascript; charset=utf-8" },
+            });
+          return new Response("missing", { status: 404 });
+        },
+      },
+    },
+    null,
+    { releaseTag: bundledRevision, assetKey },
+    {},
+  );
+  assert.equal(vendorResponse.status, 200);
+  assert.match(vendorResponse.headers.get("Content-Type") || "", /javascript/);
+  assert.equal(
+    vendorResponse.headers.get("Cache-Control"),
+    adminShell.ADMIN_RELEASE_VENDOR_CACHE_CONTROL,
+  );
+  assert.match(await vendorResponse.text(), /bundledVendorLoaded/);
+
+  // 未知 / 越权的 assetKey 一律 404，不落到 ASSETS 之外。
+  for (const badKey of ["../index.html", "not-a-key.txt", ""]) {
+    const notFound = await renderAdminReleaseVendorAsset(
+      new Request(`https://worker.test${vendorPrefix}${badKey}`),
+      env,
+      null,
+      { releaseTag: bundledRevision, assetKey: badKey },
+      {},
+    );
+    assert.equal(notFound.status, 404, `assetKey ${JSON.stringify(badKey)} 必须 404`);
+  }
+});
+
+test("bundled shell page cache reuses the rendered response until ASSETS validators change", async () => {
+  // 缓存键是 ASSETS 绑定，所以每次测试用新的 env，避免和上一条用例串味。
+  const shellBody = adminShellDocument({
+    head: `<title>Bundled UI</title>${BUNDLED_VENDOR_PINS.map((url) => `<script src="${url}"></script>`).join("")}`,
+    body: '<div id="app">cached</div>',
+  });
+  let assetFetches = 0;
+  let currentEtag = '"bundled-v1"';
+  const env = {
+    ADMIN_PATH: "/console",
+    ASSETS: {
+      async fetch() {
+        assetFetches += 1;
+        return new Response(shellBody, {
+          headers: { "Content-Type": "text/html; charset=utf-8", ETag: currentEtag },
+        });
+      },
+    },
+  };
+  const initHealth = { ok: true, missing: [] };
+
+  const first = await renderAdminPage(
+    new Request("https://worker.test/console"),
+    env,
+    null,
+    initHealth,
+    {},
+  );
+  const firstHtml = await first.text();
+  assert.equal(assetFetches, 1);
+
+  // 同一 ETag：复用渲染结果，不再解析/改写 900 KB 壳。
+  const second = await renderAdminPage(
+    new Request("https://worker.test/console"),
+    env,
+    null,
+    initHealth,
+    {},
+  );
+  assert.equal(await second.text(), firstHtml);
+  assert.equal(assetFetches, 2);
+
+  // 命中缓存时条件请求仍然返回 304，验证器来自缓存下来的头。
+  const etag = second.headers.get("ETag");
+  assert.ok(etag, "cached shell must keep its ETag");
+  const conditional = await renderAdminPage(
+    new Request("https://worker.test/console", { headers: { "If-None-Match": etag } }),
+    env,
+    null,
+    initHealth,
+    {},
+  );
+  assert.equal(conditional.status, 304);
+  assert.equal(await conditional.text(), "");
+
+  // 资产换了验证器就必须重算，不能把旧壳当新壳发出去。
+  currentEtag = '"bundled-v2"';
+  const third = await renderAdminPage(
+    new Request("https://worker.test/console"),
+    env,
+    null,
+    initHealth,
+    {},
+  );
+  assert.notEqual(third.headers.get("ETag"), etag);
+  assert.equal(assetFetches, 4);
+});
+
+test("bundled shell page cache keeps one entry per request origin", async () => {
+  // sourceUrl 进入 ETag 与 X-Admin-Shell-Source-Hash，所以 HOST 与 LEGACY_HOST
+  // 各有一份渲染结果。缓存若只留一条，交替访问会互相击穿，每次全量重渲染 900 KB。
+  const buildShellBody = (marker) =>
+    adminShellDocument({
+      head: `<title>Bundled UI</title>${BUNDLED_VENDOR_PINS.map((url) => `<script src="${url}"></script>`).join("")}`,
+      body: `<div id="app">${marker}</div>`,
+    });
+  // ETag 保持不变、正文换内容：命中缓存必须继续发旧正文，重渲染才会看到新标记。
+  // 这样断言的是「有没有真的复用渲染结果」，而不是 ETag 是否稳定。
+  let assetBody = buildShellBody("gen1");
+  let assetFetches = 0;
+  const env = {
+    ADMIN_PATH: "/console",
+    ASSETS: {
+      async fetch() {
+        assetFetches += 1;
+        return new Response(assetBody, {
+          headers: { "Content-Type": "text/html; charset=utf-8", ETag: '"origin-v1"' },
+        });
+      },
+    },
+  };
+  const initHealth = { ok: true, missing: [] };
+  const render = (origin) =>
+    renderAdminPage(new Request(`${origin}/console`), env, null, initHealth, {});
+
+  const primary = await render("https://primary.test");
+  const primaryHtml = await primary.text();
+  const primaryEtag = primary.headers.get("ETag");
+  assert.match(primaryHtml, /gen1/);
+
+  assetBody = buildShellBody("gen2");
+  const legacy = await render("https://legacy.test");
+  const legacyHtml = await legacy.text();
+  const legacyEtag = legacy.headers.get("ETag");
+  assert.match(legacyHtml, /gen2/);
+  assert.notEqual(primaryEtag, legacyEtag);
+
+  // 交替回到两个源：各自命中缓存，正文停在首次渲染的那一份。
+  // 只留一条缓存时，两个源会互相挤掉，每次都按当前 assetBody 重渲染（gen2）。
+  for (const [origin, expectedHtml, expectedEtag] of [
+    ["https://primary.test", primaryHtml, primaryEtag],
+    ["https://legacy.test", legacyHtml, legacyEtag],
+    ["https://primary.test", primaryHtml, primaryEtag],
+    ["https://legacy.test", legacyHtml, legacyEtag],
+  ]) {
+    const response = await render(origin);
+    assert.equal(response.headers.get("ETag"), expectedEtag, `${origin} 的 ETag 应保持稳定`);
+    assert.equal(await response.text(), expectedHtml, `${origin} 应复用首次渲染的正文`);
+  }
+  assert.match(primaryHtml, /gen1/, "primary 必须仍是最初渲染的壳");
+  assert.equal(assetFetches, 6);
+});
+
+test("bundled shell page does not block on the admin shell status write", async () => {
+  // D1 单次写比渲染整份壳还贵。状态写必须只登记 waitUntil，
+  // 否则命中页面缓存后剩下的唯一开销就是这次写，页面会被拖慢几十毫秒。
+  const shellBody = adminShellDocument({
+    head: `<title>Bundled UI</title>${BUNDLED_VENDOR_PINS.map((url) => `<script src="${url}"></script>`).join("")}`,
+    body: '<div id="app">non blocking</div>',
+  });
+  const env = {
+    ADMIN_PATH: "/console",
+    ASSETS: {
+      async fetch() {
+        return new Response(shellBody, {
+          headers: { "Content-Type": "text/html; charset=utf-8", ETag: '"block-v1"' },
+        });
+      },
+    },
+  };
+  const initHealth = { ok: true, missing: [] };
+  const originalPatchOpsStatus = kernel.patchOpsStatus;
+  let releaseWrite = null;
+  let writeStarted = 0;
+  kernel.patchOpsStatus = async () => {
+    writeStarted += 1;
+    // 模拟慢 D1：页面必须在这条链完成之前就返回。给个上限，让「阻塞实现」直接失败而不是挂住。
+    await Promise.race([
+      new Promise((resolve) => {
+        releaseWrite = resolve;
+      }),
+      new Promise((resolve) => setTimeout(resolve, 50)),
+    ]);
+    return {};
+  };
+
+  try {
+    const waitUntilTasks = [];
+    const ctx = {
+      waitUntil: (task) => waitUntilTasks.push(task),
+      passThroughOnException() {},
+    };
+    const response = await renderAdminPage(
+      new Request("https://worker.test/console"),
+      env,
+      ctx,
+      initHealth,
+      {},
+    );
+    const html = await response.text();
+
+    assert.equal(response.status, 200);
+    assert.match(html, /non blocking/);
+    assert.equal(waitUntilTasks.length, 1, "状态写应交给 waitUntil");
+    assert.equal(writeStarted, 1, "状态写应已启动，只是没被等待");
+
+    // 放行后台写，确认它最终会完成（waitUntil 里的 promise 不会挂住）。
+    if (releaseWrite) releaseWrite();
+    await Promise.allSettled(waitUntilTasks);
+  } finally {
+    kernel.patchOpsStatus = originalPatchOpsStatus;
+  }
 });
 
 test("Tailwind compatibility prelude is targeted and idempotent", () => {
@@ -3107,352 +3354,6 @@ test("proxy request state ignores query tokens that are unsafe for request heade
   assert.equal(transport.newHeaders.has("Authorization"), false);
 });
 
-test("TMDB provider id search converts to a title and year request", async () => {
-  isolateState.TmdbLookupCache.clear();
-  const fetched = [];
-  await withWorkerGlobals(
-    {
-      fetch: async (url, init = {}) => {
-        fetched.push({ url: String(url), headers: new Headers(init.headers) });
-        return new Response(JSON.stringify({ title: "Blade Runner", release_date: "1982-06-25" }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
-      },
-    },
-    async () => {
-      const source = new URL(
-        "https://worker.test/node/secret/Items?AnyProviderIdEquals=tmdb.78&IncludeItemTypes=Movie&Recursive=true",
-      );
-      const converted = await convertTmdbRequestFromUrl(source, {
-        TMDB_API_READ_TOKEN: "read-token",
-      });
-      assert.ok(converted instanceof URL, "expected a converted URL");
-      assert.equal(converted.searchParams.has("AnyProviderIdEquals"), false);
-      assert.equal(converted.searchParams.get("SearchTerm"), "Blade Runner");
-      assert.equal(converted.searchParams.get("Years"), "1982");
-      assert.equal(converted.searchParams.get("IncludeItemTypes"), "Movie");
-      assert.equal(fetched.length, 1);
-      assert.equal(fetched[0].url, "https://api.themoviedb.org/3/movie/78?language=zh-CN");
-      assert.equal(fetched[0].headers.get("Authorization"), "Bearer read-token");
-    },
-  );
-});
-
-test("TMDB provider id search uses the api key and only converts provider URLs", async () => {
-  isolateState.TmdbLookupCache.clear();
-  const fetched = [];
-  await withWorkerGlobals(
-    {
-      fetch: async (url) => {
-        fetched.push(String(url));
-        return new Response(JSON.stringify({ name: "Some Show", first_air_date: "2008-01-20" }), {
-          status: 200,
-        });
-      },
-    },
-    async () => {
-      const seriesUrl = new URL(
-        "https://worker.test/Items?AnyProviderIdEquals=tmdb.1396&IncludeItemTypes=Series",
-      );
-      const converted = await convertTmdbRequestFromUrl(seriesUrl, { TMDB_API_KEY: "env-api-key" });
-      assert.equal(converted.searchParams.get("SearchTerm"), "Some Show");
-      assert.equal(converted.searchParams.get("Years"), "2008");
-      assert.equal(
-        fetched[0],
-        "https://api.themoviedb.org/3/tv/1396?language=zh-CN&api_key=env-api-key",
-      );
-
-      const plainUrl = new URL("https://worker.test/Items?IncludeItemTypes=Movie");
-      assert.equal(
-        await convertTmdbRequestFromUrl(plainUrl, { TMDB_API_READ_TOKEN: "read-token" }),
-        null,
-      );
-    },
-  );
-  assert.equal(fetched.length, 1);
-});
-
-test("TMDB provider id search keeps the original URL when the lookup is rejected", async () => {
-  isolateState.TmdbLookupCache.clear();
-  await withWorkerGlobals(
-    {
-      fetch: async () => new Response("blocked", { status: 429 }),
-    },
-    async () => {
-      const source = new URL(
-        "https://worker.test/Items?AnyProviderIdEquals=tmdb.78&IncludeItemTypes=Movie",
-      );
-      assert.equal(
-        await convertTmdbRequestFromUrl(source, { TMDB_API_READ_TOKEN: "read-token" }),
-        null,
-      );
-    },
-  );
-});
-
-test("TMDB provider id search does nothing without a configured credential", async () => {
-  isolateState.TmdbLookupCache.clear();
-  let fetchCount = 0;
-  await withWorkerGlobals(
-    {
-      fetch: async () => {
-        fetchCount += 1;
-        return new Response("{}", { status: 200 });
-      },
-    },
-    async () => {
-      const source = new URL(
-        "https://worker.test/Items?AnyProviderIdEquals=tmdb.78&IncludeItemTypes=Movie",
-      );
-      assert.equal(await convertTmdbRequestFromUrl(source, {}), null);
-    },
-  );
-  assert.equal(fetchCount, 0);
-});
-
-test("TMDB provider id search memoizes a successful lookup", async () => {
-  isolateState.TmdbLookupCache.clear();
-  let fetchCount = 0;
-  await withWorkerGlobals(
-    {
-      fetch: async () => {
-        fetchCount += 1;
-        return new Response(JSON.stringify({ title: "Cached Movie", release_date: "1999-01-01" }), {
-          status: 200,
-        });
-      },
-    },
-    async () => {
-      const source = new URL(
-        "https://worker.test/Items?AnyProviderIdEquals=tmdb.501&IncludeItemTypes=Movie",
-      );
-      const first = await convertTmdbRequestFromUrl(source, { TMDB_API_READ_TOKEN: "read-token" });
-      const second = await convertTmdbRequestFromUrl(source, { TMDB_API_READ_TOKEN: "read-token" });
-      assert.equal(first.searchParams.get("SearchTerm"), "Cached Movie");
-      assert.equal(first.searchParams.get("Years"), "1999");
-      assert.equal(second.searchParams.get("SearchTerm"), "Cached Movie");
-      assert.equal(fetchCount, 1);
-    },
-  );
-});
-
-test("TMDB provider id search prefers runtime config credentials over env", async () => {
-  isolateState.TmdbLookupCache.clear();
-  const fetched = [];
-  await withWorkerGlobals(
-    {
-      fetch: async (url, init = {}) => {
-        fetched.push({ url: String(url), headers: new Headers(init.headers) });
-        return new Response(JSON.stringify({ title: "Config Movie", release_date: "2001-02-03" }), {
-          status: 200,
-        });
-      },
-    },
-    async () => {
-      const source = new URL(
-        "https://worker.test/Items?AnyProviderIdEquals=tmdb.603&IncludeItemTypes=Movie",
-      );
-      const converted = await convertTmdbRequestFromUrl(
-        source,
-        { TMDB_API_READ_TOKEN: "env-token" },
-        { tmdbApiReadToken: "config-token" },
-      );
-      assert.equal(converted.searchParams.get("SearchTerm"), "Config Movie");
-      assert.equal(fetched.length, 1);
-      assert.equal(fetched[0].headers.get("Authorization"), "Bearer config-token");
-      assert.equal(fetched[0].url, "https://api.themoviedb.org/3/movie/603?language=zh-CN");
-    },
-  );
-});
-
-test("TMDB provider id search treats config credentials as a group over env", async () => {
-  isolateState.TmdbLookupCache.clear();
-  const fetched = [];
-  await withWorkerGlobals(
-    {
-      fetch: async (url, init = {}) => {
-        fetched.push({ url: String(url), headers: new Headers(init.headers) });
-        return new Response(JSON.stringify({ title: "Group Movie", release_date: "1990-05-06" }), {
-          status: 200,
-        });
-      },
-    },
-    async () => {
-      const source = new URL(
-        "https://worker.test/Items?AnyProviderIdEquals=tmdb.701&IncludeItemTypes=Movie",
-      );
-      const converted = await convertTmdbRequestFromUrl(
-        source,
-        { TMDB_API_READ_TOKEN: "env-token" },
-        { tmdbApiV3Key: "config-v3-key" },
-      );
-      assert.equal(converted.searchParams.get("SearchTerm"), "Group Movie");
-      assert.equal(fetched.length, 1);
-      assert.equal(
-        fetched[0].url,
-        "https://api.themoviedb.org/3/movie/701?language=zh-CN&api_key=config-v3-key",
-      );
-      assert.equal(fetched[0].headers.get("Authorization"), null);
-    },
-  );
-});
-
-test("TMDB lookup warns once when account-settings credentials shadow env credentials", async () => {
-  isolateState.TmdbLookupCache.clear();
-  isolateState.TmdbCredentialOverrideWarned = false;
-  const warnings = [];
-  let fetchCount = 0;
-  await withWorkerGlobals(
-    {
-      fetch: async () => {
-        fetchCount += 1;
-        return new Response(JSON.stringify({ title: "Shadowed" }), { status: 200 });
-      },
-      console: { ...console, warn: (...args) => warnings.push(args) },
-    },
-    async () => {
-      const source = new URL(
-        "https://worker.test/Items?AnyProviderIdEquals=tmdb.905&IncludeItemTypes=Movie",
-      );
-      const converted = await convertTmdbRequestFromUrl(
-        source,
-        { TMDB_API_READ_TOKEN: "env-token" },
-        { tmdbApiV3Key: "config-v3-key" },
-      );
-      assert.equal(converted.searchParams.get("SearchTerm"), "Shadowed");
-      await convertTmdbRequestFromUrl(
-        source,
-        { TMDB_API_READ_TOKEN: "env-token" },
-        { tmdbApiV3Key: "config-v3-key" },
-      );
-    },
-  );
-  assert.equal(fetchCount, 1, "the repeated lookup must be served from cache");
-  assert.equal(warnings.length, 1, "the shadowed env credential must be reported exactly once");
-  assert.match(String(warnings[0][0]), /tmdb\.credentials_override/);
-});
-
-test("TMDB provider id search falls back to env credentials when config is empty", async () => {
-  isolateState.TmdbLookupCache.clear();
-  const fetched = [];
-  await withWorkerGlobals(
-    {
-      fetch: async (url, init = {}) => {
-        fetched.push({ url: String(url), headers: new Headers(init.headers) });
-        return new Response(JSON.stringify({ title: "Env Movie", release_date: "1991-07-08" }), {
-          status: 200,
-        });
-      },
-    },
-    async () => {
-      const source = new URL(
-        "https://worker.test/Items?AnyProviderIdEquals=tmdb.702&IncludeItemTypes=Movie",
-      );
-      const converted = await convertTmdbRequestFromUrl(
-        source,
-        { TMDB_API_READ_TOKEN: "env-token" },
-        { tmdbApiReadToken: "", tmdbApiV3Key: "" },
-      );
-      assert.equal(converted.searchParams.get("SearchTerm"), "Env Movie");
-      assert.equal(fetched[0].headers.get("Authorization"), "Bearer env-token");
-    },
-  );
-});
-
-test("TMDB provider id search short-caches a rejected lookup", async () => {
-  isolateState.TmdbLookupCache.clear();
-  let fetchCount = 0;
-  await withWorkerGlobals(
-    {
-      fetch: async () => {
-        fetchCount += 1;
-        return new Response("gone", { status: 404 });
-      },
-    },
-    async () => {
-      const source = new URL(
-        "https://worker.test/Items?AnyProviderIdEquals=tmdb.703&IncludeItemTypes=Movie",
-      );
-      assert.equal(
-        await convertTmdbRequestFromUrl(source, { TMDB_API_READ_TOKEN: "read-token" }),
-        null,
-      );
-      assert.equal(
-        await convertTmdbRequestFromUrl(source, { TMDB_API_READ_TOKEN: "read-token" }),
-        null,
-      );
-      assert.equal(fetchCount, 1);
-    },
-  );
-});
-
-test("TMDB provider id search honors a configured metadata language", async () => {
-  isolateState.TmdbLookupCache.clear();
-  const fetched = [];
-  await withWorkerGlobals(
-    {
-      fetch: async (url) => {
-        fetched.push(String(url));
-        return new Response(
-          JSON.stringify({ title: "English Movie", release_date: "1988-01-01" }),
-          { status: 200 },
-        );
-      },
-    },
-    async () => {
-      const source = new URL(
-        "https://worker.test/Items?AnyProviderIdEquals=tmdb.801&IncludeItemTypes=Movie",
-      );
-      await convertTmdbRequestFromUrl(
-        source,
-        { TMDB_API_READ_TOKEN: "read-token", TMDB_LANGUAGE: "fr-FR" },
-        { tmdbLanguage: "en-US" },
-      );
-      assert.equal(fetched[0], "https://api.themoviedb.org/3/movie/801?language=en-US");
-      // the language is part of the cache key, so switching language triggers a fresh lookup
-      const source2 = new URL(
-        "https://worker.test/Items?AnyProviderIdEquals=tmdb.801&IncludeItemTypes=Movie",
-      );
-      await convertTmdbRequestFromUrl(source2, {
-        TMDB_API_READ_TOKEN: "read-token",
-        TMDB_LANGUAGE: "fr-FR",
-      });
-      assert.equal(fetched[1], "https://api.themoviedb.org/3/movie/801?language=fr-FR");
-    },
-  );
-});
-
-test("TMDB provider id search skips episode and season lookups", async () => {
-  isolateState.TmdbLookupCache.clear();
-  let fetchCount = 0;
-  await withWorkerGlobals(
-    {
-      fetch: async () => {
-        fetchCount += 1;
-        return new Response("{}", { status: 200 });
-      },
-    },
-    async () => {
-      const episodeUrl = new URL(
-        "https://worker.test/Items?AnyProviderIdEquals=tmdb.901&IncludeItemTypes=Episode",
-      );
-      const seasonUrl = new URL(
-        "https://worker.test/Items?AnyProviderIdEquals=tmdb.902&IncludeItemTypes=Season",
-      );
-      assert.equal(
-        await convertTmdbRequestFromUrl(episodeUrl, { TMDB_API_READ_TOKEN: "read-token" }),
-        null,
-      );
-      assert.equal(
-        await convertTmdbRequestFromUrl(seasonUrl, { TMDB_API_READ_TOKEN: "read-token" }),
-        null,
-      );
-      assert.equal(fetchCount, 0);
-    },
-  );
-});
-
 test("medb list counts replace the emos node /emby/Items/Counts response", async () => {
   isolateState.MedbItemsCountsCache.clear();
   const fetched = [];
@@ -3545,22 +3446,26 @@ test("medb counts stay out of unrelated nodes, paths, and methods", async () => 
   assert.equal(fetchCount, 0);
 });
 
-test("node normalization keeps the TMDB aggregation flag as a strict boolean", () => {
-  const enabled = kernel.normalizeNode("alpha", {
-    target: "https://origin.test",
-    tmdbAggregationEnabled: true,
-  }).data;
-  assert.equal(enabled.tmdbAggregationEnabled, true);
-  const coerced = kernel.normalizeNode("alpha", {
-    target: "https://origin.test",
-    tmdbAggregationEnabled: "yes",
-  }).data;
-  assert.equal(coerced.tmdbAggregationEnabled, false);
+test("node normalization keeps tmdbAggregationEnabled as a cleared compatibility field", () => {
+  // TMDB 查询转换已移除。字段名与类型仍保留，避免旧 KV / 旧备份读取时报错或丢字段，
+  // 但任何输入（包括历史 true）都必须被清空成 false，不能留下一个「看起来开着」的开关。
+  for (const input of [true, "yes", 1, false, undefined]) {
+    const normalized = kernel.normalizeNode("alpha", {
+      target: "https://origin.test",
+      tmdbAggregationEnabled: input,
+    }).data;
+    assert.equal(
+      normalized.tmdbAggregationEnabled,
+      false,
+      `输入 ${JSON.stringify(input)} 必须被清空`,
+    );
+  }
   const summary = kernel.normalizeNodeSummaryPayload("alpha", {
     target: "https://origin.test",
     tmdbAggregationEnabled: true,
   });
-  assert.equal(summary.tmdbAggregationEnabled, true);
+  assert.equal(summary.tmdbAggregationEnabled, false);
+  assert.equal("tmdbAggregationEnabled" in summary, true, "兼容字段不能被删掉");
 });
 
 test("blocked cross-origin image redirects fall back to a client-visible redirect", async () => {

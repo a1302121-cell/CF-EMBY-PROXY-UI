@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img alt="version" src="https://img.shields.io/badge/version-V19.9-2563eb">
+  <img alt="version" src="https://img.shields.io/badge/version-V20.0-2563eb">
   <img alt="platform" src="https://img.shields.io/badge/platform-Cloudflare%20Workers-orange">
   <img alt="storage" src="https://img.shields.io/badge/storage-KV%20%2B%20D1-green">
   <img alt="ui" src="https://img.shields.io/badge/panel-SaaS%20UI-purple">
@@ -13,7 +13,7 @@
 
 > 一个以 `worker/` 为生产源码、以根目录 `worker.js` 为单文件部署产物的 Cloudflare Worker 项目：统一多台 Emby 节点入口、隐藏源站 IP、支持直连/反代混合策略、提供 `ADMIN_PATH`（默认 `/admin`）可视化后台，并集成日志、Cloudflare 统计、Telegram 日报与控制面 / 数据面分层优化。
 
-> 当前 **V19.9** 把管理端的重复请求与凭据面一起收口：界面皮肤从浏览器本地偏好升级为 KV 配置字段 `adminUiSkin`（存 `sys:theme`），随 bootstrap 注入首帧即落主题，导入旧备份或局部保存配置时缺失该字段会沿用现值，不再被静默重置；仪表盘分层数据 60 秒内复用（优先 1 小时 D1 快照）、设置 bootstrap 5 秒内合并在飞请求 / 10 秒内直接返回、日志第一页 30 秒内复用，翻页、强刷与跨域一律绕开缓存，保存配置后同时失效仪表盘缓存；强制刷新被后来的普通加载顶掉时也会解锁，刷新按钮不再永久失效；Vue 换成 runtime-only 构建。客户端可见的 `Location` 一律剥离 userinfo，只有与节点基址完全一致（origin + 账号 + 密码）的凭据才保留，路径式跨域写法统一归一为同一绝对目标，非可跟随状态（300/305）同样剥离；跳数预算收敛成单个常量，与 `redirect_limit` 诊断标签不再可能失同步。访问日志改成先判定后构造：命中缓存、进度节流 204、直连 404、探针透传、entry 307 与上游错误等路径都先过 `shouldRecordAccessLog` / `shouldWriteAccessLog`，会被丢弃的行不再构造 `detailJson`，`logWriteMode=error` 下流式中断仍记 502；`Logger.record` 的过滤一处未改，日志行数不变。私有鉴权头名匹配拆出已归一化的 `matchPrivateMediaAuthHeaderName`，元数据缓存身份计算不再对每个头重复 `trim().toLowerCase()`。`worker.js` 标记 `-diff`（压缩器每次重排标识符，产物差异全是改名噪声），新鲜度由 `check-worker-bundle` 守住，bundle 硬守卫提到 1.5 MB、工作目标 1.1 MB，`*.pprof` 进 `.gitignore`。V19.8 的构建期门禁、单文件管理台交付、契约测试与 V19.7 的重定向 / 鉴权加固、控制面与数据面分层、缓存键清洗等能力全部保留。
+> 当前 **V20.0** 是一次减法发布：把 V19.9 之后加进来的聚合层整体撤回，Worker 与后端重新对齐远程主线，管理端只保留界面与交付改进。EMOS 聚合、三档聚合策略（`auto` / `emos` / `tmdb`）、todb 凭证与 `todbvs` 改写、跨节点列表 / 剧集 / 版本聚合全部移除，`worker/`、`worker.js` 与相关测试回到远程仓库版本；`tmdbApiReadToken` / `tmdbApiV3Key` / `tmdbLanguage` 作为配置兼容字段保留（字段、脱敏规则与备份往返都在，值不再被读取），`tmdbAggregationEnabled` 保留字段名但读取时一律清空为 `false`，管理端不再提供聚合开关、策略下拉与 todb 输入框。管理端保留的改进：4 个首屏 CDN 脚本改为同源摇树交付（`frontend/vendor/` 随 `ASSETS` 部署，Worker 按 `assetKey` 改写并代理），内置壳补上 vendor 改写与 `bundled` 投递分支，断网也能启动；颜色统一走 CSS 变量、入口与访问密钥收进高级设置、节点面板与弹窗按同一套间距重排；新增 Playwright 真浏览器冒烟与 5 视图 × 4 主题的视觉基线；仓库换行统一为 LF，`frontend/src/` 继续作为非生产参考源。
 
   ![img](https://web.axuitomo.qzz.io/api/p/img/github/PixPin_2026-08-03_14-00-35.png?download=true&sign=TltPfTfUurzkQ5FsY4rpQ1Wd%2Bwu1Oji3rC%2FVo2NbV%2BM%3D%3A0)
 
@@ -256,7 +256,7 @@ Worker 作为公网入口，外部只能看到 Cloudflare 边缘节点，而不�
 | **`ADMIN_PATH`** | 文本变量 (Var) | **自定义管理入口**。用于修改默认的 `/admin` 路径，有效防范自动化扫描工具的嗅探。 | `/secret_portal_99`<br>\> ⚠️ **注意**：不能以 `/api` 开头。 |
 | **`HOST`** | 文本变量 (Var) | **主访问域名**。启用 host prefix 代理或保存 host prefix 节点前必须配置；只填写合法 DNS 主机名。 | `emby.example.com`，不要带协议、端口、路径、通配符或 IP。 |
 | **`LEGACY_HOST`** | 文本变量 (Var) | **兼容旧访问域名**。迁移主域名时保留旧的路径式节点入口。 | `old-emby.example.com` |
-| **`TMDB_API_READ_TOKEN`** / **`TMDB_API_KEY`** / **`TMDB_LANGUAGE`** | 加密变量 / 文本变量 | **TMDB 聚合兜底**。仅当后台「账号设置」里的 TMDB 凭据为空时才使用；两项凭据都在后台填写后，环境变量会被整组忽略。 | 见 `.dev.vars.example` |
+| **`TMDB_API_READ_TOKEN`** / **`TMDB_API_KEY`** / **`TMDB_LANGUAGE`** | 加密变量 / 文本变量 | **已停用（保留兼容）**。V20.0 移除了 TMDB 查询转换，这三项不再被任何代码读取，填写也不会影响请求；后台「账号设置」里的同名配置项同理保留但不再生效。 | 可留空。见 `.dev.vars.example` |
 
 > 💡 **命名兼容性提示**：
 > 核心代码已向下兼容多种旧版命名（如 `KV` / `EMBY_KV` / `EMBY_PROXY` 会自动映射为 `ENI_KV`，`D1` / `PROXY_LOGS` 会映射为 `DB`）。但**强烈建议在新部署时统一使用 `ENI_KV` 和 `DB`**，以确保与后续的更新、README 说明及自动化脚本保持一致。

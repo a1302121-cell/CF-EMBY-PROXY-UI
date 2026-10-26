@@ -56,6 +56,9 @@ const requiredChecks = [
       "tests/frontend-runtime-enhancements.test.mjs",
       "tests/admin-contract-parity.test.mjs",
       "tests/version-consistency.test.mjs",
+      "tests/tech-stack-pins.test.mjs",
+      "tests/frontend-color-tokens.test.mjs",
+      "tests/admin-vendor-bundle.test.mjs",
     ],
     cwd: repositoryRoot,
   },
@@ -70,6 +73,12 @@ const requiredChecks = [
     command: process.execPath,
     args: ["./scripts/check-frontend-sources.mjs"],
     cwd: repositoryRoot,
+  },
+  {
+    name: "Admin vendor tree-shaking artifacts",
+    command: process.execPath,
+    args: ["./scripts/build-admin-vendor.mjs", "--check"],
+    cwd: frontendDirectory,
   },
   {
     name: "Release CDN paths",

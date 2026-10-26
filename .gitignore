@@ -9,10 +9,15 @@ frontend/.env.*.local
 /.env.*
 !/.env.example
 .wrangler/
+# Playwright：失败时的 trace/截图与 HTML 报告都不进仓库
+test-results/
+playwright-report/
 npm-debug.log*
 .ace-tool/
 .venv/
 bundled/
+# build-admin-vendor.mjs 的 tarball / 解包缓存（产物本身提交在 frontend/vendor/）
+/.cache/
 .worker-dist/
 .worker.js.tmp
 prompts/
@@ -28,3 +33,13 @@ frontend/dist/.vite/
 
 # 本地私有部署配置（真实 worker 名 / KV / D1 / 域），只在本机使用
 /wrangler.local.toml
+
+# 外部参考用的第三方 worker 构建产物，仅供比对，不进仓库
+/worker (*).js
+# 同上：会话里用来比对的第三方快照，含明文凭据，绝不入库
+/TMDB版本.js
+/tmdb-search-converter.js
+/worker代理与TMDB聚合原理拆解.md
+
+# 一次性本地备份（TMDB 转换移除前），不随仓库分发
+/.backup-tmdb/
