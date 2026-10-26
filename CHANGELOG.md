@@ -10,6 +10,7 @@
 - **TMDB 查询转换一并移除**：`convertTmdbRequestFromUrl`、`buildTmdbConvertedRequestUrl`、`TmdbLookupCache`、`TmdbCredentialOverrideWarned` 与 `TMDB_LOOKUP_*` 常量全部删除，节点请求不再把 `AnyProviderIdEquals=tmdb.<id>` 改写成标题 + 年份查询。管理端也不再提供聚合开关、聚合策略下拉与 todb API Key 输入框。
 - **管理端交付**：4 个首屏 CDN 脚本改为同源摇树交付，`frontend/vendor/` 随 `ASSETS` 部署到 `dist/vendor/`，Worker 按 `assetKey` 改写 URL 并代理。内置 ASSETS 壳补上 vendor 改写与 `bundled` 投递分支（此前只有上传壳与远程 release 壳生效，断网时内置壳会白屏），`__warm` 同步覆盖内置壳的 4 个资产。
 - **管理端界面**：颜色统一走 CSS 变量，节点面板与弹窗按同一套间距重排；入口模式与访问密钥收进高级设置；「继承全局」选项直接显示当前全局值；标签颜色改为自绘下拉；首屏 4 个 CDN 脚本改同源并摇树。
+- **界面主题保存**：皮肤按钮原来拿着页面加载时的 `configRevision` 直接写整份配置，连续点两下、或在同一页刚保存过设置，就会撞上乐观锁并弹出「配置版本已变化」。现在两次写入串行化、只保留最后一次选择，遇到 `CONFIG_REVISION_CONFLICT` 自动回源取最新配置与版本号重写一次，失败提示只在重试也失败时出现。
 - **工程**：新增 Playwright 真浏览器冒烟（登录、5 视图切换、断网同源启动）与 5 视图 × 4 主题的视觉基线；仓库换行统一为 LF，`worker.js` 产物比较前归一换行；`frontend/src/` 继续作为不参与构建的参考源。
 - **性能**：内置壳渲染结果按 `ASSETS` 绑定 + 请求源缓存，`/admin` 命中缓存的中位耗时 −98%（82.6 → 1.85 ms），双域名交替 −99%（90.8 → 1.33 ms），304 条件请求 −99%（76.8 → 0.58 ms）；隔离渲染本身 −83%（8.6 → 1.5 ms）。管理壳状态写移出关键路径并复用稳定写节流，是命中路径降到 2 ms 以内的主因。D1 初始化把 DDL 合成 `batch` 并并行独立建表，往返次数 `runtime-core` −67%（18 → 6）、`logs-fts` −59%（27 → 11）。设置保存后用响应里的 config 与 revisions 直接同步表单，省掉一次 `loadSettings` 往返；设置保存的回滚快照改并行写入并跳过纯 `delete` 快照读。
 - **兼容字段保留**：`tmdbApiReadToken`、`tmdbApiV3Key`、`tmdbLanguage` 仍在配置模型、`CONFIG_SECRET_FIELDS` 脱敏规则与备份往返里，值不会被丢弃，但已没有任何代码读取它们。节点级 `tmdbAggregationEnabled` 同样保留字段名与布尔类型，读取节点时一律清空为 `false` 并写回，保存时不再从旧节点继承 `true`；`aggregationMode` 已从 Worker 字段表中消失。

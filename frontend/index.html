@@ -1192,23 +1192,65 @@ html[data-theme-switching] *::after{transition:none !important}
     else applyUiSkin(serverSkin, { persist: true });
   }
 
+  // 皮肤是整份配置写入，必须过乐观锁：连续点击、同一页面上的设置保存、其它设备的改动
+  // 都会让版本号对不上。皮肤本身只是单字段开关，冲突时取一份最新配置与版本号再写一次即可，
+  // 不该把「配置版本已变化」甩给用户；同时串行化，避免两次并发写互相踩版本号。
+  const uiSkinSaveState = { running: false, target: '', saved: '' };
+
+  async function saveUiSkinConfig(app, skin, config, expectedRevision) {
+    const base = config && typeof config === 'object' ? config : app?.runtimeConfig || {};
+    return await app.apiCall('saveConfig', {
+      config: { ...base, adminUiSkin: skin },
+      expectedConfigRevision: String(expectedRevision || ''),
+      meta: { section: 'ui', source: 'skin' }
+    });
+  }
+
+  // 只能拿服务端的当前版本，本地 adminRevisions 正是过期的那一份。
+  async function readUiSkinSaveBase(app) {
+    const bootstrap = await app.apiCall('getSettingsBootstrap', { forceRefresh: true });
+    return {
+      config: bootstrap?.config && typeof bootstrap.config === 'object' ? bootstrap.config : null,
+      revision: String(bootstrap?.revisions?.configRevision || '')
+    };
+  }
+
   async function persistUiSkinPreference(app, skin) {
     if (typeof app?.apiCall !== 'function') return;
-    const next = normalizeUiSkin(skin);
+    uiSkinSaveState.target = normalizeUiSkin(skin);
+    if (uiSkinSaveState.running) return;
+    uiSkinSaveState.running = true;
     try {
-      const result = await app.apiCall('saveConfig', {
-        config: { ...(app.runtimeConfig || {}), adminUiSkin: next },
-        expectedConfigRevision: String(app.adminRevisions?.configRevision || ''),
-        meta: { section: 'ui', source: 'skin' }
-      });
-      if (result?.revisions && typeof app.applyAdminRevisions === 'function')
-        app.applyAdminRevisions(result.revisions);
-      if (app.runtimeConfig && typeof app.runtimeConfig === 'object')
-        app.runtimeConfig.adminUiSkin = normalizeUiSkin(result?.config?.adminUiSkin || next);
+      while (true) {
+        const target = uiSkinSaveState.target;
+        // 保存中的点击只记最后一次选择：已经落地或已被更晚的选择覆盖就退出。
+        if (!target || target === uiSkinSaveState.saved) break;
+        uiSkinSaveState.target = '';
+        let result;
+        try {
+          result = await saveUiSkinConfig(
+            app,
+            target,
+            app.runtimeConfig,
+            app.adminRevisions?.configRevision
+          );
+        } catch (error) {
+          if (String(error?.code || '').toUpperCase() !== 'CONFIG_REVISION_CONFLICT') throw error;
+          const fresh = await readUiSkinSaveBase(app);
+          result = await saveUiSkinConfig(app, target, fresh.config, fresh.revision);
+        }
+        uiSkinSaveState.saved = normalizeUiSkin(result?.config?.adminUiSkin || target);
+        if (result?.revisions && typeof app.applyAdminRevisions === 'function')
+          app.applyAdminRevisions(result.revisions);
+        if (app.runtimeConfig && typeof app.runtimeConfig === 'object')
+          app.runtimeConfig.adminUiSkin = uiSkinSaveState.saved;
+      }
     } catch (error) {
       console.error('ui skin save failed', error);
       if (typeof app?.showMessage === 'function')
         app.showMessage('界面主题已在本机生效，但保存到 Worker 配置失败：' + (error?.message || '未知错误'), { tone: 'warning', modal: true });
+    } finally {
+      uiSkinSaveState.running = false;
     }
   }
 
@@ -2685,7 +2727,8 @@ html[data-theme-switching] *::after{transition:none !important}
       app.apiCall = async function apiCallWithNodeResourceWarnings(action, payload = {}) {
         const normalizedAction = String(action || '');
         let requestPayload = payload && typeof payload === 'object' ? payload : {};
-        if (normalizedAction === 'getSettingsBootstrap') {
+        // forceRefresh 是失败重试用的：缓存里的版本号正是冲突掉的那一份，必须回源。
+        if (normalizedAction === 'getSettingsBootstrap' && requestPayload.forceRefresh !== true) {
           const cachedBootstrap = readFreshSettingsBootstrap(app);
           if (cachedBootstrap) return cachedBootstrap;
         }

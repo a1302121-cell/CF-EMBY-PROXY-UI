@@ -796,6 +796,68 @@ test("concurrent settings saves cannot both commit the same config revision", as
   }
 });
 
+test("a skin save retried with a fresh revision keeps the concurrent change", async () => {
+  // 管理端皮肤按钮原来拿着旧 configRevision 直接保存，一旦别处刚改过配置就报“配置版本已变化”。
+  // 修复后的路径是：冲突 -> 重新取 bootstrap 的配置与版本号 -> 再写一次。
+  const { kv } = createKv({
+    [kernel.CONFIG_KEY]: { rateLimitRpm: 20, adminUiSkin: "classic" },
+  });
+  const env = {
+    ENI_KV: kv,
+    __CONFIG_CACHE_NAMESPACE: "config-kv-safety-skin-retry",
+  };
+  invalidateRuntimeConfigCache();
+
+  try {
+    const stale = await (
+      await adminActions.getSettingsBootstrap({}, { env, kv, db: null, ctx: null })
+    ).json();
+    // 另一处先改了一版，皮肤保存手里的版本号就作废了。
+    const concurrentSave = await adminActions.saveConfig(
+      { config: { ...stale.config, rateLimitRpm: 42 } },
+      { env, kv, ctx: null, meta: {} },
+    );
+    assert.equal(concurrentSave.status, 200);
+
+    await assert.rejects(
+      adminActions.saveConfig(
+        {
+          config: { ...stale.config, adminUiSkin: "claude" },
+          expectedConfigRevision: stale.revisions.configRevision,
+        },
+        { env, kv, ctx: null, meta: {} },
+      ),
+      (error) => error?.code === "CONFIG_REVISION_CONFLICT" && error?.status === 409,
+    );
+    assert.equal((await kv.get(kernel.CONFIG_KEY, { type: "json" })).adminUiSkin, "classic");
+
+    // 前端补丁的重试：forceRefresh 绕过短缓存，拿到当前配置与当前版本号。
+    const fresh = await (
+      await adminActions.getSettingsBootstrap(
+        { forceRefresh: true },
+        { env, kv, db: null, ctx: null },
+      )
+    ).json();
+    assert.notEqual(fresh.revisions.configRevision, stale.revisions.configRevision);
+
+    const retried = await adminActions.saveConfig(
+      {
+        config: { ...fresh.config, adminUiSkin: "claude" },
+        expectedConfigRevision: fresh.revisions.configRevision,
+      },
+      { env, kv, ctx: null, meta: {} },
+    );
+    assert.equal(retried.status, 200);
+
+    const stored = await kv.get(kernel.CONFIG_KEY, { type: "json" });
+    assert.equal(stored.adminUiSkin, "claude");
+    // 重试必须基于重新读到的配置，否则会把别人刚改的 rateLimitRpm 覆盖回去。
+    assert.equal(stored.rateLimitRpm, 42);
+  } finally {
+    invalidateRuntimeConfigCache();
+  }
+});
+
 test("active admin index renders when a remote PoP still sees stale config", async () => {
   const record = await buildAdminLocalIndexUploadRecord(
     adminShellHtml("active-from-envelope"),

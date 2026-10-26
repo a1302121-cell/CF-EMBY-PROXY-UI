@@ -691,6 +691,139 @@ test("ui skin honors the server bootstrap value and saves the choice back to con
   assert.equal(app.runtimeConfig.adminUiSkin, "claude");
 });
 
+test("ui skin save refreshes the config revision and retries once after a conflict", async () => {
+  const { persistUiSkinPreference } = loadEnhancementTestHooks();
+  const calls = [];
+  const messages = [];
+  const app = {
+    runtimeConfig: { rateLimitRpm: 20, adminUiSkin: "classic" },
+    adminRevisions: { configRevision: "2026-01-01T00:00:00.000Z.stale" },
+    async apiCall(action, payload) {
+      calls.push({ action, payload });
+      if (action === "getSettingsBootstrap") {
+        return {
+          config: { rateLimitRpm: 20, adminUiSkin: "classic" },
+          revisions: { configRevision: "2026-01-01T00:00:00.000Z.current" },
+        };
+      }
+      if (payload.expectedConfigRevision.endsWith("stale")) {
+        const error = new Error("配置版本已变化，请刷新设置后重新提交");
+        error.code = "CONFIG_REVISION_CONFLICT";
+        throw error;
+      }
+      return {
+        config: { ...payload.config },
+        revisions: { configRevision: "2026-01-01T00:00:01.000Z.current" },
+      };
+    },
+    applyAdminRevisions(revisions) {
+      app.adminRevisions = revisions;
+    },
+    showMessage(message, options) {
+      messages.push({ message, options });
+    },
+  };
+
+  await persistUiSkinPreference(app, "claude");
+
+  // 冲突后必须回源拿版本号：本地 adminRevisions 正是过期的那一份。
+  assert.deepEqual(
+    calls.map((call) => call.action),
+    ["saveConfig", "getSettingsBootstrap", "saveConfig"],
+  );
+  assert.equal(calls[1].payload.forceRefresh, true);
+  assert.equal(calls[2].payload.expectedConfigRevision, "2026-01-01T00:00:00.000Z.current");
+  assert.equal(calls[2].payload.config.adminUiSkin, "claude");
+  assert.equal(calls[2].payload.config.rateLimitRpm, 20);
+  assert.equal(app.adminRevisions.configRevision, "2026-01-01T00:00:01.000Z.current");
+  assert.equal(app.runtimeConfig.adminUiSkin, "claude");
+  assert.deepEqual(messages, [], "重试成功后不应该再报保存失败");
+});
+
+test("ui skin saves are serialized so a second click cannot collide with the first", async () => {
+  const { persistUiSkinPreference } = loadEnhancementTestHooks();
+  const saves = [];
+  let releaseFirstSave;
+  const firstSaveGate = new Promise((resolve) => {
+    releaseFirstSave = resolve;
+  });
+  const app = {
+    runtimeConfig: { adminUiSkin: "classic" },
+    adminRevisions: { configRevision: "r1" },
+    async apiCall(action, payload) {
+      assert.equal(action, "saveConfig");
+      saves.push(payload);
+      if (saves.length === 1) {
+        await firstSaveGate;
+        return { config: { adminUiSkin: "claude" }, revisions: { configRevision: "r2" } };
+      }
+      return {
+        config: { adminUiSkin: payload.config.adminUiSkin },
+        revisions: { configRevision: "r3" },
+      };
+    },
+    applyAdminRevisions(revisions) {
+      app.adminRevisions = revisions;
+    },
+    showMessage(message, options) {
+      throw new Error(`unexpected warning: ${message} ${JSON.stringify(options)}`);
+    },
+  };
+
+  const firstClick = persistUiSkinPreference(app, "claude");
+  const secondClick = persistUiSkinPreference(app, "classic");
+  releaseFirstSave();
+  await Promise.all([firstClick, secondClick]);
+
+  // 只保留最后一次选择，并且第二次写入用的是第一次返回的新版本号。
+  assert.equal(saves.length, 2);
+  assert.equal(saves[0].expectedConfigRevision, "r1");
+  assert.equal(saves[1].expectedConfigRevision, "r2");
+  assert.equal(saves[1].config.adminUiSkin, "classic");
+  assert.equal(app.runtimeConfig.adminUiSkin, "classic");
+
+  // 重复点已经生效的主题不再产生写入。
+  await persistUiSkinPreference(app, "classic");
+  assert.equal(saves.length, 2);
+});
+
+test("forced settings bootstrap bypasses the short settings cache", async () => {
+  const { patchSafetyContractMethods } = loadEnhancementTestHooks();
+  const calls = [];
+  const app = {
+    adminBootstrapCache: {
+      cachedAt: 1,
+      data: {
+        config: { rateLimitRpm: 20 },
+        nodes: [],
+        runtimeStatus: {},
+        hostDomain: "example.test",
+        revisions: { configRevision: "cached" },
+      },
+    },
+    adminRevisions: {},
+    showMessage() {},
+    async apiCallImpl(action, payload) {
+      calls.push({ action, payload });
+      return { config: { rateLimitRpm: 20 }, revisions: { configRevision: `r${calls.length}` } };
+    },
+  };
+  app.apiCall = function apiCall(action, payload) {
+    return this.apiCallImpl(action, payload);
+  };
+  patchSafetyContractMethods(app);
+
+  await app.apiCall("getSettingsBootstrap");
+  await app.apiCall("getSettingsBootstrap");
+  await app.apiCall("getSettingsBootstrap", { forceRefresh: true });
+
+  assert.deepEqual(
+    calls.map((call) => call.action),
+    ["getSettingsBootstrap", "getSettingsBootstrap"],
+  );
+  assert.equal(calls[1].payload.forceRefresh, true);
+});
+
 test("node health probes carry the line port into the ping target", async () => {
   const { patchSafetyContractMethods } = loadEnhancementTestHooks();
   const requests = [];
