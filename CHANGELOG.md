@@ -11,6 +11,7 @@
 - **管理端交付**：4 个首屏 CDN 脚本改为同源摇树交付，`frontend/vendor/` 随 `ASSETS` 部署到 `dist/vendor/`，Worker 按 `assetKey` 改写 URL 并代理。内置 ASSETS 壳补上 vendor 改写与 `bundled` 投递分支（此前只有上传壳与远程 release 壳生效，断网时内置壳会白屏），`__warm` 同步覆盖内置壳的 4 个资产。
 - **管理端界面**：颜色统一走 CSS 变量，节点面板与弹窗按同一套间距重排；入口模式与访问密钥收进高级设置；「继承全局」选项直接显示当前全局值；标签颜色改为自绘下拉；首屏 4 个 CDN 脚本改同源并摇树。
 - **工程**：新增 Playwright 真浏览器冒烟（登录、5 视图切换、断网同源启动）与 5 视图 × 4 主题的视觉基线；仓库换行统一为 LF，`worker.js` 产物比较前归一换行；`frontend/src/` 继续作为不参与构建的参考源。
+- **性能**：内置壳渲染结果按 `ASSETS` 绑定 + 请求源缓存，`/admin` 命中缓存的中位耗时 −98%（82.6 → 1.85 ms），双域名交替 −99%（90.8 → 1.33 ms），304 条件请求 −99%（76.8 → 0.58 ms）；隔离渲染本身 −83%（8.6 → 1.5 ms）。管理壳状态写移出关键路径并复用稳定写节流，是命中路径降到 2 ms 以内的主因。D1 初始化把 DDL 合成 `batch` 并并行独立建表，往返次数 `runtime-core` −67%（18 → 6）、`logs-fts` −59%（27 → 11）。设置保存后用响应里的 config 与 revisions 直接同步表单，省掉一次 `loadSettings` 往返；设置保存的回滚快照改并行写入并跳过纯 `delete` 快照读。
 - **兼容字段保留**：`tmdbApiReadToken`、`tmdbApiV3Key`、`tmdbLanguage` 仍在配置模型、`CONFIG_SECRET_FIELDS` 脱敏规则与备份往返里，值不会被丢弃，但已没有任何代码读取它们。节点级 `tmdbAggregationEnabled` 同样保留字段名与布尔类型，读取节点时一律清空为 `false` 并写回，保存时不再从旧节点继承 `true`；`aggregationMode` 已从 Worker 字段表中消失。
 - **medb 计数保留**：`emos` 节点（或线路指向 `video.emos.best`）的 `GET /emby/Items/Counts` 仍由 `medb.lat` 的统计替换，这与聚合无关，属于远程主线自带的展示适配。
 - **升级注意**：跨节点列表、剧集与版本聚合已不存在，依赖这些能力的部署需要回退到 V19.9 的产物。升级到 V20.0 后第一次读取节点列表会把历史 `tmdbAggregationEnabled: true` 写回为 `false`，这是预期行为，不需要手工改 KV。
