@@ -5081,7 +5081,10 @@ function defineAdminShellDelivery(dependencies = {}, shell = {}) {
         });
       storedResponse = new Response(html, { status: 200, headers: new Headers(headers) });
     }
-    await shell.patchAdminShellRuntimeStatus(
+    // 状态写不阻塞页面：这里只登记 waitUntil，不 await。状态里没有本次响应需要读的字段，
+    // 而 D1 单次写比渲染本身还贵，放在关键路径上会把命中缓存的 1.4ms 拉成几十 ms。
+    // throttleStableWrites 让状态没变时跳过重复写，和远程壳缓存命中路径保持一致。
+    const statusPatchTask = shell.patchAdminShellRuntimeStatus(
       env,
       {
         shellState,
@@ -5101,9 +5104,12 @@ function defineAdminShellDelivery(dependencies = {}, shell = {}) {
         indexUrlSource: "worker_assets",
         effectiveRef: "frontend/dist/index.html",
         effectiveRefType: "static_assets",
+        throttleStableWrites: true,
       },
-      ctx,
+      null,
     );
+    if (ctx && typeof ctx.waitUntil === "function") ctx.waitUntil(statusPatchTask);
+    else await statusPatchTask;
     if (shell.requestMatchesAdminHtmlResponse(request, storedResponse))
       return shell.buildConditionalNotModifiedResponseFromStoredResponse(
         storedResponse,

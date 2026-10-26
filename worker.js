@@ -3984,9 +3984,9 @@ function _d(o = {}, e = {}) {
     const w = String(D.headers.get("ETag") || "").trim(), x = String(D.headers.get("Last-Modified") || "").trim(), M = ce(cr(E)), O = n(C, A);
     let W = null;
     if (O && (w || x) && O.bootstrapKey === M && O.assetEtag === w && O.assetLastModified === x && (W = i(O)), !W) {
-      const X = await Le(D, e.ADMIN_REMOTE_SHELL_MAX_BYTES);
-      if (X.exceeded || !X.text) throw new Error(`bundled admin shell payload invalid: ${X.bytes} bytes`);
-      const U = e.buildAdminShellStoredPayloadFromHtml(X.text, E, b, A, {
+      const U = await Le(D, e.ADMIN_REMOTE_SHELL_MAX_BYTES);
+      if (U.exceeded || !U.text) throw new Error(`bundled admin shell payload invalid: ${U.bytes} bytes`);
+      const F = e.buildAdminShellStoredPayloadFromHtml(U.text, E, b, A, {
         sourceLabel: "bundled admin shell",
         contentType: D.headers.get("Content-Type") || "text/html",
         adminPath: E.adminPath,
@@ -3994,20 +3994,20 @@ function _d(o = {}, e = {}) {
         lastModified: x || "Thu, 01 Jan 1970 00:00:00 GMT",
         originEtag: w
       });
-      if (!U?.storedResponse) throw new Error("bundled admin shell response is unavailable");
-      const F = await U.storedResponse.clone().text(), I = [...U.storedResponse.headers.entries()];
+      if (!F?.storedResponse) throw new Error("bundled admin shell response is unavailable");
+      const I = await F.storedResponse.clone().text(), k = [...F.storedResponse.headers.entries()];
       (w || x) && s(C, A, {
         bootstrapKey: M,
         assetEtag: w,
         assetLastModified: x,
-        html: F,
-        headers: I
-      }), W = new Response(F, {
+        html: I,
+        headers: k
+      }), W = new Response(I, {
         status: 200,
-        headers: new Headers(I)
+        headers: new Headers(k)
       });
     }
-    return await e.patchAdminShellRuntimeStatus(S, {
+    const X = e.patchAdminShellRuntimeStatus(S, {
       shellState: P,
       initHealth: b,
       indexState: L,
@@ -4024,8 +4024,10 @@ function _d(o = {}, e = {}) {
       indexUrl: A,
       indexUrlSource: "worker_assets",
       effectiveRef: "frontend/dist/index.html",
-      effectiveRefType: "static_assets"
-    }, R), e.requestMatchesAdminHtmlResponse(_, W) ? e.buildConditionalNotModifiedResponseFromStoredResponse(W, e.ADMIN_REMOTE_SHELL_BROWSER_CACHE_CONTROL) : e.buildAdminRemoteShellClientResponse(W, _.method);
+      effectiveRefType: "static_assets",
+      throttleStableWrites: !0
+    }, null);
+    return R && typeof R.waitUntil == "function" ? R.waitUntil(X) : await X, e.requestMatchesAdminHtmlResponse(_, W) ? e.buildConditionalNotModifiedResponseFromStoredResponse(W, e.ADMIN_REMOTE_SHELL_BROWSER_CACHE_CONTROL) : e.buildAdminRemoteShellClientResponse(W, _.method);
   }
   async function l(_, S, R, b = Ke(S), T = {}, C = "index_url_not_configured") {
     const N = gt(S, T), P = e.buildAdminShellState(S, b, T), E = e.buildAdminBootstrapPayload(S, b, T), L = cr(E), A = jn(b), D = new URL(_.url).pathname;

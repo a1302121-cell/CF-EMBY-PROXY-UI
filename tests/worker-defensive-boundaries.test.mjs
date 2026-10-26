@@ -2049,6 +2049,67 @@ test("bundled shell page cache keeps one entry per request origin", async () => 
   assert.equal(assetFetches, 6);
 });
 
+test("bundled shell page does not block on the admin shell status write", async () => {
+  // D1 单次写比渲染整份壳还贵。状态写必须只登记 waitUntil，
+  // 否则命中页面缓存后剩下的唯一开销就是这次写，页面会被拖慢几十毫秒。
+  const shellBody = adminShellDocument({
+    head: `<title>Bundled UI</title>${BUNDLED_VENDOR_PINS.map((url) => `<script src="${url}"></script>`).join("")}`,
+    body: '<div id="app">non blocking</div>',
+  });
+  const env = {
+    ADMIN_PATH: "/console",
+    ASSETS: {
+      async fetch() {
+        return new Response(shellBody, {
+          headers: { "Content-Type": "text/html; charset=utf-8", ETag: '"block-v1"' },
+        });
+      },
+    },
+  };
+  const initHealth = { ok: true, missing: [] };
+  const originalPatchOpsStatus = kernel.patchOpsStatus;
+  let releaseWrite = null;
+  let writeStarted = 0;
+  kernel.patchOpsStatus = async () => {
+    writeStarted += 1;
+    // 模拟慢 D1：页面必须在这条链完成之前就返回。给个上限，让「阻塞实现」直接失败而不是挂住。
+    await Promise.race([
+      new Promise((resolve) => {
+        releaseWrite = resolve;
+      }),
+      new Promise((resolve) => setTimeout(resolve, 50)),
+    ]);
+    return {};
+  };
+
+  try {
+    const waitUntilTasks = [];
+    const ctx = {
+      waitUntil: (task) => waitUntilTasks.push(task),
+      passThroughOnException() {},
+    };
+    const response = await renderAdminPage(
+      new Request("https://worker.test/console"),
+      env,
+      ctx,
+      initHealth,
+      {},
+    );
+    const html = await response.text();
+
+    assert.equal(response.status, 200);
+    assert.match(html, /non blocking/);
+    assert.equal(waitUntilTasks.length, 1, "状态写应交给 waitUntil");
+    assert.equal(writeStarted, 1, "状态写应已启动，只是没被等待");
+
+    // 放行后台写，确认它最终会完成（waitUntil 里的 promise 不会挂住）。
+    if (releaseWrite) releaseWrite();
+    await Promise.allSettled(waitUntilTasks);
+  } finally {
+    kernel.patchOpsStatus = originalPatchOpsStatus;
+  }
+});
+
 test("Tailwind compatibility prelude is targeted and idempotent", () => {
   const legacyShell =
     '<!doctype html><html><head><script src="https://cdn.tailwindcss.com"></script><script nonce="abc">tailwind.config={darkMode:\'class\'}</script></head><body><div id="app"></div></body></html>';
