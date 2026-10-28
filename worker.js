@@ -15707,12 +15707,19 @@ function Qg(o = {}, e = {}) {
       });
     },
     async storeMetadataCache(t, r, a, n = {}) {
-      const s = fr();
-      if (!s || !t || !r || r.status !== 200 || n.proxiedExternalRedirect === !0 || a.isManifest && !lo(n.sourceUrl)) return !1;
-      try {
-        return await s.put(t, e.buildMetadataCacheStorageResponse(r, a, n)), !0;
-      } catch {
+      const s = () => {
+        try {
+          Promise.resolve(r?.body?.cancel?.()).catch(() => {
+          });
+        } catch {
+        }
         return !1;
+      }, i = fr();
+      if (!i || !t || !r || r.status !== 200 || n.proxiedExternalRedirect === !0 || a.isManifest && !lo(n.sourceUrl)) return s();
+      try {
+        return await i.put(t, e.buildMetadataCacheStorageResponse(r, a, n)), !0;
+      } catch {
+        return s();
       }
     },
     resolveMetadataTarget(t, r, a, n) {

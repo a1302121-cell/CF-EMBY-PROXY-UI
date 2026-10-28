@@ -8340,6 +8340,75 @@ test("managed stream still aborts when upstream stops sending", async () => {
   }
 });
 
+// 传进 storeMetadataCache 的是 response.clone()，不落盘的每条分支都必须取消。
+function buildTrackedCacheResponse(headers = {}) {
+  let cancelled = false;
+  const response = new Response(
+    new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("#EXTM3U\n"));
+        controller.close();
+      },
+      cancel() {
+        cancelled = true;
+      },
+    }),
+    { status: 200, headers: { "Content-Type": "application/x-mpegurl", ...headers } },
+  );
+  return { response, wasCancelled: () => cancelled };
+}
+
+function createTrackedEdgeCache() {
+  const stored = [];
+  return {
+    stored,
+    cache: {
+      async put(request, response) {
+        stored.push(await response.text());
+      },
+    },
+  };
+}
+
+const metadataCacheTestKey = () => new Request("https://worker.test/_metadata/Videos/1/main.m3u8");
+const metadataCacheTestUrl = (search = "") =>
+  new URL(`https://origin.test/Videos/1/main.m3u8${search}`);
+const metadataCacheTestTick = () => new Promise((resolve) => setImmediate(resolve));
+
+test("metadata cache storage cancels the clone it refuses to store", async () => {
+  const { cache, stored } = createTrackedEdgeCache();
+  await withWorkerGlobals({ caches: { default: cache } }, async () => {
+    // 转码播放列表不在 Worker 缓存白名单里。
+    const transcoding = buildTrackedCacheResponse();
+    assert.equal(
+      await proxyService.storeMetadataCache(
+        metadataCacheTestKey(),
+        transcoding.response,
+        { isManifest: true },
+        { sourceUrl: metadataCacheTestUrl("?Transcoding=true") },
+      ),
+      false,
+    );
+    await metadataCacheTestTick();
+    assert.equal(transcoding.wasCancelled(), true);
+
+    // 白名单里的播放列表仍然照常写入，取消逻辑不能误伤命中路径。
+    const cacheable = buildTrackedCacheResponse();
+    assert.equal(
+      await proxyService.storeMetadataCache(
+        metadataCacheTestKey(),
+        cacheable.response,
+        { isManifest: true },
+        { sourceUrl: metadataCacheTestUrl() },
+      ),
+      true,
+    );
+    await metadataCacheTestTick();
+    assert.equal(cacheable.wasCancelled(), false);
+    assert.deepEqual(stored, ["#EXTM3U\n"]);
+  });
+});
+
 test("upstream error logs respect the same pre-gate", () => {
   const originalBuildStructuredLogDetail = proxyService.buildStructuredLogDetail;
   let detailBuildCount = 0;

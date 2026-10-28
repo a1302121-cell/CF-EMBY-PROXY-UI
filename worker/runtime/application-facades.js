@@ -25313,11 +25313,19 @@ function defineProxyMetadataResponseMethods(dependencies = {}, kernel = {}) {
       });
     },
     async storeMetadataCache(cacheKey, response, requestTraits, options = {}) {
-      const cache = getDefaultCacheHandle();
-      if (!cache || !cacheKey || !response || response.status !== 200) return false;
-      if (options.proxiedExternalRedirect === true) return false;
-      if (requestTraits.isManifest && !shouldWorkerCacheMetadataUrl(options.sourceUrl))
+      // 调用方传进来的是 response.clone()：不写缓存就必须把这条分支取消，否则 tee 会把
+      // 每一块也推进这个没人读的队列，响应越大占的内存越多。
+      const drop = () => {
+        try {
+          Promise.resolve(response?.body?.cancel?.()).catch(() => {});
+        } catch {}
         return false;
+      };
+      const cache = getDefaultCacheHandle();
+      if (!cache || !cacheKey || !response || response.status !== 200) return drop();
+      if (options.proxiedExternalRedirect === true) return drop();
+      if (requestTraits.isManifest && !shouldWorkerCacheMetadataUrl(options.sourceUrl))
+        return drop();
       try {
         await cache.put(
           cacheKey,
@@ -25325,7 +25333,7 @@ function defineProxyMetadataResponseMethods(dependencies = {}, kernel = {}) {
         );
         return true;
       } catch {
-        return false;
+        return drop();
       }
     },
     resolveMetadataTarget(candidate, activeTargetBase, name, key) {
