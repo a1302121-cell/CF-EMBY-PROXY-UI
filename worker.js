@@ -15716,6 +15716,8 @@ function Qg(o = {}, e = {}) {
         return !1;
       }, i = fr();
       if (!i || !t || !r || r.status !== 200 || n.proxiedExternalRedirect === !0 || a.isManifest && !lo(n.sourceUrl)) return s();
+      const c = String(r.headers.get("Content-Encoding") || "").trim().toLowerCase();
+      if (c && c !== "identity") return s();
       try {
         return await i.put(t, e.buildMetadataCacheStorageResponse(r, a, n)), !0;
       } catch {

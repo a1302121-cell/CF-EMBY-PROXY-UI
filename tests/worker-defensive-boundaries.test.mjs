@@ -8409,6 +8409,26 @@ test("metadata cache storage cancels the clone it refuses to store", async () =>
   });
 });
 
+// 带编码的 body 只能原样落盘，而缓存命中路径不会跟客户端重新协商 Accept-Encoding。
+test("metadata cache storage skips compressed responses", async () => {
+  const { cache, stored } = createTrackedEdgeCache();
+  await withWorkerGlobals({ caches: { default: cache } }, async () => {
+    const encoded = buildTrackedCacheResponse({ "Content-Encoding": "gzip" });
+    assert.equal(
+      await proxyService.storeMetadataCache(
+        metadataCacheTestKey(),
+        encoded.response,
+        { isManifest: true },
+        { sourceUrl: metadataCacheTestUrl() },
+      ),
+      false,
+    );
+    await metadataCacheTestTick();
+    assert.equal(encoded.wasCancelled(), true);
+    assert.deepEqual(stored, []);
+  });
+});
+
 test("upstream error logs respect the same pre-gate", () => {
   const originalBuildStructuredLogDetail = proxyService.buildStructuredLogDetail;
   let detailBuildCount = 0;

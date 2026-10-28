@@ -25326,6 +25326,12 @@ function defineProxyMetadataResponseMethods(dependencies = {}, kernel = {}) {
       if (options.proxiedExternalRedirect === true) return drop();
       if (requestTraits.isManifest && !shouldWorkerCacheMetadataUrl(options.sourceUrl))
         return drop();
+      // 带 Content-Encoding 的响应只能按编码字节原样落盘，而命中路径不会跟客户端重新
+      // 协商 Accept-Encoding，宁可少缓存一次也不下发解不开的 body。
+      const contentEncoding = String(response.headers.get("Content-Encoding") || "")
+        .trim()
+        .toLowerCase();
+      if (contentEncoding && contentEncoding !== "identity") return drop();
       try {
         await cache.put(
           cacheKey,
