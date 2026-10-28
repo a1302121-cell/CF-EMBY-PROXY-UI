@@ -21,6 +21,7 @@
     "format": "oxfmt .",
     "format:check": "oxfmt --check .",
     "check": "node ./scripts/check-project.mjs",
+    "bench:stream": "node ./scripts/bench-worker-stream.mjs",
     "tail": "node --env-file-if-exists=.env ./node_modules/wrangler/bin/wrangler.js tail",
     "test:e2e": "playwright test tests/e2e/admin-smoke.spec.mjs",
     "test:visual": "playwright test tests/e2e/visual.spec.mjs"

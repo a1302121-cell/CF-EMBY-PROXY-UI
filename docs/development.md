@@ -64,6 +64,9 @@ npm.cmd run --workspace frontend preview
 
 # 管理端真实浏览器冒烟（Playwright + 本地 wrangler dev，见第 7 节）
 npm.cmd run test:e2e
+
+# Worker 流式路径基准，--baseline <rev> 做 A/B（见第 8 节）
+npm.cmd run bench:stream
 ```
 
 如果只需要运行 Node 测试，可使用：
@@ -144,3 +147,25 @@ npx playwright test tests/e2e/visual.spec.mjs --update-snapshots # 确认变化�
 - 像素差异只是冒烟级：同一份代码连跑两次也有 0.01% 量级抗锯齿抖动。要证明"某个颜色没变"，用计算样式逐条比对（`color`/`backgroundColor`/`border*Color`/`boxShadow`/`rect` 全量导出后 diff），不是看截图。
 - 深色主题通过 `addInitScript` 写 `localStorage["theme"]="dark"` 并断言 `html` 拿到 `dark` 类，不去点界面上本来没有的主题按钮。
 - 基线以迁移后的状态为准（现在跑是 0 差异）；迁移遗留的已知差异与 v4 的四个坑见 [`tech-stack.md` 第 5 节](./tech-stack.md)。
+
+## 8. Worker 流式路径基准
+
+`scripts/bench-worker-stream.mjs` 固定量四项流式指标，另附一个 tee 保留量探针，进出两端都用同一套口径，改动流式代码时直接跑 A/B：
+
+```powershell
+npm.cmd run bench:stream                                  # 只测当前工作区
+npm.cmd run bench:stream -- --baseline bd55db1            # 与某个 rev 对比，打印百分比
+npm.cmd run bench:stream -- --json --rounds 1             # 机器可读，测试用的就是这个
+```
+
+| 指标 | 守着什么 |
+| --- | --- |
+| 受管流每块成本 (ns) / 泵送上限 (MiB/s) | `buildManagedProxyResponseBody` 的 `pull` 里每块要做的事；idle 计时器就在这条路径上 |
+| 请求分类 API / 视频 / 音频 (ns) | `classifyRequest` 的正则链，含音频判定和路由正则合并 |
+| 响应头 CPU (ns) | `buildProxyResponseHeaders` 的剔除集合 |
+| 响应头线上字节 (B) | 客户端实际收到的头大小，剔除生效时可省 140 B |
+| tee 保留量 | `response.clone()` 未读分支不取消会留住整包（实测 16 MiB body → 16.00 MiB 保留，取消后 0） |
+
+`--baseline` 用 `git show` 把该 rev 的 `worker/` 抽到临时目录再导入，不建 worktree、不动 `node_modules`（`worker/` 内部只有相对 import）。
+
+看数时注意三件事：绝对值依赖机器状态，**只有百分比有意义**；这是 Node 的 V8，不是 workerd，`setTimeout/clearTimeout` 的实现不同，方向可信、幅度可能差 ±50%；节省量按分块数缩放，`每个分片节省 ≈ 每块差值 × 分片大小 ÷ 实际块大小`，CF 按 16–128 KiB 投递，块越小省得越多。基准跑 1–2 秒，不进 `npm.cmd run check`（时序受干扰），但 `tests/bench-worker-stream.test.mjs` 会守住它的口径不漂。
