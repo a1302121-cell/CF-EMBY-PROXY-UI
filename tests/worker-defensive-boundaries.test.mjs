@@ -8479,6 +8479,67 @@ test("audio stream paths count as playback critical for routing", () => {
     );
 });
 
+test("hop-by-hop response headers are not relayed to the client", () => {
+  const request = new Request("https://worker.test/alpha/Videos/1/stream");
+  const response = new Response("bytes", {
+    headers: {
+      "Content-Type": "video/mp4",
+      Connection: "keep-alive",
+      "Keep-Alive": "timeout=5",
+      "Proxy-Connection": "keep-alive",
+      TE: "trailers",
+      Trailer: "X-Upstream-Trailer",
+      "Transfer-Encoding": "chunked",
+      "X-Powered-By": "Emby",
+    },
+  });
+  const headers = proxyService.buildProxyResponseHeaders(
+    response,
+    request,
+    {},
+    "*",
+    { isBigStream: true },
+    {},
+  );
+  for (const hopHeader of [
+    "Connection",
+    "Keep-Alive",
+    "Proxy-Connection",
+    "TE",
+    "Trailer",
+    "Transfer-Encoding",
+    "X-Powered-By",
+  ])
+    assert.equal(headers.get(hopHeader), null, hopHeader);
+  assert.equal(headers.get("Content-Type"), "video/mp4");
+});
+
+// 101 只能伪造成 response-like 对象：fetch 规范的 Response 构造器不接受 101。
+test("websocket handshake keeps its Connection and Upgrade headers", () => {
+  const handshake = {
+    status: 101,
+    statusText: "Switching Protocols",
+    headers: new Headers({
+      Connection: "Upgrade",
+      Upgrade: "websocket",
+      "Sec-WebSocket-Accept": "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=",
+    }),
+  };
+  const headers = proxyService.buildProxyResponseHeaders(
+    handshake,
+    new Request("https://worker.test/alpha/embywebsocket", {
+      headers: { Upgrade: "websocket", Connection: "Upgrade" },
+    }),
+    {},
+    "*",
+    { isWsUpgrade: true },
+    {},
+  );
+  assert.equal(headers.get("Connection"), "Upgrade");
+  assert.equal(headers.get("Upgrade"), "websocket");
+  assert.equal(headers.get("Sec-WebSocket-Accept"), "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=");
+});
+
 test("upstream error logs respect the same pre-gate", () => {
   const originalBuildStructuredLogDetail = proxyService.buildStructuredLogDetail;
   let detailBuildCount = 0;

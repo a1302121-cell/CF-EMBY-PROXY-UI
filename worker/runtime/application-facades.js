@@ -2390,6 +2390,14 @@ var DROP_RESPONSE_HEADER_SET = /* @__PURE__ */ new Set([
   "referrer-policy",
   "x-powered-by",
   "server",
+  // 逐跳头只对单条连接成立，透传等于让下游把上游的连接语义当成自己的。
+  // upgrade 不在这里：101 握手响应必须把 Upgrade 还给客户端。
+  "connection",
+  "keep-alive",
+  "proxy-connection",
+  "te",
+  "trailer",
+  "transfer-encoding",
 ]);
 var LEGACY_PROXY_CONTEXT_COOKIE_NAME = "legacy_proxy_ctx";
 var LEGACY_PROXY_CONTEXT_COOKIE_MAX_AGE_SEC = 86400;
@@ -28935,6 +28943,9 @@ function defineProxyTransportMethods(dependencies = {}, kernel = {}) {
     ) {
       const modifiedHeaders = new Headers(response.headers);
       DROP_RESPONSE_HEADER_SET.forEach((h) => modifiedHeaders.delete(h));
+      // 101 是握手响应：Connection 属于握手的一部分，逐跳头清理不能把它剔掉。
+      if (response.status === 101 && response.headers.has("Connection"))
+        modifiedHeaders.set("Connection", response.headers.get("Connection"));
       modifiedHeaders.set("Access-Control-Allow-Origin", finalOrigin);
       if (dynamicCors && dynamicCors["Access-Control-Expose-Headers"])
         modifiedHeaders.set(
