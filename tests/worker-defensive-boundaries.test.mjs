@@ -8429,6 +8429,56 @@ test("metadata cache storage skips compressed responses", async () => {
   });
 });
 
+test("audio byte streams classify as media streams instead of API requests", () => {
+  const classify = (proxyPath) =>
+    proxyService.classifyRequest(
+      new Request(`https://worker.test/alpha${proxyPath}`),
+      proxyPath,
+      new URL(`https://worker.test/alpha${proxyPath}`),
+      {},
+    );
+  for (const proxyPath of [
+    "/Audio/1/stream",
+    "/Audio/1/stream.flac",
+    "/Audio/1/universal",
+    "/audio/1/stream.mp3",
+    "/Videos/1/stream.mp3",
+  ]) {
+    const traits = classify(proxyPath);
+    assert.equal(traits.isBigStream, true, `${proxyPath} must be a media stream`);
+    assert.equal(traits.isApiRequest, false, `${proxyPath} must not be an API request`);
+    assert.equal(traits.canStripAuthOnProtocolFallback, true, proxyPath);
+  }
+  // 音频元数据与播放信息仍然走 API 分支。
+  for (const proxyPath of ["/Audio/1", "/Audio/1/Lyrics", "/Items/1/PlaybackInfo"]) {
+    const traits = classify(proxyPath);
+    assert.equal(traits.isBigStream, false, proxyPath);
+    assert.equal(traits.isApiRequest, true, proxyPath);
+  }
+});
+
+test("audio stream paths count as playback critical for routing", () => {
+  for (const segments of [
+    ["alpha", "audio", "1", "stream"],
+    ["alpha", "audio", "1", "universal"],
+    ["alpha", "audio", "1", "stream.mp3"],
+  ])
+    assert.equal(
+      routeTesting.isPlaybackCriticalRouteContext({ segments }),
+      true,
+      segments.join("/"),
+    );
+  for (const segments of [
+    ["alpha", "audio", "1"],
+    ["alpha", "users", "1"],
+  ])
+    assert.equal(
+      routeTesting.isPlaybackCriticalRouteContext({ segments }),
+      false,
+      segments.join("/"),
+    );
+});
+
 test("upstream error logs respect the same pre-gate", () => {
   const originalBuildStructuredLogDetail = proxyService.buildStructuredLogDetail;
   let detailBuildCount = 0;

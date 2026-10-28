@@ -2334,7 +2334,11 @@ var SUBTITLE_EXTENSION_REGEX = /\.(?:srt|ass|vtt|sub)$/i;
 var EMBY_IMAGE_PATH_REGEX = /(?:\/Images\/|\/Icons\/|\/Branding\/|\/emby\/covers\/)/i;
 var STREAM_MANIFEST_EXTENSION_REGEX = /\.(?:m3u8|mpd)$/i;
 var STREAM_SEGMENT_EXTENSION_REGEX = /\.(?:ts|m4s)$/i;
-var STREAMING_MEDIA_EXTENSION_REGEX = /\.(?:mp4|m4v|m4a|ogv|webm|mkv|mov|avi|wmv|flv)$/i;
+var STREAMING_MEDIA_EXTENSION_REGEX =
+  /\.(?:mp4|m4v|mp3|m4a|m4b|flac|aac|ogg|oga|opus|wav|wma|ogv|webm|mkv|mov|avi|wmv|flv)$/i;
+// 音频和视频的主字节流走同一个判定：Audio 没有扩展名时只能靠路由段识别，否则会落进 isApiRequest。
+var VIDEO_STREAM_ROUTE_REGEX = /\/videos\/[^/]+\/(?:stream|original|download|file)\b/i;
+var AUDIO_STREAM_ROUTE_REGEX = /\/audio\/[^/]+\/(?:stream|original|download|file|universal)\b/i;
 var DROP_REQUEST_HEADER_SET = /* @__PURE__ */ new Set([
   "host",
   "x-real-ip",
@@ -8620,7 +8624,8 @@ function isPlaybackCriticalProxyPath(proxyPath = "") {
   )
     return true;
   return (
-    /\/videos\/[^/]+\/(?:stream|original|download|file)\b/i.test(normalizedPath) ||
+    VIDEO_STREAM_ROUTE_REGEX.test(normalizedPath) ||
+    AUDIO_STREAM_ROUTE_REGEX.test(normalizedPath) ||
     /\/items\/[^/]+\/download\b/i.test(normalizedPath)
   );
 }
@@ -27463,15 +27468,16 @@ function defineProxyRoutingDecisionMethods(dependencies = {}, kernel = {}) {
       const isPlaybackStartedRequest = isPlaybackSessionStartedPath(proxyPath);
       const isPlaybackSessionControlRequest =
         isPlaybackProgressRequest || isPlaybackStoppedRequest || isPlaybackStartedRequest;
-      const looksLikeVideoRoute =
+      const looksLikeMediaStreamRoute =
         STREAMING_MEDIA_EXTENSION_REGEX.test(proxyPath) ||
-        /\/videos\/[^/]+\/(stream|original|download|file)/i.test(proxyPath) ||
+        VIDEO_STREAM_ROUTE_REGEX.test(proxyPath) ||
+        AUDIO_STREAM_ROUTE_REGEX.test(proxyPath) ||
         /\/items\/[^/]+\/download/i.test(proxyPath) ||
         requestUrl.searchParams.get("Static") === "true" ||
         requestUrl.searchParams.get("Download") === "true";
       const isSafeMethod = requestMethod === "GET" || requestMethod === "HEAD";
       const isBigStream =
-        looksLikeVideoRoute && !isManifest && !isSegment && !isSubtitle && !isImage;
+        looksLikeMediaStreamRoute && !isManifest && !isSegment && !isSubtitle && !isImage;
       const isPlaybackCriticalRequest =
         isPlaybackInfoRequest || isSmartStrmMedia || isBigStream || isManifest || isSegment;
       const isApiRequest =
