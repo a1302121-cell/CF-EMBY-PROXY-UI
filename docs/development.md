@@ -168,4 +168,6 @@ npm.cmd run bench:stream -- --json --rounds 1             # 机器可读，测�
 
 `--baseline` 用 `git show` 把该 rev 的 `worker/` 抽到临时目录再导入，不建 worktree、不动 `node_modules`（`worker/` 内部只有相对 import）。
 
-看数时注意三件事：绝对值依赖机器状态，**只有百分比有意义**；这是 Node 的 V8，不是 workerd，`setTimeout/clearTimeout` 的实现不同，方向可信、幅度可能差 ±50%；节省量按分块数缩放，`每个分片节省 ≈ 每块差值 × 分片大小 ÷ 实际块大小`，CF 按 16–128 KiB 投递，块越小省得越多。基准跑 1–2 秒，不进 `npm.cmd run check`（时序受干扰），但 `tests/bench-worker-stream.test.mjs` 会守住它的口径不漂。
+这台工具的意义只在百分比，而且**仅供娱乐参考**：绝对值随机器状态漂（同一份代码两次跑能差 20% 以上），不能拿去跟别人的机器比，也不能当验收依据；百分比只用于同机同进程 A/B，粗筛"这次改动有没有往坏的方向走"。另外两点同样要记着：这是 Node 的 V8，不是 workerd，`setTimeout/clearTimeout` 的实现不同，方向可信、幅度可能差 ±50%；节省量按分块数缩放，`每个分片节省 ≈ 每块差值 × 分片大小 ÷ 实际块大小`，CF 按 16–128 KiB 投递，块越小省得越多。
+
+所以基准不进 `npm.cmd run check`（时序受干扰）：要判定**行为**有没有退化，写 `tests/` 里的断言；要判定**真实成本**，用 `npm.cmd run tail` 看线上的 Worker CPU time。`tests/bench-worker-stream.test.mjs` 守的也只是"测量口径没漂"，不是性能阈值。

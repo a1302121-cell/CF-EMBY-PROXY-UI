@@ -6,6 +6,8 @@
 // 另附一个 tee 保留量探针，用来量化「clone 分支不取消」会留下多少内存。
 //
 // 只测包装层，不测运行时拷贝：上游流每一块都复用同一份 Uint8Array。
+// 意义只在百分比，仅供娱乐参考：绝对值随机器状态漂，只用于同机同进程 A/B 粗筛方向，
+// 不作验收依据（行为看 tests/，真实成本看 wrangler tail 的 CPU time）。
 // 用法：
 //   node ./scripts/bench-worker-stream.mjs                  # 只测当前工作区
 //   node ./scripts/bench-worker-stream.mjs --baseline bd55db1
@@ -300,7 +302,9 @@ async function main() {
   const width = (index) => Math.max(...rows.map((row) => row[index].length));
   const labels = ["指标", "当前", options.baseline ? options.baseline : "基线", "变化"];
   const widths = rows[0].map((_, index) => Math.max(width(index), labels[index].length));
-  console.log("[bench:stream] 四项流式指标（中位数，" + options.rounds + " 轮）");
+  console.log(
+    `[bench:stream] 四项流式指标（中位数，${options.rounds} 轮）· 只看百分比 · 仅供娱乐参考`,
+  );
   console.log(labels.map((label, index) => label.padEnd(widths[index])).join("  "));
   for (const row of rows)
     console.log(row.map((cell, index) => cell.padEnd(widths[index])).join("  "));
