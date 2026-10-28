@@ -8226,6 +8226,120 @@ test("managed stream errors still log under error-only mode", async () => {
   assert.equal(payloads[0].category, "error");
 });
 
+function createStreamTestLifecycle() {
+  const listeners = new Set();
+  const lifecycle = {
+    abortReason: "",
+    onAbort(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    getAbortReason() {
+      return this.abortReason;
+    },
+    abort(reason) {
+      this.abortReason = reason;
+      for (const listener of listeners) listener(reason);
+    },
+    dispose() {
+      listeners.clear();
+    },
+  };
+  return lifecycle;
+}
+
+function buildManagedStreamTestExecution(requestLifecycle, proxyPath) {
+  return {
+    requestMethod: "GET",
+    request: new Request(`https://worker.test/alpha${proxyPath}`),
+    requestUrl: new URL(`https://worker.test/alpha${proxyPath}`),
+    proxyPath,
+    requestTraits: { isSegment: true },
+    upstreamTimeoutMs: 0,
+    currentConfig: { logEnabled: true, logWriteMode: "all" },
+    requestLifecycle,
+  };
+}
+
+// 计时只覆盖等待上游数据的窗口：分片已经躺在队列里等客户端来取时不能算上游空闲。
+test("managed stream does not abort while a chunk waits for the consumer", async () => {
+  const lifecycle = createStreamTestLifecycle();
+  let upstreamCancelled = false;
+  const upstreamState = {
+    response: new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(new Uint8Array([1, 2, 3]));
+        },
+        cancel() {
+          upstreamCancelled = true;
+        },
+      }),
+      { status: 200 },
+    ),
+    finalUrl: new URL("https://origin.test/Videos/1/hls1/main/0.ts"),
+    activeTargetBase: new URL("https://origin.test"),
+  };
+  const execution = buildManagedStreamTestExecution(lifecycle, "/Videos/1/hls1/main/0.ts");
+  const payloads = [];
+  const originalRecordAccessLog = proxyService.recordAccessLog;
+  const originalResolveIdleTimeout = proxyService.resolveResponseStreamIdleTimeoutMs;
+  proxyService.recordAccessLog = (_execution, payload) => payloads.push(payload);
+  proxyService.resolveResponseStreamIdleTimeoutMs = () => 20;
+  try {
+    // 队列填满后客户端一直不来取：计时器若还在跑，20ms 后就会把这条流 abort 成 504。
+    const body = proxyService.buildManagedProxyResponseBody(execution, upstreamState, null);
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    assert.equal(upstreamCancelled, false, "buffered chunks must not abort the upstream stream");
+    assert.deepEqual(
+      payloads.map((payload) => payload.statusCode),
+      [],
+    );
+    await body.cancel("test_done");
+  } finally {
+    proxyService.recordAccessLog = originalRecordAccessLog;
+    proxyService.resolveResponseStreamIdleTimeoutMs = originalResolveIdleTimeout;
+  }
+});
+
+// 上游真的不再给数据时，idle 超时仍然要生效。
+test("managed stream still aborts when upstream stops sending", async () => {
+  const lifecycle = createStreamTestLifecycle();
+  let upstreamCancelled = false;
+  const upstreamState = {
+    response: new Response(
+      new ReadableStream({
+        pull() {},
+        cancel() {
+          upstreamCancelled = true;
+        },
+      }),
+      { status: 200 },
+    ),
+    finalUrl: new URL("https://origin.test/Videos/1/hls1/main/0.ts"),
+    activeTargetBase: new URL("https://origin.test"),
+  };
+  const execution = buildManagedStreamTestExecution(lifecycle, "/Videos/1/hls1/main/0.ts");
+  const payloads = [];
+  const originalRecordAccessLog = proxyService.recordAccessLog;
+  const originalResolveIdleTimeout = proxyService.resolveResponseStreamIdleTimeoutMs;
+  proxyService.recordAccessLog = (_execution, payload) => payloads.push(payload);
+  proxyService.resolveResponseStreamIdleTimeoutMs = () => 20;
+  try {
+    proxyService.buildManagedProxyResponseBody(execution, upstreamState, null);
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    assert.equal(upstreamCancelled, true);
+    assert.deepEqual(
+      payloads.map((payload) => payload.statusCode),
+      [504],
+    );
+    assert.match(String(payloads[0].errorDetail), /stream_idle_timeout_20ms/);
+  } finally {
+    proxyService.recordAccessLog = originalRecordAccessLog;
+    proxyService.resolveResponseStreamIdleTimeoutMs = originalResolveIdleTimeout;
+  }
+});
+
 test("upstream error logs respect the same pre-gate", () => {
   const originalBuildStructuredLogDetail = proxyService.buildStructuredLogDetail;
   let detailBuildCount = 0;

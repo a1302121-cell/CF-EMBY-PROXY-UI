@@ -25893,8 +25893,9 @@ function defineProxyMetadataResponseMethods(dependencies = {}, kernel = {}) {
                 controller.close();
                 return;
               }
+              // 计时只覆盖 reader.read() 窗口。enqueue 之后若继续计时，客户端暂停或缓冲
+              // 超过阈值会被 stream_idle_timeout 误杀，日志还会记成上游 504。
               controller.enqueue(value);
-              armIdleTimer();
             } catch (error) {
               clearIdleTimer();
               const abortReason = requestLifecycle.getAbortReason();

@@ -16113,7 +16113,7 @@ function Qg(o = {}, e = {}) {
                   h(), E.close();
                   return;
                 }
-                E.enqueue(T), S();
+                E.enqueue(T);
               } catch (b) {
                 y();
                 const T = s.getAbortReason(), C = T === "stream_idle_timeout" ? dr(T, `${l}ms`) : T ? dr(T) : b;
