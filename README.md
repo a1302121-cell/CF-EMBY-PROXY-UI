@@ -672,6 +672,8 @@ https://你的域名/hk/123
 - **图片 / 静态资源 / 字幕 / 白名单播放列表**：允许缓存或轻预热
 - **`.mp4` / `.mkv` / `.ts` / `.m4s` 等视频主流**：不在 Worker 内做黑洞预取，不调用 `caches.default.put()` 存大对象
 - **视频主流响应头**：Worker 对主字节流、`206`、播放列表和 smart-strm 响应一律下发 `Cache-Control: no-store`（`206` 的部分内容本就不能被共享缓存按偏移复用），缓存交给 Cache Rules 的“忽略源站并使用此 TTL”覆盖；如果你的规则选的是“遵循源站”，这些响应就不会被边缘缓存
+- **音频字节流与视频同判定**：`/Audio/{id}/stream|universal|original|download|file` 和 mp3 / flac / aac 等扩展名按主字节流处理（直通、无 API 重试、`no-store`），不再落进 `isApiRequest`；`/Audio/{id}/Lyrics` 这类元数据仍走 API 分支
+- **回源逐跳头不下发**：`connection` / `keep-alive` / `proxy-connection` / `te` / `trailer` / `transfer-encoding` 与 `Server`、`X-Powered-By` 一起在响应侧剔除；`Upgrade` 例外，101 握手会原样保留 `Connection: Upgrade`
 - **Worker Cache Key**：会主动剥离 Token、设备号、客户端版本、播放会话等与媒体二进制无关的 Emby 状态参数
 - **Cloudflare `cf` 提示**：回源 `fetch` 不附加任何 `cf` 字段（没有 `cacheEverything` / `cacheTtl`），不覆盖 Dashboard 里的 Cache Rules
 - **编码响应不入元数据缓存**：带 `Content-Encoding`（gzip / br 等）的响应不写 `caches.default`，因为缓存命中路径不会跟客户端重新协商 `Accept-Encoding`
