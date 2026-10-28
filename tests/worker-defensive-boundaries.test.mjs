@@ -7281,7 +7281,7 @@ test("Worker and HTML update uploads only the script bound to the current host",
   }
 });
 
-test("Worker and HTML update accepts a Worker script whose file is not named worker.js", async () => {
+test("Worker and HTML update accepts uploads whose files are not named worker.js / index.html", async () => {
   const { kv } = createInMemoryKvStore({
     [kernel.CONFIG_KEY]: {
       cfAccountId: "account-id",
@@ -7322,7 +7322,7 @@ test("Worker and HTML update accepts a Worker script whose file is not named wor
           {
             workerFileName: "my-release-#3.js",
             workerScriptContent: "export default { fetch() { return new Response('ok'); } }",
-            indexFileName: "index.html",
+            indexFileName: "admin-shell-v2.html",
             indexHtml: adminShellDocument({ body: '<div id="app"></div>' }),
           },
           {
@@ -7337,6 +7337,7 @@ test("Worker and HTML update accepts a Worker script whose file is not named wor
 
     assert.equal(response.status, 200);
     assert.equal(payload.worker.fileName, "my-release-#3.js");
+    assert.equal(payload.html.fileName, "admin-shell-v2.html");
     assert.deepEqual(uploads, [
       {
         url: "https://api.cloudflare.com/client/v4/accounts/account-id/workers/scripts/current-worker/content",

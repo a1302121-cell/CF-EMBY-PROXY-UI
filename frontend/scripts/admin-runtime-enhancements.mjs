@@ -1066,7 +1066,7 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
     workerFile: null,
     indexFile: null,
     submitting: false,
-    status: '必须同时选择 Worker 脚本和 index.html。',
+    status: '必须同时选择 Worker 脚本和 HTML 文件。',
     tone: ''
   };
   function canRenderIcons() {
@@ -1344,12 +1344,12 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
   }
 
   function validateWorkerHtmlUploadFiles(workerFile, indexFile) {
-    // Worker 脚本不再要求文件名叫 worker.js：任意 .js 名字都接受，缺省在服务端落成 worker.js。
-    if (!workerFile || !indexFile) return '必须同时选择 Worker 脚本和 index.html。';
+    // 只看文件类型不看名字：Worker 脚本任意 .js 名、HTML 任意 .html 名都接受。
+    if (!workerFile || !indexFile) return '必须同时选择 Worker 脚本和 HTML 文件。';
     if (!String(workerFile.name || '').trim()) return 'Worker 脚本未选择文件。';
-    if (String(indexFile.name || '').trim().toLowerCase() !== 'index.html') return 'HTML 文件名必须是 index.html。';
+    if (!String(indexFile.name || '').trim()) return 'HTML 文件未选择文件。';
     if (workerFile.size > 3 * 1024 * 1024) return 'Worker 脚本超过 3 MiB 上限。';
-    if (indexFile.size > 2 * 1024 * 1024) return 'index.html 超过 2 MiB 上限。';
+    if (indexFile.size > 2 * 1024 * 1024) return 'HTML 文件超过 2 MiB 上限。';
     return '';
   }
 
@@ -1423,7 +1423,7 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
       const indexInput = state.root?.querySelector('[data-admin-index-file-input="1"]');
       if (workerInput) workerInput.value = '';
       if (indexInput) indexInput.value = '';
-      state.status = 'Worker 和 index.html 已同时更新。';
+      state.status = 'Worker 和 HTML 已同时更新。';
       state.tone = 'success';
       app.showMessage?.('Worker 和 HTML 已更新。', { tone: 'success' });
       const targetRevision = String(result?.html?.revision || '').trim();
@@ -1451,7 +1451,7 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
       workerHtmlUpdateState.root = root;
       workerHtmlUpdateState.workerFile = null;
       workerHtmlUpdateState.indexFile = null;
-      workerHtmlUpdateState.status = '必须同时选择 Worker 脚本和 index.html。';
+      workerHtmlUpdateState.status = '必须同时选择 Worker 脚本和 HTML 文件。';
       workerHtmlUpdateState.tone = '';
     }
     if (!root.dataset.adminWorkerHtmlReady) {
@@ -1459,7 +1459,7 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
       root.innerHTML = '<div class="ui-block-head"><div><div class="ui-section-kicker">Runtime Update</div><div class="ui-section-title">Worker 和 HTML 更新</div></div><span class="ui-chip-muted">双文件</span></div>'
         + '<div data-admin-worker-html-grid="1">'
         + '<label data-admin-worker-html-file="1"><span class="ui-field-label">Worker 脚本 (.js)</span><input data-admin-worker-file-input="1" type="file" accept=".js,text/javascript,application/javascript"><span data-admin-worker-file-meta="1" class="text-xs text-slate-500">未选择</span></label>'
-        + '<label data-admin-worker-html-file="1"><span class="ui-field-label">index.html</span><input data-admin-index-file-input="1" type="file" accept=".html,text/html"><span data-admin-index-file-meta="1" class="text-xs text-slate-500">未选择</span></label>'
+        + '<label data-admin-worker-html-file="1"><span class="ui-field-label">HTML 文件 (.html)</span><input data-admin-index-file-input="1" type="file" accept=".html,text/html"><span data-admin-index-file-meta="1" class="text-xs text-slate-500">未选择</span></label>'
         + '</div>'
         + '<div data-admin-worker-html-status="1" role="status" aria-live="polite" class="mt-4 rounded-control border border-slate-200 px-4 py-3 text-xs text-slate-600 dark:border-slate-700 dark:text-slate-300"></div>'
         + '<div data-admin-worker-html-actions="1" class="mt-4"><button data-admin-worker-html-refresh="1" type="button" class="settings-secondary-btn h-10 w-10" title="刷新当前页面" aria-label="刷新当前页面"><i data-lucide="refresh-cw" class="w-4 h-4" aria-hidden="true"></i></button><button data-admin-worker-html-submit="1" type="button" class="inline-flex items-center justify-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-xl text-sm transition disabled:opacity-50 disabled:pointer-events-none"><i data-lucide="upload-cloud" class="w-4 h-4" aria-hidden="true"></i><span>同时更新 Worker 和 HTML</span></button></div>';

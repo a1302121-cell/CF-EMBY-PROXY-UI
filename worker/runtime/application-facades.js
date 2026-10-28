@@ -2156,7 +2156,7 @@ function assertAdminIndexSourceConfigValid(rawConfig = {}) {
   if (!rawIndexUrl || parseAdminLocalIndexSourceUrl(rawIndexUrl)) return;
   throw createStructuredConfigError(
     "ADMIN_INDEX_SOURCE_UPLOAD_ONLY",
-    "管理台 HTML 仅支持本地上传，请通过启动门或 Worker 和 HTML 更新面板提交 index.html",
+    "管理台 HTML 仅支持本地上传，请通过启动门或 Worker 和 HTML 更新面板提交 .html 文件",
     400,
     { field: "indexUrl" },
   );
@@ -3265,15 +3265,15 @@ function defineAdminShellTemplate(dependencies = {}, shell = {}) {
         <section class="admin-gate-card">
           <header class="admin-gate-head">
             <p class="admin-gate-kicker">Index Source</p>
-            <h1 class="admin-gate-title">上传 index.html</h1>
+            <h1 class="admin-gate-title">上传管理台 HTML</h1>
           </header>
           <form id="admin-index-gate-form" class="admin-gate-body" novalidate>
             <label class="admin-gate-field">
-              <span class="admin-gate-label">index.html</span>
+              <span class="admin-gate-label">HTML 文件 (.html)</span>
               <input id="admin-gate-local-file" class="admin-gate-input" type="file" accept=".html,text/html" required />
               <span id="admin-gate-local-hint" class="admin-gate-hint">文件上限 2 MiB</span>
             </label>
-            <div id="admin-gate-status" class="admin-gate-status${hasLocalUpload ? " is-success" : ""}" role="status" aria-live="polite">${hasLocalUpload ? "当前已有 HTML 版本，可上传新文件替换。" : "请选择 index.html。"}</div>
+            <div id="admin-gate-status" class="admin-gate-status${hasLocalUpload ? " is-success" : ""}" role="status" aria-live="polite">${hasLocalUpload ? "当前已有 HTML 版本，可上传新文件替换。" : "请选择管理台 HTML 文件。"}</div>
             <div class="admin-gate-actions">
               <button id="admin-gate-submit" type="submit" class="admin-gate-btn">上传并进入管理台</button>
             </div>
@@ -3301,8 +3301,7 @@ function defineAdminShellTemplate(dependencies = {}, shell = {}) {
             : Math.max(0, Math.round(value / 1024)) + " KiB";
         }
         function validateFile(file) {
-          if (!file) return "请选择 index.html。";
-          if (String(file.name || "").trim().toLowerCase() !== "index.html") return "文件名必须是 index.html。";
+          if (!file) return "请选择管理台 HTML 文件。";
           if (file.size > 2 * 1024 * 1024) return "文件超过 2 MiB 上限。";
           return "";
         }
@@ -3323,7 +3322,7 @@ function defineAdminShellTemplate(dependencies = {}, shell = {}) {
           }
           if (submitButton) submitButton.disabled = true;
           if (localFileInput) localFileInput.disabled = true;
-          setGateStatus("正在上传并校验 index.html...", "");
+          setGateStatus("正在上传并校验 HTML...", "");
           let redirecting = false;
           try {
             const response = await fetch(ADMIN_INDEX_GATE_RUNTIME.adminPath || "/admin", {
@@ -3342,7 +3341,7 @@ function defineAdminShellTemplate(dependencies = {}, shell = {}) {
               throw new Error(String(message || "上传失败"));
             }
             redirecting = true;
-            setGateStatus("index.html 已更新，正在进入管理台...", "success");
+            setGateStatus("HTML 已更新，正在进入管理台...", "success");
             window.location.assign(ADMIN_INDEX_GATE_RUNTIME.adminPath || "/admin");
           } catch (error) {
             setGateStatus(error?.message ? "上传失败：" + error.message : "上传失败，请稍后重试。", "error");
@@ -11545,7 +11544,7 @@ function defineConfigActions(dependencies = {}, actions = {}) {
       if (!workerScriptContent.trim() || !indexHtml.trim())
         return jsonError(
           "WORKER_HTML_FILES_REQUIRED",
-          "必须同时上传 Worker 脚本和 index.html，缺一不可",
+          "必须同时上传 Worker 脚本和 HTML 文件，缺一不可",
           400,
           {
             workerFileProvided: Boolean(workerScriptContent.trim()),
@@ -11559,18 +11558,12 @@ function defineConfigActions(dependencies = {}, actions = {}) {
           workerScriptContent,
           data?.workerFileName,
         );
+        // HTML 只看类型不看名字：任意 .html 文件名都收，缺省落成 index.html。
         const indexFileName =
           String(data?.indexFileName || "")
             .trim()
             .split(/[\\/]+/)
-            .pop() || "";
-        if (indexFileName.toLowerCase() !== "index.html")
-          return jsonError(
-            "ADMIN_INDEX_UPLOAD_FILE_NAME_INVALID",
-            "HTML 文件名必须是 index.html",
-            400,
-            { fileName: indexFileName || String(data?.indexFileName || "").trim() },
-          );
+            .pop() || "index.html";
         indexRecord = await buildAdminLocalIndexUploadRecord(indexHtml, indexFileName);
       } catch (error) {
         return jsonError(
@@ -11721,13 +11714,6 @@ function defineConfigActions(dependencies = {}, actions = {}) {
             .trim()
             .split(/[\\/]+/)
             .pop() || "";
-        if (fileName.toLowerCase() !== "index.html")
-          return jsonError(
-            "ADMIN_INDEX_UPLOAD_FILE_NAME_INVALID",
-            "HTML 文件名必须是 index.html",
-            400,
-            { fileName: fileName || String(data?.fileName || "").trim() },
-          );
         const record = await buildAdminLocalIndexUploadRecord(data?.indexHtml, fileName);
         const persisted = await kernel.persistAdminIndexUpload(record, {
           env,
@@ -12518,12 +12504,7 @@ function defineNodeActions(dependencies = {}, actions = {}) {
             .trim()
             .split(/[\\/]+/)
             .pop() || "";
-        if (backupFileName.toLowerCase() !== "index.html")
-          return jsonError(
-            "ADMIN_INDEX_BACKUP_INVALID",
-            "完整备份中的 HTML 文件名必须是 index.html",
-            400,
-          );
+        // 备份里的 HTML 名字跟着导出时的上传名走，revision 才是唯一判据，不再校验文件名。
         try {
           importedIndexRecord = await buildAdminLocalIndexUploadRecord(
             data.adminIndexUpload.html,

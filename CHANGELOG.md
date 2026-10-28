@@ -12,7 +12,7 @@
 - **响应头**：回源响应剔除 `connection` / `keep-alive` / `proxy-connection` / `te` / `trailer` / `transfer-encoding` 等逐跳头，`upgrade` 保留且 101 握手会把 `Connection` 还原，WebSocket 握手不受影响。
 - **音频字节流**：`/Audio/{id}/stream`、`/Audio/{id}/universal` 这类无扩展名音频流不再落进 API 分支，与视频共用主字节流判定（Range、5xx 重试、协议回退时剥离查询参数鉴权都适用）；扩展名白名单补 mp3 / m4b / flac / aac / ogg / oga / opus / wav / wma，`Lyrics` 等元数据接口仍走 API。分类正则收敛为 `VIDEO_STREAM_ROUTE_REGEX` / `AUDIO_STREAM_ROUTE_REGEX` 并补 `\b`，`.../streaming` 不再误命中。
 - **视图切换动效**：整页 `translateY` 淡入改为不位移的 `viewFade`（时长与曲线走 `--transition-duration-ui` / `--ease-out-expo` 令牌），`#content-area` 加 `scrollbar-gutter: stable`，切换视图时内容区不再横向重排 ±15px、动画期间静止内容漂移归零。
-- **Worker 和 HTML 更新**：上传不再要求 Worker 脚本必须命名为 `worker.js`，任意文件名都接受（服务端缺省落成 `worker.js`，仍按内容判定 module / service-worker 语法）；`index.html` 的名字与 2 MiB 上限不变。
+- **Worker 和 HTML 更新只看类型不看文件名**：Worker 脚本任意 `.js` 名、管理台 HTML 任意 `.html` 名都接受，未命名时分别落成 `worker.js` / `index.html`；`worker.js` 的 module / service-worker 语法仍按内容判定。同时放开首次启动的「上传 index.html」门（改名为「上传管理台 HTML」）、独立 HTML 上传与完整备份导入（备份改为只认 revision，不再要求条目叫 `index.html`），体积上限（3 MiB / 2 MiB）不变。
 - **工程**：新增 `tests/e2e/admin-view-motion.spec.mjs`（`npm run test:e2e:motion`），用 `layout-shift`、`long-animation-frame`、rAF 帧间隔与逐帧位置采样给动效上门禁；新增 `scripts/bench-worker-stream.mjs` 流式路径四项 A/B 基准（仅同机百分比参考，不进 `npm run check`）；视觉基线因 `scrollbar-gutter` 重录一次。
 
 ## V20.0（2026-10-25）

@@ -13,7 +13,7 @@
 
 > 一个以 `worker/` 为生产源码、以根目录 `worker.js` 为单文件部署产物的 Cloudflare Worker 项目：统一多台 Emby 节点入口、隐藏源站 IP、支持直连/反代混合策略、提供 `ADMIN_PATH`（默认 `/admin`）可视化后台，并集成日志、Cloudflare 统计、Telegram 日报与控制面 / 数据面分层优化。
 
-> 当前 **V20.1** 是 V20.0 减法发布后的稳定性与性能收尾，重点全在播放链路的正确性与管理端的切换手感。Worker 侧：受管流的空闲超时改为只统计「等上游读」，客户端暂停或慢链路不再被误判成上游 504；Range 续传在跨 target 重试时丢弃客户端 `If-Range`，206 一律 `no-store`，直连 Range 的 HEAD 探测结果按会话缓存 30 秒；带 `Content-Encoding` 的响应不再写入元数据缓存，所有不写缓存的 clone 分支统一 `cancel()`；回源响应剔除逐跳头，101 握手保留 `Connection` / `Upgrade`；`/Audio/{id}/stream` 这类无扩展名音频流回到主字节流判定，与视频共用 Range、重试与协议回退策略。管理端：视图切换从整页 `translateY` 淡入改为不位移淡入，`#content-area` 用 `scrollbar-gutter: stable` 消除切换时内容区 ±15px 的横向重排，视觉基线因此重录一次；皮肤保存命中 `CONFIG_REVISION_CONFLICT` 时自动回源重写，不再误报「配置版本已变化」；「Worker 和 HTML 更新」面板不再要求 Worker 脚本必须叫 `worker.js`，任意文件名都接受。工程上新增 Playwright 动效门禁（`npm run test:e2e:motion`）与流式路径 A/B 基准脚本（`npm run bench:stream`，仅作同机百分比参考）；V20.0 的聚合层撤回与兼容字段保留保持不变。
+> 当前 **V20.1** 是 V20.0 减法发布后的稳定性与性能收尾，重点全在播放链路的正确性与管理端的切换手感。Worker 侧：受管流的空闲超时改为只统计「等上游读」，客户端暂停或慢链路不再被误判成上游 504；Range 续传在跨 target 重试时丢弃客户端 `If-Range`，206 一律 `no-store`，直连 Range 的 HEAD 探测结果按会话缓存 30 秒；带 `Content-Encoding` 的响应不再写入元数据缓存，所有不写缓存的 clone 分支统一 `cancel()`；回源响应剔除逐跳头，101 握手保留 `Connection` / `Upgrade`；`/Audio/{id}/stream` 这类无扩展名音频流回到主字节流判定，与视频共用 Range、重试与协议回退策略。管理端：视图切换从整页 `translateY` 淡入改为不位移淡入，`#content-area` 用 `scrollbar-gutter: stable` 消除切换时内容区 ±15px 的横向重排，视觉基线因此重录一次；皮肤保存命中 `CONFIG_REVISION_CONFLICT` 时自动回源重写，不再误报「配置版本已变化」；「Worker 和 HTML 更新」面板只看文件类型不看文件名，Worker 脚本任意 `.js` 名、HTML 任意 `.html` 名都接受（首次启动的上传门同样如此）。工程上新增 Playwright 动效门禁（`npm run test:e2e:motion`）与流式路径 A/B 基准脚本（`npm run bench:stream`，仅作同机百分比参考）；V20.0 的聚合层撤回与兼容字段保留保持不变。
 
   ![img](https://web.axuitomo.qzz.io/api/p/img/github/PixPin_2026-08-03_14-00-35.png?download=true&sign=TltPfTfUurzkQ5FsY4rpQ1Wd%2Bwu1Oji3rC%2FVo2NbV%2BM%3D%3A0)
 
@@ -417,7 +417,7 @@ Worker 作为公网入口，外部只能看到 Cloudflare 边缘节点，而不�
 5. 点击 **上传并进入管理台**，等待页面提示上传成功并自动跳转
 6. 确认管理台可以正常打开后，再继续配置节点和其他功能
 
-> 上传文件名必须保持为 `index.html`，大小不能超过 2 MiB，并且 HTML 会保存到已绑定的 `ENI_KV`。不要上传 `frontend/admin-runtime.template.html`；如果修改过管理端源码，请先运行 `npm.cmd run build:frontend`，再上传重新生成的 `frontend/dist/index.html`。
+> 上传只看文件类型，不看文件名：任意 `.html` 名字都接受（未命名时按 `index.html` 记录），大小不能超过 2 MiB，并且 HTML 会保存到已绑定的 `ENI_KV`。不要上传 `frontend/admin-runtime.template.html`；如果修改过管理端源码，请先运行 `npm.cmd run build:frontend`，再上传重新生成的 `frontend/dist/index.html`。
 
 ### 第七步：按需添加 Cron Trigger
 如果你需要自动清理日志、发送 Telegram 日报或定时异常告警，再补这一步：
