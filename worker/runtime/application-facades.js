@@ -11274,22 +11274,16 @@ function detectCloudflareWorkerScriptUploadSyntax(scriptContent = "") {
   return "service-worker";
 }
 function validateUploadedWorkerScriptSource(scriptContent = "", fileName = "worker.js") {
-  const normalizedFileName = normalizeCloudflareWorkerScriptUploadFileName(fileName);
-  if (normalizedFileName.toLowerCase() !== "worker.js")
-    throw createStructuredConfigError(
-      "WORKER_UPLOAD_FILE_NAME_INVALID",
-      "Worker 文件名必须是 worker.js",
-      400,
-      { fileName: normalizedFileName || String(fileName || "").trim() },
-    );
+  // 上传文件名只用于展示：任意 .js 名字都收，缺省落成 worker.js，不再要求必须叫 worker.js。
+  const normalizedFileName = normalizeCloudflareWorkerScriptUploadFileName(fileName) || "worker.js";
   const normalizedScriptContent = String(scriptContent || "");
   const contentLength = new TextEncoder().encode(normalizedScriptContent).length;
   if (!normalizedScriptContent.trim())
-    throw createStructuredConfigError("WORKER_UPLOAD_EMPTY", "worker.js 不能为空", 400);
+    throw createStructuredConfigError("WORKER_UPLOAD_EMPTY", "Worker 脚本不能为空", 400);
   if (contentLength > 3145728)
     throw createStructuredConfigError(
       "WORKER_UPLOAD_TOO_LARGE",
-      `worker.js 体积超过限制（${contentLength} bytes）`,
+      `Worker 脚本体积超过限制（${contentLength} bytes）`,
       400,
       {
         contentLength,
@@ -11551,7 +11545,7 @@ function defineConfigActions(dependencies = {}, actions = {}) {
       if (!workerScriptContent.trim() || !indexHtml.trim())
         return jsonError(
           "WORKER_HTML_FILES_REQUIRED",
-          "必须同时上传 worker.js 和 index.html，缺一不可",
+          "必须同时上传 Worker 脚本和 index.html，缺一不可",
           400,
           {
             workerFileProvided: Boolean(workerScriptContent.trim()),

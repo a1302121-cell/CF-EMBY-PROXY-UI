@@ -4,6 +4,17 @@
 
 当前版本号由 `worker/core/build-info.js` 的 `APP_VERSION` 决定，`npm run check` 会校验本文件包含对应版本小节。
 
+## V20.1（2026-10-28）
+
+- **受管流空闲超时只覆盖等上游读**：阈值此前从 `controller.enqueue()` 之后重新起表，分片读出来躺在队列里等客户端取的那段时间也被算成「上游没给数据」，慢链路或客户端暂停超过 12 / 15 秒就会 abort 上游并记成 504。现在计时收敛到 `reader.read()`，只有真正等上游数据时才计时，上游停止发送的超时行为不变。
+- **Range 续传**：跨 target 重试丢弃客户端 `If-Range`（换镜像后校验器不可比，上游会回 200 全量、播放器拿不到期望的 206 偏移），同 target 重试仍保留；206 响应一律 `no-store`，不再按 `public, max-age` 被按其它偏移复用；直连 Range 的 HEAD 探测结果按会话缓存 30 秒（上限 256 条），同一会话的数百个分段请求不再各付一次 HEAD。
+- **元数据缓存**：`Content-Encoding` 非 `identity` 的响应不再落盘（命中路径不会与客户端重新协商编码，回放 gzip / br 字节给不带该头的播放器就是解不开的 m3u8 / 字幕）；所有不写缓存的出口统一 `cancel()` 掉 clone 分支，不再随响应体积线性增长内存。
+- **响应头**：回源响应剔除 `connection` / `keep-alive` / `proxy-connection` / `te` / `trailer` / `transfer-encoding` 等逐跳头，`upgrade` 保留且 101 握手会把 `Connection` 还原，WebSocket 握手不受影响。
+- **音频字节流**：`/Audio/{id}/stream`、`/Audio/{id}/universal` 这类无扩展名音频流不再落进 API 分支，与视频共用主字节流判定（Range、5xx 重试、协议回退时剥离查询参数鉴权都适用）；扩展名白名单补 mp3 / m4b / flac / aac / ogg / oga / opus / wav / wma，`Lyrics` 等元数据接口仍走 API。分类正则收敛为 `VIDEO_STREAM_ROUTE_REGEX` / `AUDIO_STREAM_ROUTE_REGEX` 并补 `\b`，`.../streaming` 不再误命中。
+- **视图切换动效**：整页 `translateY` 淡入改为不位移的 `viewFade`（时长与曲线走 `--transition-duration-ui` / `--ease-out-expo` 令牌），`#content-area` 加 `scrollbar-gutter: stable`，切换视图时内容区不再横向重排 ±15px、动画期间静止内容漂移归零。
+- **Worker 和 HTML 更新**：上传不再要求 Worker 脚本必须命名为 `worker.js`，任意文件名都接受（服务端缺省落成 `worker.js`，仍按内容判定 module / service-worker 语法）；`index.html` 的名字与 2 MiB 上限不变。
+- **工程**：新增 `tests/e2e/admin-view-motion.spec.mjs`（`npm run test:e2e:motion`），用 `layout-shift`、`long-animation-frame`、rAF 帧间隔与逐帧位置采样给动效上门禁；新增 `scripts/bench-worker-stream.mjs` 流式路径四项 A/B 基准（仅同机百分比参考，不进 `npm run check`）；视觉基线因 `scrollbar-gutter` 重录一次。
+
 ## V20.0（2026-10-25）
 
 - **聚合层撤回**：EMOS 聚合、三档聚合策略（`auto` / `emos` / `tmdb`）、todb 凭证与 `todbvs` 改写、跨节点列表 / 剧集 / 版本聚合全部移除。`worker/`、`worker.js`、`worker/core/http-body.js` 与 `tests/worker-defensive-boundaries.test.mjs` 重新对齐远程主线；`worker/runtime/proxy/aggregation/` 整个目录删除。

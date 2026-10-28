@@ -148,6 +148,32 @@ npx playwright test tests/e2e/visual.spec.mjs --update-snapshots # 确认变化�
 - 深色主题通过 `addInitScript` 写 `localStorage["theme"]="dark"` 并断言 `html` 拿到 `dark` 类，不去点界面上本来没有的主题按钮。
 - 基线以迁移后的状态为准（现在跑是 0 差异）；迁移遗留的已知差异与 v4 的四个坑见 [`tech-stack.md` 第 5 节](./tech-stack.md)。
 
+### 7.2 视图切换动效（帧耗时 / 布局位移）
+
+`tests/e2e/admin-view-motion.spec.mjs` 量的是"切视图抖不抖"，用三个浏览器原生信号取证：`layout-shift`、`long-animation-frame`、rAF 帧间隔，外加逐帧采样一个静止元素的 `top`（内容在动画期间还在挪位置，就是"抖"的物理定义）。
+
+```powershell
+npm.cmd run test:e2e:motion                                       # 量当前实现并跑门禁
+$env:MOTION_BASELINE="1"; npm.cmd run test:e2e:motion             # 把修复前的实现注入回来做 A/B
+```
+
+两个环境前提，缺一个量到的都是假数据：
+
+- Playwright 默认给 Chromium 加 `--hide-scrollbars`，滚动条不占宽度，于是"切换视图时内容被滚动条推挤 15px"根本不可见。这个 spec 用 `ignoreDefaultArgs` 把它关掉。
+- 空库会弹"DNS 记录加载失败""请先初始化日志表"，这些模态自带全屏 `backdrop-blur`，留着会让每一帧都去重采样整屏模糊（实测把切换窗口从 60fps 压到 40fps）。所以帧耗时只在 `#nodes`/`#settings`/`#dashboard` 之间量，宽度在全部视图上量。
+
+门禁是两条几何断言（确定性，不受机器影响）：切换前后 `#content-area` 宽度不变、动画期间静止内容漂移为 0。帧耗时只兜病态回归（单帧 > 100ms），因为 headless 软件栅格的绝对值不可移植。
+
+改动视图切换动画时的取舍（2026-05 实测，同机同进程 A/B）：
+
+| 指标 | 修复前 | 修复后 |
+| --- | --- | --- |
+| 切换时内容区宽度变化 | +15 / -15 px | 0 |
+| 动画期间静止内容漂移 | 5.00 px | 0 |
+| 动画期间出现的亚像素位置数 | 17–18 | 1 |
+
+`#content-area` 上的 `scrollbar-gutter: stable` 会让内容区在"没有滚动条"的视图上永久少 15px 宽（Windows 经典滚动条），视觉基线因此重录过一次。这是为消除横向重排付的固定成本，不要再改回 `auto`。
+
 ## 8. Worker 流式路径基准
 
 `scripts/bench-worker-stream.mjs` 固定量四项流式指标，另附一个 tee 保留量探针，进出两端都用同一套口径，改动流式代码时直接跑 A/B：

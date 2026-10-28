@@ -7281,6 +7281,74 @@ test("Worker and HTML update uploads only the script bound to the current host",
   }
 });
 
+test("Worker and HTML update accepts a Worker script whose file is not named worker.js", async () => {
+  const { kv } = createInMemoryKvStore({
+    [kernel.CONFIG_KEY]: {
+      cfAccountId: "account-id",
+      cfZoneId: "zone-id",
+      cfApiToken: "api-token",
+    },
+  });
+  const env = { ENI_KV: kv, __CONFIG_CACHE_NAMESPACE: "worker-html-any-file-name" };
+  const uploads = [];
+  invalidateRuntimeConfigCache();
+
+  try {
+    const response = await withWorkerGlobals(
+      {
+        fetch: async (input, init = {}) => {
+          const url = String(input);
+          if (url.includes("/workers/domains")) {
+            return Response.json({
+              success: true,
+              result: [{ hostname: "current.example", service: "current-worker" }],
+            });
+          }
+          if (url.includes("/workers/scripts/")) {
+            const files = init.body.get("files");
+            const metadata = init.body.get("metadata");
+            uploads.push({
+              url,
+              fileName: files?.name,
+              mainModule: JSON.parse(await metadata.text()).main_module,
+            });
+            return Response.json({ success: true, result: {} });
+          }
+          throw new Error(`unexpected Cloudflare request: ${url}`);
+        },
+      },
+      () =>
+        adminActions.updateWorkerAndAdminIndex(
+          {
+            workerFileName: "my-release-#3.js",
+            workerScriptContent: "export default { fetch() { return new Response('ok'); } }",
+            indexFileName: "index.html",
+            indexHtml: adminShellDocument({ body: '<div id="app"></div>' }),
+          },
+          {
+            env,
+            kv,
+            ctx: null,
+            request: new Request("https://current.example/admin"),
+          },
+        ),
+    );
+    const payload = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.worker.fileName, "my-release-#3.js");
+    assert.deepEqual(uploads, [
+      {
+        url: "https://api.cloudflare.com/client/v4/accounts/account-id/workers/scripts/current-worker/content",
+        fileName: "my-release-#3.js",
+        mainModule: "my-release-#3.js",
+      },
+    ]);
+  } finally {
+    invalidateRuntimeConfigCache();
+  }
+});
+
 test("local index source persists in KV and renders through the same-origin vendor path", async () => {
   const { kv } = createInMemoryKvStore({ "sys:theme": {} });
   const env = { ADMIN_PATH: "/admin", ENI_KV: kv };

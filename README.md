@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img alt="version" src="https://img.shields.io/badge/version-V20.0-2563eb">
+  <img alt="version" src="https://img.shields.io/badge/version-V20.1-2563eb">
   <img alt="platform" src="https://img.shields.io/badge/platform-Cloudflare%20Workers-orange">
   <img alt="storage" src="https://img.shields.io/badge/storage-KV%20%2B%20D1-green">
   <img alt="ui" src="https://img.shields.io/badge/panel-SaaS%20UI-purple">
@@ -13,7 +13,7 @@
 
 > 一个以 `worker/` 为生产源码、以根目录 `worker.js` 为单文件部署产物的 Cloudflare Worker 项目：统一多台 Emby 节点入口、隐藏源站 IP、支持直连/反代混合策略、提供 `ADMIN_PATH`（默认 `/admin`）可视化后台，并集成日志、Cloudflare 统计、Telegram 日报与控制面 / 数据面分层优化。
 
-> 当前 **V20.0** 是一次减法发布：把 V19.9 之后加进来的聚合层整体撤回，Worker 与后端重新对齐远程主线，管理端只保留界面与交付改进。EMOS 聚合、三档聚合策略（`auto` / `emos` / `tmdb`）、todb 凭证与 `todbvs` 改写、跨节点列表 / 剧集 / 版本聚合全部移除，`worker/`、`worker.js` 与相关测试回到远程仓库版本；`tmdbApiReadToken` / `tmdbApiV3Key` / `tmdbLanguage` 作为配置兼容字段保留（字段、脱敏规则与备份往返都在，值不再被读取），`tmdbAggregationEnabled` 保留字段名但读取时一律清空为 `false`，管理端不再提供聚合开关、策略下拉与 todb 输入框。管理端保留的改进：4 个首屏 CDN 脚本改为同源摇树交付（`frontend/vendor/` 随 `ASSETS` 部署，Worker 按 `assetKey` 改写并代理），内置壳补上 vendor 改写与 `bundled` 投递分支，断网也能启动；颜色统一走 CSS 变量、入口与访问密钥收进高级设置、节点面板与弹窗按同一套间距重排；新增 Playwright 真浏览器冒烟与 5 视图 × 4 主题的视觉基线；仓库换行统一为 LF，`frontend/src/` 继续作为非生产参考源。
+> 当前 **V20.1** 是 V20.0 减法发布后的稳定性与性能收尾，重点全在播放链路的正确性与管理端的切换手感。Worker 侧：受管流的空闲超时改为只统计「等上游读」，客户端暂停或慢链路不再被误判成上游 504；Range 续传在跨 target 重试时丢弃客户端 `If-Range`，206 一律 `no-store`，直连 Range 的 HEAD 探测结果按会话缓存 30 秒；带 `Content-Encoding` 的响应不再写入元数据缓存，所有不写缓存的 clone 分支统一 `cancel()`；回源响应剔除逐跳头，101 握手保留 `Connection` / `Upgrade`；`/Audio/{id}/stream` 这类无扩展名音频流回到主字节流判定，与视频共用 Range、重试与协议回退策略。管理端：视图切换从整页 `translateY` 淡入改为不位移淡入，`#content-area` 用 `scrollbar-gutter: stable` 消除切换时内容区 ±15px 的横向重排，视觉基线因此重录一次；皮肤保存命中 `CONFIG_REVISION_CONFLICT` 时自动回源重写，不再误报「配置版本已变化」；「Worker 和 HTML 更新」面板不再要求 Worker 脚本必须叫 `worker.js`，任意文件名都接受。工程上新增 Playwright 动效门禁（`npm run test:e2e:motion`）与流式路径 A/B 基准脚本（`npm run bench:stream`，仅作同机百分比参考）；V20.0 的聚合层撤回与兼容字段保留保持不变。
 
   ![img](https://web.axuitomo.qzz.io/api/p/img/github/PixPin_2026-08-03_14-00-35.png?download=true&sign=TltPfTfUurzkQ5FsY4rpQ1Wd%2Bwu1Oji3rC%2FVo2NbV%2BM%3D%3A0)
 

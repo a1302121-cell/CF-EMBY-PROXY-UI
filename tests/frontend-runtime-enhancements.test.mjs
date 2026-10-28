@@ -1504,7 +1504,9 @@ test("admin runtime keeps scoped migration, node-only, and release contracts", a
   assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /delays = \[500, 1000, 2000, 4000, 8000\]/);
   assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /navigateWithAdminCacheBust/);
   assert.doesNotMatch(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /window\.location\.reload\(\)/);
-  assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /必须同时选择 worker\.js 和 index\.html/);
+  assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /必须同时选择 Worker 脚本和 index\.html/);
+  // Worker 脚本不再限制文件名：前端不能留着 worker.js 的名字校验。
+  assert.doesNotMatch(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /!== 'worker\.js'/);
   // 文件选择框的 ::file-selector-button 样式必须覆盖经典皮肤，否则只有 claude 皮肤有按钮外观，
   // 经典皮肤下 "Choose File" 退化成裸文字（浏览器默认透明背景 + 黑边），用户看不出这是选择框。
   assert.match(

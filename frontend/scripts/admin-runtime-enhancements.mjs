@@ -1066,7 +1066,7 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
     workerFile: null,
     indexFile: null,
     submitting: false,
-    status: '必须同时选择 worker.js 和 index.html。',
+    status: '必须同时选择 Worker 脚本和 index.html。',
     tone: ''
   };
   function canRenderIcons() {
@@ -1344,10 +1344,11 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
   }
 
   function validateWorkerHtmlUploadFiles(workerFile, indexFile) {
-    if (!workerFile || !indexFile) return '必须同时选择 worker.js 和 index.html。';
-    if (String(workerFile.name || '').trim().toLowerCase() !== 'worker.js') return 'Worker 文件名必须是 worker.js。';
+    // Worker 脚本不再要求文件名叫 worker.js：任意 .js 名字都接受，缺省在服务端落成 worker.js。
+    if (!workerFile || !indexFile) return '必须同时选择 Worker 脚本和 index.html。';
+    if (!String(workerFile.name || '').trim()) return 'Worker 脚本未选择文件。';
     if (String(indexFile.name || '').trim().toLowerCase() !== 'index.html') return 'HTML 文件名必须是 index.html。';
-    if (workerFile.size > 3 * 1024 * 1024) return 'worker.js 超过 3 MiB 上限。';
+    if (workerFile.size > 3 * 1024 * 1024) return 'Worker 脚本超过 3 MiB 上限。';
     if (indexFile.size > 2 * 1024 * 1024) return 'index.html 超过 2 MiB 上限。';
     return '';
   }
@@ -1450,14 +1451,14 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
       workerHtmlUpdateState.root = root;
       workerHtmlUpdateState.workerFile = null;
       workerHtmlUpdateState.indexFile = null;
-      workerHtmlUpdateState.status = '必须同时选择 worker.js 和 index.html。';
+      workerHtmlUpdateState.status = '必须同时选择 Worker 脚本和 index.html。';
       workerHtmlUpdateState.tone = '';
     }
     if (!root.dataset.adminWorkerHtmlReady) {
       root.dataset.adminWorkerHtmlReady = '1';
       root.innerHTML = '<div class="ui-block-head"><div><div class="ui-section-kicker">Runtime Update</div><div class="ui-section-title">Worker 和 HTML 更新</div></div><span class="ui-chip-muted">双文件</span></div>'
         + '<div data-admin-worker-html-grid="1">'
-        + '<label data-admin-worker-html-file="1"><span class="ui-field-label">worker.js</span><input data-admin-worker-file-input="1" type="file" accept=".js,text/javascript,application/javascript"><span data-admin-worker-file-meta="1" class="text-xs text-slate-500">未选择</span></label>'
+        + '<label data-admin-worker-html-file="1"><span class="ui-field-label">Worker 脚本 (.js)</span><input data-admin-worker-file-input="1" type="file" accept=".js,text/javascript,application/javascript"><span data-admin-worker-file-meta="1" class="text-xs text-slate-500">未选择</span></label>'
         + '<label data-admin-worker-html-file="1"><span class="ui-field-label">index.html</span><input data-admin-index-file-input="1" type="file" accept=".html,text/html"><span data-admin-index-file-meta="1" class="text-xs text-slate-500">未选择</span></label>'
         + '</div>'
         + '<div data-admin-worker-html-status="1" role="status" aria-live="polite" class="mt-4 rounded-control border border-slate-200 px-4 py-3 text-xs text-slate-600 dark:border-slate-700 dark:text-slate-300"></div>'
