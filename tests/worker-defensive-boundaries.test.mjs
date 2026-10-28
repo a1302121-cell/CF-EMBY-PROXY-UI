@@ -3816,6 +3816,241 @@ test("failover 403 is returned directly without a protocol fallback retry", asyn
   }
 });
 
+test("client If-Range survives same-target retries but is dropped for another target", async () => {
+  const request = new Request("https://worker.test/node/secret/Videos/1/stream", {
+    headers: { Range: "bytes=1024-2047", "If-Range": '"origin-a-etag"' },
+  });
+  const requestTraits = {
+    isBigStream: true,
+    rangeHeader: "bytes=1024-2047",
+    ifRangeHeader: '"origin-a-etag"',
+  };
+  const buildFetchOptions = proxyService.createBuildFetchOptions(
+    { request, requestMethod: "GET", requestTraits, protocolFallback: false },
+    {
+      newHeaders: new Headers(request.headers),
+      adminCustomHeaders: new Set(),
+      preparedBody: null,
+      preparedBodyMode: "none",
+    },
+  );
+
+  const sameTarget = await buildFetchOptions(new URL("https://origin-a.test/Videos/1/stream"));
+  assert.equal(sameTarget.headers.get("If-Range"), '"origin-a-etag"');
+
+  // 换 target 后客户端的校验器来自另一台主机，必须丢弃，否则上游会因校验器失配回 200 全量。
+  const otherTarget = await buildFetchOptions(new URL("https://origin-b.test/Videos/1/stream"), {
+    stripRangeValidator: true,
+  });
+  assert.equal(otherTarget.headers.get("If-Range"), null);
+  assert.equal(otherTarget.headers.get("Range"), "bytes=1024-2047");
+});
+
+test("cross-target retry asks for the range without the client validator", async () => {
+  const primaryTarget = createTargetRecord("https://origin-a.test");
+  const failoverTarget = createTargetRecord("https://origin-b.test");
+  const originalPerformUpstreamFetch = proxyService.performUpstreamFetch;
+  const originalFailoverWait = proxyService.maybeRunForegroundFailoverWait;
+  const attempts = [];
+  proxyService.performUpstreamFetch = async (
+    targetRecord,
+    proxyPath,
+    requestUrl,
+    buildFetchOptions,
+    options = {},
+  ) => {
+    attempts.push({
+      target: targetRecord,
+      stripRangeValidator: options.stripRangeValidator === true,
+    });
+    const status = attempts.length === 1 ? 503 : 206;
+    return {
+      response: new Response("partial", {
+        status,
+        headers: { "Content-Range": "bytes 1024-2047/4096" },
+      }),
+      finalUrl: new URL("https://origin.test/Videos/1/stream"),
+      targetRecord,
+      releaseFetchController() {},
+    };
+  };
+  proxyService.maybeRunForegroundFailoverWait = async () => null;
+  try {
+    const result = await proxyService.fetchUpstreamWithRetryLoop({
+      retryTargetRecords: [primaryTarget, failoverTarget],
+      proxyPath: "/Videos/1/stream",
+      requestUrl: new URL("https://worker.test/node/secret/Videos/1/stream"),
+      buildFetchOptions: {},
+      maxExtraAttempts: 1,
+      isRetry: false,
+      allowAutomaticRetry: true,
+      retryableStatuses: new Set([500, 502, 503, 504]),
+      protocolFallback: false,
+      preparedBodyMode: null,
+      execution: {
+        requestMethod: "GET",
+        requestTraits: { isBigStream: true, ifRangeHeader: '"origin-a-etag"' },
+        failoverContext: null,
+        failoverForegroundWaitUsed: false,
+      },
+    });
+    assert.equal(result.response.status, 206);
+    assert.deepEqual(
+      attempts.map((attempt) => attempt.stripRangeValidator),
+      [false, true],
+      "entry target keeps the validator, the failover target must not",
+    );
+  } finally {
+    proxyService.performUpstreamFetch = originalPerformUpstreamFetch;
+    proxyService.maybeRunForegroundFailoverWait = originalFailoverWait;
+  }
+});
+
+test("partial content never reaches a shared cache", () => {
+  const request = new Request("https://worker.test/node/secret/Videos/1/Subtitles/2/Stream.srt", {
+    headers: { Range: "bytes=0-511" },
+  });
+  const requestTraits = {
+    isImage: false,
+    isStaticFile: false,
+    isSubtitle: true,
+    isManifest: false,
+    isMetadataCacheable: true,
+    isBigStream: false,
+    isSmartStrmMedia: false,
+    isSegment: false,
+  };
+  const headers = proxyService.buildProxyResponseHeaders(
+    new Response("partial", {
+      status: 206,
+      headers: { "Content-Range": "bytes 0-511/4096" },
+    }),
+    request,
+    {},
+    "*",
+    requestTraits,
+    { imageCacheMaxAge: 3600 },
+  );
+  assert.equal(headers.get("Cache-Control"), "no-store");
+  assert.equal(headers.get("Content-Range"), "bytes 0-511/4096");
+});
+
+test("entry direct range probe reuses one HEAD across segmented range requests", async () => {
+  isolateState.EntryDirectRangeProbeCache.clear();
+  const originalPerformFetch = proxyService.performFetchWithTimeout;
+  const originalRecordLog = proxyService.recordEntryDirectRangeProbeAccessLog;
+  let probeCount = 0;
+  proxyService.performFetchWithTimeout = async () => {
+    probeCount += 1;
+    return {
+      response: new Response(null, {
+        status: 302,
+        headers: { Location: "https://cdn.test/signed/stream?token=abc" },
+      }),
+      finalUrl: null,
+      releaseFetchController() {},
+    };
+  };
+  proxyService.recordEntryDirectRangeProbeAccessLog = () => {};
+  const buildExecution = () => ({
+    request: new Request("https://worker.test/node/secret/Videos/1/stream?api_key=k", {
+      headers: { Range: "bytes=0-1023" },
+    }),
+    requestMethod: "GET",
+    requestTraits: { isBigStream: true, rangeHeader: "bytes=0-1023" },
+    nodeName: "node-a",
+    nodeKey: "secret",
+    nodeDerivedCacheRevision: "rev-1",
+    entryMode: "path",
+    linkVariant: "main",
+    dynamicCors: {},
+    finalOrigin: "*",
+    enableH3: false,
+    forceH1: false,
+    imageCacheMaxAge: 3600,
+    upstreamTimeoutMs: 8000,
+    entryRoutingDecision: { dataPlaneMode: "entry_direct", reason: "entry_direct_media" },
+  });
+  try {
+    const firstResponse = await proxyService.maybeProbeEntryDirectRangeRedirectResponse(
+      buildExecution(),
+      new URL("https://origin-a.test"),
+      () => ({ method: "HEAD" }),
+      { reason: "entry_direct_media" },
+    );
+    const secondResponse = await proxyService.maybeProbeEntryDirectRangeRedirectResponse(
+      buildExecution(),
+      new URL("https://origin-a.test"),
+      () => ({ method: "HEAD" }),
+      { reason: "entry_direct_media" },
+    );
+    assert.equal(probeCount, 1, "the second range request must reuse the cached probe");
+    assert.equal(firstResponse.status, 302);
+    assert.equal(secondResponse.status, 302);
+    assert.equal(secondResponse.headers.get("Location"), firstResponse.headers.get("Location"));
+  } finally {
+    proxyService.performFetchWithTimeout = originalPerformFetch;
+    proxyService.recordEntryDirectRangeProbeAccessLog = originalRecordLog;
+    isolateState.EntryDirectRangeProbeCache.clear();
+  }
+});
+
+test("entry direct range probe caches a non-redirecting upstream instead of re-probing", async () => {
+  isolateState.EntryDirectRangeProbeCache.clear();
+  const originalPerformFetch = proxyService.performFetchWithTimeout;
+  let probeCount = 0;
+  proxyService.performFetchWithTimeout = async () => {
+    probeCount += 1;
+    return {
+      response: new Response(null, { status: 200, headers: { "Content-Length": "4096" } }),
+      finalUrl: null,
+      releaseFetchController() {},
+    };
+  };
+  const buildExecution = () => ({
+    request: new Request("https://worker.test/node/secret/Videos/1/stream?api_key=k", {
+      headers: { Range: "bytes=0-1023" },
+    }),
+    requestMethod: "GET",
+    requestTraits: { isBigStream: true, rangeHeader: "bytes=0-1023" },
+    nodeName: "node-b",
+    nodeKey: "secret",
+    nodeDerivedCacheRevision: "rev-1",
+    entryMode: "path",
+    linkVariant: "main",
+    dynamicCors: {},
+    finalOrigin: "*",
+    enableH3: false,
+    forceH1: false,
+    imageCacheMaxAge: 3600,
+    upstreamTimeoutMs: 8000,
+  });
+  try {
+    assert.equal(
+      await proxyService.maybeProbeEntryDirectRangeRedirectResponse(
+        buildExecution(),
+        new URL("https://origin-a.test"),
+        () => ({ method: "HEAD" }),
+        { reason: "entry_direct_media" },
+      ),
+      null,
+    );
+    assert.equal(
+      await proxyService.maybeProbeEntryDirectRangeRedirectResponse(
+        buildExecution(),
+        new URL("https://origin-a.test"),
+        () => ({ method: "HEAD" }),
+        { reason: "entry_direct_media" },
+      ),
+      null,
+    );
+    assert.equal(probeCount, 1, "a non-redirecting upstream must not be re-probed");
+  } finally {
+    proxyService.performFetchWithTimeout = originalPerformFetch;
+    isolateState.EntryDirectRangeProbeCache.clear();
+  }
+});
+
 test("runtime route context normalizes hostnames once and defers CORS headers", async () => {
   const request = new Request("https://Node.Media.Example.COM./Videos/1/stream", {
     headers: { Origin: "https://client.test" },

@@ -96,6 +96,8 @@ var cacheState = {
   PlaybackInfoResponseCache: /* @__PURE__ */ new Map(),
   PlaybackProgressRelay: /* @__PURE__ */ new Map(),
   MetadataPrewarmTasks: /* @__PURE__ */ new Map(),
+  // 键自带会话鉴权，故按插入顺序淘汰 + 读时校验 TTL，不并入清理周期（同 MedbItemsCountsCache）。
+  EntryDirectRangeProbeCache: /* @__PURE__ */ new Map(),
   MedbItemsCountsCache: /* @__PURE__ */ new Map(),
   DashboardMonthlyTrafficCache: /* @__PURE__ */ new Map(),
   SingleFlightTasks: /* @__PURE__ */ new Map(),
@@ -2273,6 +2275,10 @@ var DEFAULT_VIDEO_PROGRESS_SNAPSHOT_MAX_BYTES = CACHE_DEFAULTS.VideoProgressSnap
 var DEFAULT_IMAGE_CACHE_TTL_DAYS = CACHE_DEFAULTS.CacheTtlImagesDays;
 var DEFAULT_PLAYBACK_ROUTE_HOT_CACHE_TTL_MS = CACHE_DEFAULTS.PlaybackRouteHotCacheTtlMs;
 var DEFAULT_PLAYBACK_ROUTE_HOT_CACHE_MAX = CACHE_DEFAULTS.PlaybackRouteHotCacheMax;
+// 直连 Range 的 HEAD 探测只在同一会话连续分段请求之间复用：TTL 短到签名地址不会过期，
+// 又长到覆盖一次播放里的数百个 Range 请求。
+var ENTRY_DIRECT_RANGE_PROBE_CACHE_TTL_MS = 3e4;
+var ENTRY_DIRECT_RANGE_PROBE_CACHE_MAX = 256;
 var ADMIN_JSON_REQUEST_MAX_BYTES = 12 * 1024 * 1024;
 var ADMIN_FULL_BACKUP_MAX_REQUEST_BYTES = ADMIN_JSON_REQUEST_MAX_BYTES - 64 * 1024;
 var D1_TEXT_VALUE_MAX_BYTES = 2e6;
@@ -23230,6 +23236,33 @@ async function sleepWithRequestLifecycle(ms, requestLifecycle = null) {
   });
 }
 //#endregion
+// 键里带本会话完整出口 URL（含查询鉴权）与节点修订，所以不会跨用户或跨节点复用；
+// 不做哈希：32 位碰撞会把 A 会话的签名地址发给 B 会话。
+function buildEntryDirectRangeProbeCacheKey(execution, probeUrl) {
+  return [
+    String(execution?.nodeName || ""),
+    String(execution?.nodeKey || ""),
+    String(execution?.nodeDerivedCacheRevision || ""),
+    String(execution?.entryMode || ""),
+    probeUrl instanceof URL ? probeUrl.toString() : String(probeUrl || ""),
+  ].join("\n");
+}
+function readEntryDirectRangeProbeCache(cacheKey) {
+  const entry = cacheState.EntryDirectRangeProbeCache.get(cacheKey);
+  if (!entry) return null;
+  if (Number(entry.expiresAt) > nowMs()) return entry;
+  cacheState.EntryDirectRangeProbeCache.delete(cacheKey);
+  return null;
+}
+function rememberEntryDirectRangeProbe(cacheKey, entry) {
+  const expiresAt = nowMs() + ENTRY_DIRECT_RANGE_PROBE_CACHE_TTL_MS;
+  setBoundedMapEntry(
+    cacheState.EntryDirectRangeProbeCache,
+    cacheKey,
+    { ...entry, expiresAt },
+    ENTRY_DIRECT_RANGE_PROBE_CACHE_MAX,
+  );
+}
 //#region worker/features/proxy/failover/cache-delivery-methods.js
 function defineProxyCacheDeliveryMethods(dependencies = {}, kernel = {}) {
   return {
@@ -23364,6 +23397,62 @@ function defineProxyCacheDeliveryMethods(dependencies = {}, kernel = {}) {
     ) {
       if (typeof buildFetchOptions !== "function") return null;
       const probeUrl = kernel.resolveEntryDirectTargetUrl(execution, activeTargetBase);
+      const probeCacheKey = buildEntryDirectRangeProbeCacheKey(execution, probeUrl);
+      const cachedProbe = readEntryDirectRangeProbeCache(probeCacheKey);
+      if (cachedProbe) {
+        // 命中也只回放上游那次 HEAD 的结果，下发头按本次请求重算，避免复用别的 Origin 的 CORS。
+        if (cachedProbe.redirect !== true) return null;
+        const cachedNextUrl = new URL(cachedProbe.nextUrl);
+        const cachedProbeResponse = new Response(null, {
+          status: Number(cachedProbe.status) || 0,
+          statusText: String(cachedProbe.statusText || ""),
+          headers: new Headers(cachedProbe.headerEntries || []),
+        });
+        const cachedHeaders = kernel.buildProxyResponseHeaders(
+          cachedProbeResponse,
+          execution.request,
+          execution.dynamicCors,
+          execution.finalOrigin,
+          execution.requestTraits,
+          {
+            enableH3: execution.enableH3,
+            forceH1: execution.forceH1,
+            imageCacheMaxAge: execution.imageCacheMaxAge,
+          },
+        );
+        const cachedDirectRedirectUrl =
+          kernel.buildClientVisibleRedirectUrl(
+            cachedNextUrl,
+            execution.playbackRelayTargetUrl || activeTargetBase,
+            execution.nodeName,
+            execution.nodeKey,
+            execution.requestUrl,
+            { entryMode: execution.entryMode },
+          ) || cachedNextUrl;
+        kernel.applyProxyRedirectHeaders(
+          cachedHeaders,
+          cachedProbeResponse,
+          activeTargetBase,
+          execution.nodeName,
+          execution.nodeKey,
+          cachedDirectRedirectUrl,
+          probeUrl,
+          {
+            linkVariant: execution.linkVariant,
+            entryMode: execution.entryMode,
+          },
+        );
+        kernel.recordEntryDirectRangeProbeAccessLog(execution, {
+          status: cachedProbeResponse.status,
+          directRedirectUrl: cachedDirectRedirectUrl,
+          decisionReason: `${String(entryDecision?.reason || entryDecision?.traceLabel || "").trim()} | EntryRangeProbeCache=hit`,
+        });
+        return new Response(null, {
+          status: cachedProbeResponse.status,
+          statusText: cachedProbeResponse.statusText,
+          headers: cachedHeaders,
+        });
+      }
       /** @type {Response|null} */
       let probeResponse = null;
       let releaseProbeFetchController = () => {};
@@ -23389,6 +23478,8 @@ function defineProxyCacheDeliveryMethods(dependencies = {}, kernel = {}) {
           probeResponse.body?.cancel?.();
         } catch {}
         releaseProbeFetchController();
+        // 上游不跳转：缓存这个结论，后续分段请求可以直接走 307，不必再 HEAD 一次。
+        rememberEntryDirectRangeProbe(probeCacheKey, { redirect: false });
         probeLifecycle.dispose();
         return null;
       }
@@ -23490,27 +23581,20 @@ function defineProxyCacheDeliveryMethods(dependencies = {}, kernel = {}) {
           entryMode: execution.entryMode,
         },
       );
-      if (
-        kernel.shouldRecordAccessLog(execution, {
-          statusCode: probeResponse.status,
-          category: kernel.classifyProxyLogCategory(execution.requestTraits),
-        })
-      )
-        kernel.recordAccessLog(
-          execution,
-          kernel.buildDirectAccessLogPayload(
-            execution,
-            probeResponse.status,
-            execution.defaultOutboundColo || "",
-            {
-              directRedirectUrl,
-              redirectTrace,
-              decisionReason: String(
-                entryDecision?.reason || entryDecision?.traceLabel || "",
-              ).trim(),
-            },
-          ),
-        );
+      kernel.recordEntryDirectRangeProbeAccessLog(execution, {
+        status: probeResponse.status,
+        directRedirectUrl,
+        redirectTrace,
+        decisionReason: String(entryDecision?.reason || entryDecision?.traceLabel || "").trim(),
+      });
+      // 只在已经确认“上游会跳转且 Location 可解析”时缓存，避免回放一个不可用的跳转。
+      rememberEntryDirectRangeProbe(probeCacheKey, {
+        redirect: true,
+        status: probeResponse.status,
+        statusText: probeResponse.statusText,
+        headerEntries: [...probeResponse.headers.entries()],
+        nextUrl: nextUrl.toString(),
+      });
       releaseProbeFetchController();
       probeLifecycle.dispose();
       return new Response(execution.requestMethod === "HEAD" ? null : probeResponse.body, {
@@ -23703,6 +23787,10 @@ function defineProxyCacheDeliveryMethods(dependencies = {}, kernel = {}) {
           !headers.has("If-Range")
         )
           headers.set("If-Range", requestTraits.ifRangeHeader);
+        // 客户端的 If-Range 校验器只对“客户端上次命中的那台源站”成立。换 target 后
+        // 校验器（ETag / Last-Modified）来自另一台主机，上游判定失配会回 200 全量，
+        // 而客户端在等第 N 个字节的 206；丢掉校验器至少能拿到同偏移的 206。
+        if (options.stripRangeValidator === true) headers.delete("If-Range");
         if (effectiveMethod === "GET" || effectiveMethod === "HEAD")
           headers.delete("Content-Length");
         /** @type {WorkerRequestInit} */
@@ -24724,6 +24812,24 @@ function defineProxyDiagnosticMethods(dependencies = {}, kernel = {}) {
         ),
         outboundColo,
       };
+    },
+    recordEntryDirectRangeProbeAccessLog(execution, options = {}) {
+      const status = Number(options.status) || 0;
+      if (
+        !kernel.shouldRecordAccessLog(execution, {
+          statusCode: status,
+          category: kernel.classifyProxyLogCategory(execution.requestTraits),
+        })
+      )
+        return;
+      kernel.recordAccessLog(
+        execution,
+        kernel.buildDirectAccessLogPayload(execution, status, execution.defaultOutboundColo || "", {
+          directRedirectUrl: options.directRedirectUrl,
+          redirectTrace: options.redirectTrace,
+          decisionReason: options.decisionReason,
+        }),
+      );
     },
     buildStreamDiagnosticDetail(execution, response, options = {}) {
       const requestTraits = execution?.requestTraits || {};
@@ -25992,6 +26098,9 @@ function defineProxyUpstreamFetchMethods(dependencies = {}, kernel = {}) {
       let retryTargetRecords = Array.isArray(state.retryTargetRecords)
         ? state.retryTargetRecords.slice()
         : [];
+      // 入口 target 最可能是客户端上一段 Range 的提供者，只有它认得客户端的 If-Range；
+      // 其余 target 一律按“校验器不可比”处理。
+      const entryTargetKey = buildTargetRecordKey(retryTargetRecords[0]);
       let lastTargetRecord = retryTargetRecords[0];
       let lastFinalUrl = buildUpstreamProxyUrl(lastTargetRecord, state.proxyPath);
       lastFinalUrl.search = state.requestUrl.search;
@@ -26012,6 +26121,7 @@ function defineProxyUpstreamFetchMethods(dependencies = {}, kernel = {}) {
               state.buildFetchOptions,
               {
                 isRetry: effectiveRetry,
+                stripRangeValidator: buildTargetRecordKey(targetRecord) !== entryTargetKey,
                 protocolFallbackRetry: state.protocolFallbackRetry === true,
                 stripAuthOnProtocolFallback: state.stripAuthOnProtocolFallback === true,
                 timeoutMs: state.upstreamTimeoutMs,
@@ -28558,6 +28668,8 @@ function defineProxyFailoverProbeMethods(dependencies = {}, kernel = {}) {
           state.buildFetchOptions,
           {
             isRetry: true,
+            // 唤醒重试必然换了 target（上面已排除 winner === failed），客户端校验器不再成立。
+            stripRangeValidator: true,
             protocolFallbackRetry: state.protocolFallbackRetry === true,
             stripAuthOnProtocolFallback: state.stripAuthOnProtocolFallback === true,
             timeoutMs: state.upstreamTimeoutMs,
@@ -28832,6 +28944,8 @@ function defineProxyTransportMethods(dependencies = {}, kernel = {}) {
       );
       if (
         response.status >= 400 ||
+        // 206 是部分内容：共享缓存（CDN、代理、浏览器）都不能按“换一个偏移就能复用”来存它。
+        response.status === 206 ||
         requestTraits.isManifest ||
         requestTraits.isBigStream ||
         requestTraits.isSmartStrmMedia
