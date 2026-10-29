@@ -1,1022 +1,181 @@
- # CF-EMBY-PROXY-UI
+# CF-EMBY-PROXY-UI
 
 <p align="center">
-  <strong>基于 Cloudflare Workers 的 Emby/Jellyfin 代理、分流与可视化管理面板</strong>
+  <strong>基于 Cloudflare Workers 的 Emby / Jellyfin 反向代理与可视化管理面板</strong>
 </p>
 
 <p align="center">
-  <img alt="version" src="https://img.shields.io/badge/version-V20.0-2563eb">
+  <img alt="version" src="https://img.shields.io/badge/version-V20.1-2563eb">
   <img alt="platform" src="https://img.shields.io/badge/platform-Cloudflare%20Workers-orange">
   <img alt="storage" src="https://img.shields.io/badge/storage-KV%20%2B%20D1-green">
   <img alt="ui" src="https://img.shields.io/badge/panel-SaaS%20UI-purple">
 </p>
 
-> 一个以 `worker/` 为生产源码、以根目录 `worker.js` 为单文件部署产物的 Cloudflare Worker 项目：统一多台 Emby 节点入口、隐藏源站 IP、支持直连/反代混合策略、提供 `ADMIN_PATH`（默认 `/admin`）可视化后台，并集成日志、Cloudflare 统计、Telegram 日报与控制面 / 数据面分层优化。
+CF-EMBY-PROXY-UI 用一台 Cloudflare Worker 给多台 Emby / Jellyfin 服务器做统一入口：隐藏源站真实 IP、按节点分流、直连与反代混用，并自带网页管理后台（默认路径 `/admin`），用来维护节点、查看请求日志、修改 DNS 和导出备份。
 
-> 当前 **V20.0** 是一次减法发布：把 V19.9 之后加进来的聚合层整体撤回，Worker 与后端重新对齐远程主线，管理端只保留界面与交付改进。EMOS 聚合、三档聚合策略（`auto` / `emos` / `tmdb`）、todb 凭证与 `todbvs` 改写、跨节点列表 / 剧集 / 版本聚合全部移除，`worker/`、`worker.js` 与相关测试回到远程仓库版本；`tmdbApiReadToken` / `tmdbApiV3Key` / `tmdbLanguage` 作为配置兼容字段保留（字段、脱敏规则与备份往返都在，值不再被读取），`tmdbAggregationEnabled` 保留字段名但读取时一律清空为 `false`，管理端不再提供聚合开关、策略下拉与 todb 输入框。管理端保留的改进：4 个首屏 CDN 脚本改为同源摇树交付（`frontend/vendor/` 随 `ASSETS` 部署，Worker 按 `assetKey` 改写并代理），内置壳补上 vendor 改写与 `bundled` 投递分支，断网也能启动；颜色统一走 CSS 变量、入口与访问密钥收进高级设置、节点面板与弹窗按同一套间距重排；新增 Playwright 真浏览器冒烟与 5 视图 × 4 主题的视觉基线；仓库换行统一为 LF，`frontend/src/` 继续作为非生产参考源。
+- Worker 生产源码在 `worker/`，根目录 `worker.js` 是构建产物，可直接粘贴部署
+- 配置与节点存在 KV（`ENI_KV`），日志与统计存在 D1（`DB`，可选）
+- 大视频流尽量不经过 Worker 内存，交给 Cloudflare 数据面转发
 
-  ![img](https://web.axuitomo.qzz.io/api/p/img/github/PixPin_2026-08-03_14-00-35.png?download=true&sign=TltPfTfUurzkQ5FsY4rpQ1Wd%2Bwu1Oji3rC%2FVo2NbV%2BM%3D%3A0)
+> 当前 **V20.1** 是 V20.0 减法发布后的稳定性收尾，改动集中在播放链路与管理端手感：客户端暂停或慢链路不再被误判成上游 504，Range 续传与 206 响应不再写入缓存，无扩展名音频流与视频共用同一套重试和协议回退；管理端视图切换不再引起内容区横向重排，保存设置遇到版本冲突会自动重试，「Worker 和 HTML 更新」不再要求脚本必须叫 `worker.js`。逐条变更见 [CHANGELOG.md](./CHANGELOG.md)。
 
+![CF-EMBY-PROXY-UI 管理后台截图](https://web.axuitomo.qzz.io/api/p/img/github/PixPin_2026-08-03_14-00-35.png?download=true&sign=TltPfTfUurzkQ5FsY4rpQ1Wd%2Bwu1Oji3rC%2FVo2NbV%2BM%3D%3A0)
 
- - 讨论群：https://t.me/+NhDf7qMxH4ZlODY9
- - 教程文档：https://wiki.8081666.xyz
- - 这是一个面向个人的Worker 代理方案，对于家庭来说免费版worker请求数可能不够用
- - 建议每次新增多个节点后导出 JSON 做本地备份
- - ⚠️提示：本工具仅供学习，请遵守当地法律法规，造成的一切后果自负。
+- 讨论群：https://t.me/+NhDf7qMxH4ZlODY9
+- 教程文档：https://wiki.8081666.xyz
+- 这是面向个人的代理方案，家庭使用免费版 Worker 请求数可能不够
+- 新增多个节点后建议导出 JSON 做本地备份
+- ⚠️ 本工具仅供学习，请遵守当地法律法规，造成的一切后果自负
 
 ## 目录
 
 - [项目简介](#项目简介)
 - [核心能力](#核心能力)
-- [架构总览](#架构总览)
 - [功能矩阵](#功能矩阵)
-- [工作原理](#工作原理)
-- [部署前须知](#部署前须知)
-- [环境变量与绑定](#环境变量与绑定)
-- [部署步骤](#部署步骤)
-- [自定义域绑定与优选域名路由教程](#第八步自定义域绑定与优选域名路由教程)
-- [文档导航](#文档导航)
-- [后台功能说明](#后台功能说明)
+- [快速开始](#快速开始)
 - [节点访问方式](#节点访问方式)
-- [缓存与性能设计](#缓存与性能设计)
-- [安全机制](#安全机制)
-- [数据存储说明](#数据存储说明)
-- [请求处理流程图](#请求处理流程图)
-- [致谢](#致谢)
+- [部署前须知](#部署前须知)
+- [管理后台](#管理后台)
+- [文档导航](#文档导航)
 - [常见问题](#常见问题)
+- [致谢](#致谢)
 - [更新日志](CHANGELOG.md)
-
----
 
 ## 项目简介
 
-**CF-EMBY-PROXY-UI** 是一个运行在 **Cloudflare Workers** 上的媒体代理系统，适用于：
+**CF-EMBY-PROXY-UI** 是一个运行在 **Cloudflare Workers** 上的 Emby / Jellyfin 媒体代理系统，适合以下场景：
 
-- 多台 Emby / Jellyfin 服务器统一入口
-- 隐藏源站真实 IP
-- 为海外源站提供 Cloudflare 边缘加速
-- 提供带 UI 的管理后台，而不是纯手改配置
-- 实现“反代 + 直连”混合路由
+- 多台 Emby / Jellyfin 服务器想用一个域名统一入口
+- 源站在海外、直连线路差，希望借 Cloudflare 边缘加速
+- 不想暴露源站真实 IP
+- 想要可视化后台维护节点，而不是手改配置文件
 
-项目当前版本由模块化 Worker 源码和同源管理端组成：`worker/index.js` 是唯一生产入口，`worker/` 内按 core、runtime 和代理功能域组织源码，构建后生成根目录 `worker.js` 单文件部署产物；管理端则由 `frontend/admin-runtime.template.html` 与 `frontend/scripts/admin-runtime-enhancements.mjs` 组合，经 Vite 输出到 `frontend/dist/index.html`，再由 Wrangler Static Assets 与 Worker 一起部署。
-应用版本号唯一来源是 `worker/core/build-info.js` 的 `APP_VERSION`：Worker 落地页标题与管理端标题/徽章占位符 `__APP_VERSION__` 都从它派生。发布时只改这一处，并同步本 README 与 `AGENTS.md` 的版本字样；`npm.cmd run check` 的 version consistency 项会校验三者一致。设置项与绑定/键的完整映射见 [`docs/architecture.md` 第 8 节](./docs/architecture.md#8-设置项与绑定键映射)。
-
----
+管理端由 `frontend/admin-runtime.template.html` 与 `frontend/scripts/admin-runtime-enhancements.mjs` 组合成 `frontend/index.html`，再由 `publish-dist.mjs` 拷贝为 `frontend/dist/index.html`（单文件交付，不经过打包器），最后由 Wrangler 作为静态资源和 Worker 一起部署。应用版本号唯一来源是 `worker/core/build-info.js` 的 `APP_VERSION`，Worker 落地页与管理端标题都从它派生。源码分层与请求生命周期见 [`docs/architecture.md`](./docs/architecture.md)。
 
 ## 核心能力
 
-### 1) 可视化管理
-- 后台地址：`ADMIN_PATH`（默认 `/admin`）
-- 支持节点新增、编辑、删除、导入、导出
-- 支持全局 GET / 健康检查与节点面板一键 GET 探测（全局批量最多 4 个并发，节点弹窗内逐条执行并显示 `n/总数` 进度）
-- 支持仪表盘展示请求量、运行状态、流量趋势、资源分类徽章
-- 支持 DNS 编辑双模式：`CNAME模式` / `A模式` 可切换，保存时自动处理互斥关系
-- 支持推荐优选域名卡片、DNS 历史卡片回填，以及 DNS 实用链接快捷跳转
-- 支持全局设置新手 / 高手模式切换，默认新手模式隐藏高风险高级项
-- 支持冷启动初始化自检，缺少 `JWT_SECRET` / `ADMIN_PASS` 时直接在控制台与页面提示
-- 支持“一键整理 KV 数据”，用于修复旧版本升级后 `sys:theme` 脏值、`sys:nodes_index` 错乱与遗留缓存键
-- 支持预览后整理 KV / D1；D1 整理使用签名计划令牌与单轮硬预算，达到预算后可再次预览继续执行
-- 支持全局设置专用迁移与完整备份（不保留设置变更历史，回退依赖此前导出的备份文件）
-- 节点保存和批量导入会校验 Worker 资源上限；超限导入整批拒绝，旧版超限节点仍可读取和代理但不进入热缓存或自动回写
+### 可视化管理
 
-### 2) 智能代理与分流
-- 默认由 Worker 透明中继请求与响应
-- 支持同源 30x 继续代理
-- 支持显式“源站直连节点”名单
-- 跨域 30x 重定向按“鉴权能否随跳转携带”自动处理：可携带时由 Worker 继续代理，无法携带时 fail-closed 返回 409，不下发无鉴权的节点 `Location`
-- 节点级“主视频流策略”`mainVideoStreamMode`（直连 / 代理 / 跟随全局），决定网盘、对象存储等不适合中继的源站是否直接回到客户端
+- 后台地址 `ADMIN_PATH`（默认 `/admin`），支持节点新增、编辑、删除、导入、导出
+- 仪表盘展示请求量、流量趋势、资源分类与运行状态，Cloudflare GraphQL 优先、D1 本地兜底
+- DNS 编辑双模式：`CNAME模式` / `A模式` 可切换，保存时自动处理互斥记录，支持历史卡片回填
+- 新手 / 高手模式切换，默认隐藏高风险高级项；支持备份恢复与 KV / D1 一键整理，整理前先出预览
 
-### 3) 媒体场景优化
-- 静态资源、封面、字幕与视频流分开处理
-- 大视频流不在 Worker 内做对象缓存，响应缓存头尽量沿用源站 / Cloudflare 数据面策略
-- 支持轻量级元数据预热（海报 / 白名单 `.m3u8` / 字幕），不在 Worker 内做视频 Range 旁路预取或大对象缓存
-- 轻量级元数据预热自带快速熔断、同键 single-flight 与最多 4 个在途任务；源站 3 秒内无响应就直接放弃预热
-- 预热预取字节预算默认 4 MiB、最高 8 MiB，超出声明或流式预算时会主动取消响应体
-- Worker 元数据缓存键会自动清洗 Token、设备号、播放会话等噪声参数，提升跨用户命中率
-- 转码 `m3u8` 与非白名单播放列表不会写入 Worker 缓存
-- 视频主字节流尽量交给 Cloudflare 原生网关、Range 断点续传与 Cache Rules 处理
-- Worker 管理的播放列表和媒体分片响应分别使用 12 秒、15 秒流空闲超时，客户端取消时同步释放上游读取和计时器
-- 支持 WebSocket 透明转发
-- 支持 Emby / Jellyfin 媒体授权头兼容与安全同步，并可按节点显式指定上游类型
-- 支持节点级真实客户端 IP 透传控制，便于兼容按来源 IP 风控的特殊上游
+### 智能代理与分流
 
-### 4) 安全与可观测性
-- 绑定 D1 时按 IP 记录登录失败；连续失败 5 次后锁定 15 分钟
-- 支持自定义管理路径 `ADMIN_PATH`，降低固定 `/admin` 扫描命中率
-- 国家/地区白名单 / 黑名单模式切换
-- IP 黑名单
-- 单 IP 请求限速（按分钟）
-- 日志写入 D1、运行状态写入 D1 `sys_status`、定时清理、Telegram 每日报表
-- D1 整理按每批 500 行执行，单轮最多处理 10000 行或运行 25 秒；预览计数超过 10000 时显示下界，日志量过大时延后 FTS 自动重建
-- DNS 修改属于敏感操作，管理 API 需要显式确认头；当前 UI 主链路按“站点级草稿 -> 保存时统一同步”执行
-- 支持 Cloudflare GraphQL 仪表盘统计与本地 D1 兜底统计
+- 默认整站透明中继，同源 30x 继续代理；跨域跳转在鉴权无法随跳转携带时 fail-closed 返回 409
+- 节点级主视频流策略 `mainVideoStreamMode`（直连 / 代理 / 跟随全局），可让网盘、对象存储等源站直接回到客户端
+- 支持 HTTP(S) 与 WebSocket 透明转发、Range 断点续传、多线路 failover 与 403 重试
+- Emby / Jellyfin 认证头兼容，节点可显式选择 `auto` / `emby` / `jellyfin` / `passthrough`
 
----
+### 媒体场景优化
 
-## 架构总览
+- 海报、封面、字幕、白名单播放列表做轻量边缘缓存与预热，视频主字节流保持薄透传
+- 缓存键会清洗 Token、设备号、播放会话等噪声参数，提升跨用户命中率；转码 `m3u8` 不入缓存
+- 受管流的空闲超时只统计「等上游读」，客户端暂停或慢链路不会误杀上游连接
+- 非 `GET/HEAD` 请求只有 `Content-Length` 明确且不超过 256 KiB 才缓冲重试，其余保持流式转发
 
-```mermaid
-flowchart TD
-  Client["客户端 / 播放器"] --> Entry["worker/index.js · createWorkerApplication"]
-  Cron["Cron 每小时"] --> Scheduled["ScheduledMaintenanceFacade · scheduled"]
-  Entry --> Route["buildNodeRouteContext · host / path / ADMIN_PATH / 初始化健康"]
+### 安全与可观测性
 
-  Route --> HostPrefix{"host 是配置 host 的子域?"}
-  HostPrefix -- 是 --> Proxy["NodeProxyFacade 节点代理"]
-  Route --> AdminRoute{"管理端路由?"}
-  AdminRoute -- 是 --> Admin["AdminConsoleFacade 管理端"]
-  AdminRoute -- 否 --> Proxy
-
-  Admin --> Landing["GET / 落地页 · 标题注入 APP_VERSION"]
-  Admin --> Shell["管理端 HTML · 已上传优先，否则 ASSETS /index.html"]
-  Admin --> AdminAPI["POST ADMIN_PATH · JWT 后按 action 分发"]
-  Shell --> Client
-
-  Proxy --> NodeRoute["节点解析 · host-prefix / 兼容路径 / /{node}/..."]
-  NodeRoute --> Policy["访问策略 · Geo / IP / 限速 / 节点密钥"]
-  Policy --> Header["请求头清洗 · Emby / Jellyfin 鉴权补丁"]
-  Header --> Upstream["回源 · failover / 探测 / 超时 / 重试"]
-  Upstream --> Redirect["重定向映射 · 同源继续，跨域鉴权不可携带时 409"]
-  Redirect --> Playback["播放关键路径 · PlaybackInfo 改写 / manifest / segment / 有界缓存"]
-  Playback --> Client
-
-  Admin --> KV["KV ENI_KV · sys:theme / node:* / HTML"]
-  Proxy --> KV
-  Admin --> D1["D1 DB · proxy_logs / stats / sys_status / 锁 / 认证失败"]
-  Proxy --> D1
-  Scheduled --> KV
-  Scheduled --> D1
-  Version["worker/core/build-info.js · APP_VERSION"] --> Admin
-```
-
-> 这张图与 [`docs/architecture.md` 第 1 节](./docs/architecture.md#1-总体形态)保持一致；更细的生命周期见下方「请求处理流程图」与 [`docs/architecture.md` 第 3 节](./docs/architecture.md#3-请求生命周期)。
-
----
+- JWT 登录；绑定 D1 时按 IP 统计密码错误，连续 5 次锁定 15 分钟
+- 国家/地区白名单或黑名单、IP 黑名单、单 IP 每分钟限速、CORS 白名单
+- 敏感操作需要 `X-Admin-Confirm` 确认头；`ADMIN_PATH` 可自定义，降低固定路径扫描命中率
+- 日志写入 D1、按保留天数定时清理、Telegram 日报与阈值告警
 
 ## 功能矩阵
 
 | 模块 | 说明 |
 |---|---|
 | 后台认证 | JWT 登录态；绑定 D1 时启用按 IP 的密码错误累计锁定 |
-| 节点管理 | 节点增删改查、导入导出、备注/标签/密钥、4 并发 GET 健康探测、资源上限校验 |
+| 节点管理 | 增删改查、导入导出、标签备注、4 并发 GET 健康探测、资源上限校验 |
 | 路由模式 | 透明反代、同源 30x 继续代理、源站直连节点 |
-| 外链策略 | 跨域 30x 鉴权可携带时继续代理，不可携带时 fail-closed 返回 409 |
 | 主视频流 | 节点级 `mainVideoStreamMode`：直连 / 代理 / 跟随全局 |
-| 缓存 | 静态资源缓存、视频透传、字幕边缘缓存、预热微缓存 |
-| 安全 | Geo 白名单/黑名单模式、IP 黑名单、单 IP 限速、真实客户端 IP 透传模式 |
-| 兼容补丁 | `Authorization` / `X-Emby-Authorization` / `X-MediaBrowser-Authorization` 兼容 |
-| 协议优化 | 协议策略档位（`compat` / `balanced` / `aggressive`；`balanced` 在 UTC+8 20:00–24:00 降级到 HTTP/1.1）、403 重试与协议回退 |
+| 缓存 | 静态资源与字幕边缘缓存、视频透传、元数据轻量预热 |
+| 安全 | Geo 白名单/黑名单、IP 黑名单、单 IP 限速、真实客户端 IP 透传模式 |
+| 兼容补丁 | `Authorization` / `X-Emby-Authorization` / `X-MediaBrowser-Authorization` |
+| 协议优化 | `compat` / `balanced` / `aggressive` 档位、403 重试与协议回退 |
 | 日志监控 | D1 请求日志、签名预览与预算整理、Telegram 日报 |
 | 仪表盘 | Cloudflare GraphQL 聚合 + D1 本地兜底 |
-| 设置中心 | 新手/高手模式、分区导航、专用迁移 |
-| 连接能力 | HTTP(S) + WebSocket |
 
----
+## 快速开始
 
-## 工作原理
+1. **建存储**：在 Workers KV 里建一个命名空间；需要日志和日报再建一个 D1 数据库
+2. **部署 Worker**：Fork 仓库，把 `wrangler.toml` 里的 KV / D1 占位符换成自己的值，再用 Cloudflare 连接 GitHub（或 GitHub Actions）自动构建部署；也可以把根目录 `worker.js` 直接粘进控制台
+3. **填变量**：`ADMIN_PASS`（后台密码）、`JWT_SECRET`（随机长串），可选 `ADMIN_PATH`、`HOST`
+4. **进后台**：打开 `https://你的域名/admin` 登录，绑定了 D1 就到「日志记录」点一次「初始化 DB」
+5. **加节点**：填代理名称、服务器地址（如 `http://1.2.3.4:8096`）和可选密钥，之后用节点地址访问
 
-### 请求转发原理
-客户端请求先到 Worker，Worker 根据 URL 中的节点名读取 KV 中的节点配置，再构造回源请求发送到 Emby 源站；源站响应由 Worker 流式回传给客户端。对普通 API、静态资源、视频流、重定向、WebSocket，会分别走不同的处理分支。
-
-### IP 隐藏原理
-Worker 作为公网入口，外部只能看到 Cloudflare 边缘节点，而不是你的 Emby 源站真实 IP。需要注意的是，这种“隐藏”是网络入口层面的隐藏，不等于完全匿名：Cloudflare 仍会追加自身请求头，源站 TCP 层看到的也仍然是 Cloudflare 网络。
-
-默认情况下，项目在回源时会先清洗 `X-Real-IP` / `X-Forwarded-For` / `Forwarded` 以及 `Connection` / `Upgrade` 等易伪造或可能影响协议升级的请求头，再由 Worker 注入真实内容，方便上游日志审计与访问控制。
-
-这里的“真实 IP”指的是客户端与 Cloudflare 建立连接时被 Cloudflare 识别到的来源 IP。它可以是用户本机的公网出口 IP，也可以是用户前置代理的出口 IP。默认情况下，节点会透传 `X-Real-IP` 和 `X-Forwarded-For`；项目注入的这两个请求头传达的是同一个真实 IP，其中 `X-Forwarded-For` 不是完整代理链。并且注入发生在节点自定义请求头之后，因此节点里新增同名请求头也不能覆盖这两个值。如果个别上游会按真实出口 IP、地区或 ASN 做风控，也可以在节点级改为仅保留 `X-Real-IP`、强制不透传【慎用】。
-
-### 直连 / 反代混合原理
-本项目不是“全量一刀切反代”。它支持：
-
-- 节点默认走 Worker 中继
-- 同源 30x 跳转继续代理
-- 某些节点被显式标记为“源站直连节点”后，源站 2xx 可直接下发给客户端
-- 命中网盘关键词或外链策略时，可直接把目标地址返回给客户端
-
-这意味着它既能保留 Worker 统一入口，也能在带宽敏感场景下降低 Worker 中继成本。
-
-### 控制面 / 数据面分离原理
-这次架构调整的核心，是让 Worker 只做自己擅长的轻逻辑：
-
-- **控制面（Worker）**：鉴权、路由、UI 渲染、元数据处理、轻量级预热、轻量缓存键清洗
-- **数据面（Cloudflare 原生网关）**：视频主字节流、Range 断点续传、边缘缓存、Cache Rules 脱敏共享
-
-对应到实现上，项目已经移除了 Worker 里对视频流的“黑洞式 drain”和大对象缓存倾向。海报、字幕、白名单播放列表继续在 Worker 层用 `caches.default` 做轻缓存；而视频本体则尽量保持薄透传，更依赖 Cloudflare 底层转发与 Cache Rules 配置，尤其建议为视频路径启用 **Ignore query string** 来实现跨用户共享缓存。
-
----
-
-## 部署前须知
-
-### 适合什么场景
-- Emby 源站在海外，直连线路差
-- 多台服务器希望统一访问域名
-- 不想暴露源站真实 IP
-- 需要可视化后台维护节点
-
-### 不太适合什么场景
-- 局域网 / 内网直连环境
-- 源站本身就在国内优质线路（如 CN2）
-- 大规模公共分享、超大带宽分发
-
-### 使用风险提醒
-- 腐竹如果明确禁止 CF 反代，使用该方案可能导致账号受限
-- Cloudflare 可能识别高流量滥用，建议仅用于个人或家庭分享
-- Worker 并不能抹除所有 CF 痕迹，请求头和源 IP 识别仍有暴露反代特征的可能
-
----
-
-## 环境变量与绑定
-
-
-## ⚙️ 环境变量与绑定配置指南
-
-在部署本项目时，你需要配置相应的环境变量与服务绑定。为了方便管理，我们将配置项分为 **Worker 核心配置**（在 Cloudflare 控制台设置）和 **SaaS 面板进阶配置**（在部署后的管理后台设置）。
-
-### 一、 Worker 核心配置（控制台填写）
-
-在 Cloudflare Worker 的 设置 -> 变量和机密 或 绑定页面 中进行配置。建议首次部署时对照下表直接填写：
-
-#### [必需项]
-
-这些是系统正常运行的基础，**必须配置**。
-
-| 变量名 / 绑定名称 | 类型 | 作用说明 | 配置示例 / 建议 |
-| :--- | :--- | :--- | :--- |
-| **`ENI_KV`** | KV 绑定 | **核心配置存储**。用于持久化保存项目主配置、节点信息、DNS 修改历史与整理元数据等。 | 绑定你创建的 KV 命名空间（例如：`EMBY_DATA`）。 |
-| **`ADMIN_PASS`** | 加密变量 (Secret) | **后台登录密码**。用于验证管理面板的访问权限。 | `MyStrongPassword123` |
-| **`JWT_SECRET`** | 加密变量 (Secret) | **安全会话密钥**。用于生成和校验后台登录状态 (JWT)，防止越权访问。 | 建议填入一段高强度的随机长字符串。 |
-
-####  [可选项]
-
-按需配置，用于开启日志统计或自定义系统行为。
-
-| 变量名 / 绑定名称 | 类型 | 作用说明 | 配置示例 / 建议 |
-| :--- | :--- | :--- | :--- |
-| **`DB`** | D1 绑定 | **运行数据库**。保存请求日志、聚合统计、运行状态、任务锁、缓存和认证失败计数等数据。 | 绑定你创建的 D1 数据库。 |
-| **`ADMIN_PATH`** | 文本变量 (Var) | **自定义管理入口**。用于修改默认的 `/admin` 路径，有效防范自动化扫描工具的嗅探。 | `/secret_portal_99`<br>\> ⚠️ **注意**：不能以 `/api` 开头。 |
-| **`HOST`** | 文本变量 (Var) | **主访问域名**。启用 host prefix 代理或保存 host prefix 节点前必须配置；只填写合法 DNS 主机名。 | `emby.example.com`，不要带协议、端口、路径、通配符或 IP。 |
-| **`LEGACY_HOST`** | 文本变量 (Var) | **兼容旧访问域名**。迁移主域名时保留旧的路径式节点入口。 | `old-emby.example.com` |
-| **`TMDB_API_READ_TOKEN`** / **`TMDB_API_KEY`** / **`TMDB_LANGUAGE`** | 加密变量 / 文本变量 | **已停用（保留兼容）**。V20.0 移除了 TMDB 查询转换，这三项不再被任何代码读取，填写也不会影响请求；后台「账号设置」里的同名配置项同理保留但不再生效。 | 可留空。见 `.dev.vars.example` |
-
-> 💡 **命名兼容性提示**：
-> 核心代码已向下兼容多种旧版命名（如 `KV` / `EMBY_KV` / `EMBY_PROXY` 会自动映射为 `ENI_KV`，`D1` / `PROXY_LOGS` 会映射为 `DB`）。但**强烈建议在新部署时统一使用 `ENI_KV` 和 `DB`**，以确保与后续的更新、README 说明及自动化脚本保持一致。
-
------
-
-### 二、 SaaS 面板进阶配置（后台 UI 填写）
-
-项目部署成功并登录管理后台后，可在\*\*“全局设置”\*\*中配置以下进阶参数。这些参数经后端清洗后以 JSON 写入 `ENI_KV` 的 `sys:theme`；`cfApiToken`、`tgBotToken` 不会出现在普通备份导出中，只有经过二次确认的“含密钥”导出才会包含它们。主配置本身不是静态加密密文，请严格限制 KV 和管理后台的访问权限。
-
-| 参数分类 | 参数名 | 作用说明 |
-| :--: | :--- | :--- |
-| **Cloudflare 联动***(推荐配置)* | **`cfApiToken`** | **Cloudflare API 令牌**：用于实现一键清理缓存、GraphQL 流量高级统计等深度联动功能。 |
-| | **`cfZoneId`** | **区域 ID**：对应你当前代理域名所在的 Zone ID。 |
-| | **`cfAccountId`** | **账户 ID**：对应你的 Cloudflare 账户 ID。 |
-| **Telegram 通知***(按需配置)* | **`tgBotToken`** | **机器人 Token**：用于发送每日数据报表及系统告警。 |
-| | **`tgChatId`** | **会话 ID**：接收通知的个人或群组 Chat ID。 |
-
-> 💡 **节点级补充**：
-> “媒体认证头模式”和“真实客户端 IP 透传”都支持在 **节点编辑面板** 单独配置。
-> 适合按节点对个别 Emby / Jellyfin 源站或特殊风控上游做差异化处理。
-
------
-
-### 三、 Cloudflare API Token 权限建议
-
-如果你希望在后台配置 `cfApiToken` 以启用完整的增强能力（如仪表盘高级统计、一键清缓存），请确保生成的 API Token 至少包含以下权限：
-
-  * **Account (账户级)**
-      * `Account Analytics` -\> **Read** (读取)
-      * `Workers Scripts` -\> **Read** (读取)
-  * **Zone (区域级)**
-      * `Workers Routes` -\> **Read** (读取)
-      * `Analytics` -\> **Read** (读取)
-      * `Cache Purge` -\> **Purge** (清除)
-      * `DNS` -\> **Edit** (编辑)
-      * 
-      <img  src="https://web.axuitomo.qzz.io/api/p/img/github/PixPin_2026-03-22_15-42-35.png?sign=g%2FYJHsSCBZ0eu2aoSsD7hLTh9a7UXo7FGg76vVVAgLU%3D%3A0&ts=1774165528608" />
-      
-> **📝 提示**：如果你仅需要基础的代理分发与节点管理，不需要仪表盘数据增强或缓存控制，可以暂不配置此 Token。
-
------
-
-### 四、 定时触发器 (Cron Triggers)
-
-为实现自动化运维，本项目依赖 Cloudflare Worker 的定时触发器功能。
-
-  * **功能作用**：驱动定时清理过期日志、发送 Telegram 每日报表以及执行节点异常告警检查。
-  * **配置方式**：请前往 Worker 控制台的 **Triggers (触发器)** 选项卡中手动添加。*(注：社区交流时常有人误拼成 `corn`，请确认拼写为 `cron`)*。
-  * **生效时间**：根据 Cloudflare 官方说明，Cron 表达式基于 **UTC 时区** 运行。配置变更后，最多可能需要约 15 分钟才能传播到全球边缘节点生效。
-
-
----
-
-## 部署步骤
-
-### 第一步：创建 KV
-1. 打开 Cloudflare Dashboard
-2. 进入**左侧导航栏>储存与数据库 > Workers KV**
-3. 创建一个 命名空间，例如：`EMBY_DATA`
-
-### 第二步：创建 Worker
-你可以任选以下三种方式：
-
-#### 方式 A：Cloudflare 控制台直接粘贴
-1. 进入 **Workers 和 Pages -> 创建应用 -> 从helloworld开始->设置名称创建**
-2. 创建后进入 **Edit code**
-3. 将 `worker.js` 全量替换进去并部署
-
-> 这种方式只部署 Worker 单文件，不会自动上传 `frontend/dist` 或创建 `ASSETS` 绑定。基础代理和管理 API 可以运行，但要使用仓库内置的完整管理端，请优先选择方式 B / C；继续使用方式 A 时，请完成下方“第六步：上传管理端 HTML”。
-
-#### 方式 B：通过 Cloudflare 连接 GitHub 自动部署
-1. 先将当前项目Fork到你自己的 GitHub 仓库
-2. 先打开仓库根目录的 `wrangler.toml`
-3. 如果你希望修改 Worker 名称，先把 `name` 改成你要使用的名称
-4. 点击**Cloudflare Dashboard**左侧导航栏的 **存储和数据库**
-5. 获取 KV ID
-   - 在下拉菜单或页面中选择 **KV**
-   - 在列表中找到并点击你为项目创建的 KV 命名空间
-   - 进入详情页后，在右侧面板找到并复制 **命名空间 ID (Namespace ID)** 对应`id`
-6. 如果你准备启用 D1 日志功能，再获取 D1 名称和 ID
-   - 同样在 **存储和数据库** 下，选择 **D1 SQL 数据库**
-   - 如果还没有数据库，可以先按下方“第四步”创建一个，再回来继续
-   - 点击你的数据库名称进入概览页面
-   - 记下这里的数据库名称对应`database_name`，并复制页面上显示的 **数据库 ID (Database ID)**对应`database_id`
-7. 将上面获取到的值填入仓库根目录 `wrangler.toml` 中的 `id`、`database_name` 和 `database_id`
-8. 如果你暂时不使用 D1，请先删除 `wrangler.toml` 中的 `[[d1_databases]]` 配置段，再进行首次部署
-9. 把修改后的 `wrangler.toml` 提交并推送到你自己的 GitHub 仓库
-10. 在 Cloudflare 中进入 **Workers 和 Pages**，选择连接 GitHub 仓库创建 Worker
-11. 选择本仓库后，保持仓库根目录为部署根目录，然后执行首次部署
-12. Cloudflare 会读取仓库内的 `wrangler.toml`：构建命令从 `worker/` 生成 `worker.js`，并把仓库中的 `frontend/dist` 作为 `ASSETS` 静态资源随 Worker 上传
-13. 首次部署完成后，后续只要你向已绑定分支 `push` 新提交，Cloudflare 就会自动拉取最新代码并重新部署
-
-> 仓库中的 `wrangler.toml` 同时声明 Worker 入口、构建命令、`frontend/dist` 静态资源、兼容日期以及 KV / D1 绑定信息；部署前请先把占位符替换成你自己的实际值。Cloudflare Git 部署会使用仓库已提交的 `frontend/dist`，因此修改管理端源码后要先按仓库脚本重新构建并提交生成物。
-
-完成方式 B 部署后，可以继续跳转到 **第五步：设置环境变量**。
-
-#### 方式 C：通过 GitHub Actions 自动部署
-1. 先将当前项目Fork到你自己的 GitHub 仓库
-2. 打开仓库根目录的 `wrangler.toml`
-3. 如果你希望修改 Worker 名称，先把 `name` 改成你要使用的名称
-4. 点击**Cloudflare Dashboard**左侧导航栏的 **存储和数据库**
-5. 获取 KV ID
-   - 在下拉菜单或页面中选择 **KV**
-   - 在列表中找到并点击你为项目创建的 KV 命名空间
-   - 进入详情页后，在右侧面板找到并复制 **命名空间 ID (Namespace ID)**
-6. 如果你准备启用 D1 日志功能，再获取 D1 名称和 ID
-   - 同样在 **存储和数据库** 下，选择 **D1 SQL 数据库**
-   - 如果还没有数据库，可以先按下方“第四步”创建一个，再回来继续
-   - 点击你的数据库名称进入概览页面
-   - 记下这里的数据库名称，并复制页面上显示的 **数据库 ID (Database ID)**
-7. 将上面获取到的值填入仓库根目录 `wrangler.toml` 中的 `id`、`database_name` 和 `database_id`
-8. 如果你暂时不使用 D1，请先删除 `wrangler.toml` 中的 `[[d1_databases]]` 配置段
-9. 在 GitHub 仓库的 **Settings -> Secrets and variables -> Actions** 中新增以下 Secrets
-   - `CLOUDFLARE_ACCOUNT_ID`：你的 Cloudflare Account ID
-   - `CLOUDFLARE_API_TOKEN`：使用 **Edit Cloudflare Workers** 模板创建的 API Token
-10. 将仓库中的 [deploy-worker.yml](./.github/workflows/deploy-worker.yml) 提交并推送到 `main` 或 `master` 分支
-11. GitHub Actions 会使用 Node 24 执行 `npm ci`、`npm run check` 和 `npm run build:cdn`，随后由 Wrangler 按 `wrangler.toml` 构建 `worker.js`，并将 Worker 与 `frontend/dist` 一起部署到 Cloudflare Workers
-12. 如果你的默认部署分支不是 `main` 或 `master`，请先修改 `.github/workflows/deploy-worker.yml` 里的 `branches` 配置
-13. 首次部署后，后续每次向已配置分支 `push` 新提交，GitHub Actions 都会自动重新部署
-
-> 方式 C 不依赖 Cloudflare 的 Git 仓库集成，而是由 GitHub Actions 按仓库脚本构建管理端与 Worker，再读取 `wrangler.toml` 完成部署；如果你更希望把部署权限收敛在 GitHub Secrets 中，这种方式会更合适。
-
-完成方式 C 部署后，可以继续跳转到 **第五步：设置环境变量**。
-
-### 第三步：绑定 KV（方式 A 必做）
-1. 如果你使用的是方式 A，打开 Worker 的绑定页
-2. 添加绑定选择KV 命名空间
-3. 变量名填：`ENI_KV`
-4. 绑定到你刚创建的 KV
-
-### 第四步：创建并绑定 D1（可选但推荐）
-1. 打开 左侧导航栏->储存与数据库 -> D1SQL数据库
-2. 创建数据库，例如：`emby_proxy_logs`
-3. 如果你使用的是方式 A，回到 Worker 绑定页，添加绑定选择D1 数据库
-4. 变量名填：`DB`
-5. 如果你使用的是方式 B 或方式 C，请把数据库名称和数据库 ID 填入 `wrangler.toml`，然后重新推送到已绑定分支触发自动部署
-6. 后续在后台“日志记录”页面执行初始化 DB
-
-> 如果你使用“方式 A：控制台直接粘贴”，KV / D1 仍然需要在 Cloudflare Dashboard 中手动绑定；如果你使用“方式 B / 方式 C”，则优先以 `wrangler.toml` 中填写的绑定信息为准。
-
-### 第五步：设置环境变量
-在 Worker 的 变量与机密 中新增：
-
-- `ADMIN_PASS`：后台密码
-- `JWT_SECRET`：随机高强度字符串
-- `ADMIN_PATH`：可选，自定义管理后台入口，默认 `/admin`
-
-> 如果首次请求时缺少 `ADMIN_PASS` 或 `JWT_SECRET`，Worker 会在控制台打印一次初始化警告，首页和管理页也会显示“系统未初始化”提示。
-
-### 第六步：上传管理端 HTML（方式 A 必做）
-如果使用方式 A 在 Cloudflare 控制台直接粘贴 `worker.js`，还需要手动上传管理端 HTML；方式 B / C 已由 Wrangler 将 `frontend/dist` 作为静态资源上传，可以跳过本步。
-
-1. 确认已经完成 KV 绑定以及 `ADMIN_PASS`、`JWT_SECRET` 环境变量配置
-2. 打开 `https://你的 Worker 域名/ADMIN_PATH`（默认是 `/admin`），使用 `ADMIN_PASS` 登录
-3. 首次部署且没有 `ASSETS` 绑定时，登录后会自动进入“上传 index.html”页面；如果已经进入管理台，可访问 `https://你的 Worker 域名/ADMIN_PATH?setup=1` 重新打开上传页
-4. 选择仓库中的 `frontend/dist/index.html`
-5. 点击 **上传并进入管理台**，等待页面提示上传成功并自动跳转
-6. 确认管理台可以正常打开后，再继续配置节点和其他功能
-
-> 上传文件名必须保持为 `index.html`，大小不能超过 2 MiB，并且 HTML 会保存到已绑定的 `ENI_KV`。不要上传 `frontend/admin-runtime.template.html`；如果修改过管理端源码，请先运行 `npm.cmd run build:frontend`，再上传重新生成的 `frontend/dist/index.html`。
-
-### 第七步：按需添加 Cron Trigger
-如果你需要自动清理日志、发送 Telegram 日报或定时异常告警，再补这一步：
-
-1. 打开 Worker 的 **Triggers**
-2. 添加一个 **Cron Trigger**
-3. 仓库 `wrangler.toml` 的默认表达式为 `0 * * * *`，即每小时执行一次
-4. 保存后等待 Cloudflare 全球传播生效
-
-> Cloudflare 官方文档说明：注意Cron Trigger 使用 UTC，而中国时区是UTC+8,免费计划最多 5 个、付费计划最多 250 个；单次 Cron 执行最长 15 分钟。
-
-### 第八步：自定义域绑定与优选域名路由教程
-
-Cloudflare Dashboard->左侧导航栏->域注册->管理域 
-
-点击要绑定的域名，在仪表盘右侧DNS模块，点击DNS记录
-
-#### 添加DNS记录 
-
-
-类型选择CNAME ，名称自定义，目标为优选域名 可以从https://cf.090227.xyz/ 中选
-
-优选域名推荐：saas.sin.fan mfa.gov.ua www.shopify.com
-
-格外注意：关闭代理状态[关闭小黄云]，然后点击保存即可
-![img](https://web.axuitomo.qzz.io/api/p/img/github/PixPin_2026-03-22_13-15-57.png?sign=HHMMyiRwuph4zhXbwZfiysGeyvX3p3Qv7cY5sMxE83o%3D%3A0&ts=1774165957486)
-
-
-
-#### 配置路由
-
-
-
-在你的域名管理页面左侧菜单栏，点击 Workers 路由 (Workers Routes)-在HTTP 路由-点击添加路由
-
-举例：我的域名是 xyz9923.qzz.io ，我上面设置的名称为emby
-
-路由填写为 emby.xyz9923.qzz.io/* **必须在域名的后边携带/***
-
-
-
-Worker选择：Worker 一栏选择你第一步创建的那个Worker
-
-![img](https://web.axuitomo.qzz.io/api/p/img/github/PixPin_2026-03-22_16-02-34.png?sign=fDVoNBRbiYJeU%2FBbtEaFEIKHuabl2vY3MUtDmTfk3xI%3D%3A0&ts=1774166574065)
-
-域名推荐设置：
-
-- SSL/TLS：**Full**
-- 开启 **Always Use HTTPS**
-- 开启 **TLS 1.3**
-- 开启 **WebSockets**
-- 可按需开启 **Tiered Cache**
-
-> 反代访问端口需使用 Cloudflare 支持的 HTTPS 端口，例如 `443 / 2053 / 2083 / 2087 / 2096 / 8443`。
-
-### 第九步：Cloudflare Cache Rules 教程[违反TOS慎重开启]
-
-- [Cloudflare Cache Rules 教程](#5-cloudflare-cache-rules-教程)
-【多人共享可选】【如果无法点击就直接ctrl+f 搜索吧】
-
-
----
-
-## 文档导航
-
-如果你想快速理解当前版本里最容易看花眼的部分，建议按下面顺序阅读：
-
-- [仓库文档索引](./docs/README.md)：按任务查找架构、开发、构建和验证文档
-- [当前项目架构](./docs/architecture.md)：说明 Worker 请求生命周期、源码分层、管理端投递链和 KV / D1 边界
-- [开发、构建与验证](./docs/development.md)：说明源码与生成物关系、常用命令、测试范围和发布前顺序
-
----
-
-## 后台功能说明
-
-后台路径：
-
-```text
-https://你的域名/admin
-```
-
-如果设置了自定义环境变量：
-
-```text
-ADMIN_PATH=/secret_portal_99
-https://你的域名/secret_portal_99
-```
-
-### 后台主要页面
-- **仪表盘**：展示请求量、流量趋势、资源类别、运行状态、定时任务状态，按需手动刷新
-- **节点管理**：搜索节点、导入/导出配置、单节点或全局 GET 健康探测
-- **日志记录**：按日期范围查询请求记录、初始化 DB、手动清理
-- **DNS 编辑**：当前站点 DNS 草稿编辑、推荐优选域名、历史记录回填、实用链接
-- **设置页**：系统 UI、代理与网络、静态资源策略、安全防护、日志设置、监控告警、账号设置、备份与恢复
-
-### DNS 编辑页说明
-
-- 后台 DNS 编辑页内置 **推荐优选域名** 卡片，点击后会自动回填当前站点的 `CNAME` 草稿，但仍需要再点一次“保存 DNS”才会真正写入 Cloudflare
-- `CNAME模式`：只保留 1 条 `CNAME`；保存时会自动删除当前站点下的 `A / AAAA`
-- `A模式`：可混合多条 `A / AAAA`，最少保留 1 条；切换到该模式时只会先改后台草稿，不会立刻改 Cloudflare
-- 从 `A模式` 切回 `CNAME模式` 时，如果当前没有有效 CNAME 草稿，会默认回填 `saas.sin.fan`
-- DNS 历史记录只保留 `CNAME` 修改历史，点击历史卡片会自动切回 `CNAME模式` 并回填内容
-- 实用链接区当前内置：`优选域名`、`麒麟优选`、`VPS789`、`CFST优选IP`、`CFST测速`、`Montecarlo-IP测速`
-
-### 设置页中可直接配置的能力
-
-> 默认进入 **新手模式**，设置页只隐藏「代理与网络」和「安全防护」两栏，其余分区（含静态资源策略）都会显示。切换到 **高手模式** 后才会出现这两栏，并展开更细的日志调优 / KV 修复工具与高级字段。
-
-#### 系统 UI
-- 新手模式 / 高手模式切换
-- UI 圆角弧度
-- 本地深浅主题切换（仅浏览器本地保存）
-- 界面主题：经典蓝 / 暖纸（保存到 Worker 配置，所有管理端共享；当前浏览器立即生效）
-- 调度时区偏移（用于定时任务与日报时间口径）
-- 多链接复制面板开关
-- 仪表盘「D1 写入热点」卡片开关
-- 仪表盘「KV / D1 状态」卡片开关
-- Cloudflare 套餐展示覆盖（用于配额口径）
-
-#### 代理与网络（高手模式完整显示）
-- 协议策略档位（`compat` 兼容优先 / `balanced` 均衡优先 / `aggressive` 激进优先）
-  - `compat`：关闭 HTTP/2、HTTP/3，全程走 HTTP/1.1
-  - `balanced`：启用 HTTP/2、HTTP/3，但在 UTC+8 的 20:00–24:00 晚高峰降级到 HTTP/1.1
-  - `aggressive`：全程启用 HTTP/2、HTTP/3，不做晚高峰降级
-- 403 重试与协议回退
-- host prefix 代理开关（启用前必须配置 `HOST`、Cloudflare Zone ID 与 API Token）
-- 轻量级元数据预热
-- 元数据预热缓存时长
-- 预热深度（仅海报 / 海报+索引）
-- 预热预取字节数（默认 4 MiB，最高 8 MiB）
-- 静态文件直连
-- HLS / DASH 直连
-- HLS / DASH 直连命中时，播放列表与分片自动走 307 数据面直传
-- PlaybackInfo 缓存开关与缓存时长（0–60 秒）
-- 视频回传进度开关与上报间隔
-- 故障转移探测（`hedge*` 组：探测路径、超时、并行度、等待时长、锁 TTL、偏好 TTL、失败冷却、抖动）
-- 源站直连节点名单
-- Ping 超时时间
-- Ping 缓存时间
-- 节点面板 Ping 自动排序
-- 上游握手超时
-- 额外重试轮次
-- 一键恢复推荐值
-
-#### 静态资源策略（高手模式完整显示）
-- 静态资源缓存时长（海报 / 封面 / 字幕 / JS / CSS 等统一策略入口）
-- 浏览器跨域策略（CORS 白名单）
-
-#### 安全防护（高手模式完整显示）
-- 国家/地区访问模式（白名单 / 黑名单）
-- 国家/地区名单
-- IP 黑名单
-- 全局单 IP 限速（请求/分钟）
-
-#### 日志设置
-- 日志开关与写入模式（`info` 记录全部请求 / `error` 只记录失败）
-- 写入字段：客户端 IP / COLO / UA、图片海报、媒体元数据
-- 展示字段：客户端 IP / COLO / UA
-- 日志搜索模式（LIKE / FTS5）
-- 日志保存天数
-- 日志延迟写入分钟数
-- 队列提前落盘阈值
-- D1 单批写入切片大小（高手模式）
-- D1 失败重试次数（高手模式）
-- D1 重试退避时间（高手模式）
-- 定时任务租约时长（高手模式）
-- 一键恢复推荐值
-
-#### 监控告警
-- Telegram Bot Token
-- Telegram Chat ID
-- 日志丢弃批次告警阈值
-- D1 写入重试告警阈值
-- 定时任务 `failed / partial_failure` 告警
-- 告警冷却时间
-- 定时日报开关、汇总口径开关、KV 口径开关、D1 口径开关与发送时间队列
-- KV / D1 用量告警开关与阈值百分比
-- 测试通知
-- 手动发送日报
-
-#### 账号设置
-- 后台免密登录有效天数（JWT）
-- Cloudflare Account ID / Zone ID / API Token
-- 一键清理全站缓存（Purge）
-- 当前设置页中的 Telegram Bot Token、Telegram Chat ID、Cloudflare API Token 为直接显示，不再做密码框隐藏或预览脱敏
-
-#### 备份与恢复
-- 不保留设置变更历史：旧版的设置快照已下线，恢复只能使用此前导出的设置 / 完整备份文件
-- 导入全局设置 / 导出全局设置（仅 settings，不含节点）
-- 全局设置专用迁移在导入时会整体替换当前 settings，未包含字段回退为默认值
-- 导入完整备份 / 导出完整备份（节点 + 全局设置）
-- 一键整理 KV / D1 数据（高手模式；先生成预览，再使用签名计划执行；CRON 每小时自动兜底）
-
-#### 全局设置上限说明
-- 元数据预热缓存时长：0 到 3600 秒；只作用于 `m3u8 / 字幕` 等轻量索引，不直接缓存视频主字节流。
-- 预热深度：当前支持“仅预热海报”和“预热海报+索引”两档。
-- 预热预取字节数：0 到 8388608 字节；默认 4194304 字节（4 MiB），用于限制单次后台预热的累计读取预算。
-- 静态资源缓存时长：0 到 365 天，统一作用于海报、封面、字幕及前端静态资源策略入口。
-- HLS / DASH 直连与元数据预热联动：开启“HLS / DASH 直连”后，命中的播放列表与分片直接走 307 数据面直传；海报与字幕仍可按当前策略预热。
-- Cloudflare Cache Rules：建议在视频路径上额外配置 “Ignore query string”，让不同用户的不同 Token 指向同一缓存实体。
-- Ping 超时 / 上游握手超时：最高 180000 毫秒。
-- 额外重试轮次：最高 3 次，避免额外消耗 Worker 子请求预算；Cloudflare 官方限制每次请求的子请求数量存在平台上限，免费计划与付费计划的额度不同。
-- D1 单批写入切片大小：最高 100 条，避免单批过大。
-- 定时任务租约时长：30000 到 900000 毫秒；对应 Cloudflare Cron 单次最长 15 分钟的官方限制。
-- 设置变更历史：不保留。`sys:config_snapshots:v1` 是旧版遗留键，保存设置与 KV 整理都会删除它，回退只能依赖导出的备份文件。
-- 全局设置专用迁移：导入时会整体替换当前 settings，适合多环境同步；旧字段会先做兼容清洗，再按当前字段模型落盘。
-
----
+方式 A（控制台粘贴 `worker.js`）还需要手动上传一次 `frontend/dist/index.html`；方式 B / C 由 Wrangler 自动带上静态资源。逐条步骤、Cron 触发器、自定义域与 Cache Rules 见 [`docs/deploy.md`](./docs/deploy.md)。
 
 ## 节点访问方式
 
-### 后台新增节点时需要填写
+后台新增节点时填写：
+
 - **代理名称**：例如 `hk`
-- **访问密钥**：例如 `123`，为空则公开
+- **访问密钥**：例如 `123`，留空则公开
 - **服务器地址**：例如 `http://1.2.3.4:8096`
 - **标签 / 备注**：可选
 
-### 访问格式
-
-公开节点：
+访问格式：
 
 ```text
-https://你的域名/hk
+公开节点：https://你的域名/hk
+加密节点：https://你的域名/hk/123
 ```
 
-加密节点：
+客户端只要把原本的 Emby 源站地址替换成节点地址即可。单节点容量、请求头与文本字段的上限见 [`docs/panel.md`](./docs/panel.md#节点配置资源上限)。
 
-```text
-https://你的域名/hk/123
-```
+## 部署前须知
 
-客户端只需要把原本的 Emby 源站地址替换成节点地址即可。
+**适合**：源站在海外的 Emby / Jellyfin；多台服务器想统一域名；不想暴露源站 IP；需要可视化后台维护节点。
 
-### 节点配置资源上限
+**不太适合**：纯内网 / 局域网直连；源站本身走国内优质线路；大规模公共分享与超大带宽分发。
 
-- 单个节点序列化后最多 256 KiB，最多包含 32 条线路。
-- 自定义请求头最多 64 个、总计最多 64 KiB；单个请求头名称最多 128 字节，单个值最多 8 KiB。
-- `displayName`、`remark`、`tag`、颜色、密钥、Host 前缀目标、探测路径、标签项以及线路 `id / name / target` 等单项文本最多 4 KiB。
-- 新增、保存或导入超限节点时返回 `NODE_RESOURCE_LIMIT_EXCEEDED`；批量导入会在写 KV 前整批校验，任一节点超限都不会产生部分写入。
-- 旧版本遗留的超限节点仍可读取和代理，管理端会明确警告，但 Worker 不会把它放入节点 / 播放路由热缓存，也不会在整理时自动回写。
+**风险提醒**：腐竹明确禁止 CF 反代时使用可能导致账号受限；Cloudflare 可能识别高流量滥用，建议只用于个人或家庭分享；Worker 无法抹去所有 CF 痕迹，请求头与源 IP 识别仍可能暴露反代特征。
 
----
+## 管理后台
 
-## 缓存与性能设计
+进入后台后主要有五个页面：
 
-### 1. 控制面与数据面分层
-- **Worker 控制面**：只处理鉴权、路由、配置读取、UI、日志编排和轻量级元数据预热
-- **Cloudflare 数据面**：承接视频主字节流、Range 请求、边缘缓存和底层硬件转发
-- **内存缓存**：仅保留 `NodeCache / ConfigCache / NodesIndexCache / LogDedupe` 这类轻量元数据，不在 Worker 内缓存兆级视频对象
+- **仪表盘**：请求量、流量趋势、资源类别、运行状态、定时任务状态
+- **节点管理**：搜索节点、导入/导出配置、单节点或全局 GET 健康探测
+- **日志记录**：按日期范围查询请求记录、初始化 DB、手动清理
+- **DNS 编辑**：站点级草稿编辑、推荐优选域名、CNAME 历史回填、实用链接
+- **设置页**：系统 UI、DNS 设置、代理与网络、静态资源策略、安全防护、日志设置、监控告警、账号设置、备份与恢复
 
-### 2. 资源分类缓存策略
-- **图片 / 静态资源 / 字幕 / 白名单播放列表**：允许缓存或轻预热
-- **`.mp4` / `.mkv` / `.ts` / `.m4s` 等视频主流**：不在 Worker 内做黑洞预取，不调用 `caches.default.put()` 存大对象
-- **视频主流响应头**：尽量沿用源站或 Cloudflare 数据面的缓存策略，不再额外强塞 `Cache-Control: no-store`
-- **Worker Cache Key**：会主动剥离 Token、设备号、客户端版本、播放会话等与媒体二进制无关的 Emby 状态参数
-- **Cloudflare `cf` 提示**：只有字幕这类轻资源才会在回源 `fetch` 时显式附加 `cf.cacheEverything + cacheTtl`；其余请求不会下发 `cacheTtl: 0` 去覆盖 Dashboard Cache Rules
-- **起播探测请求**：保留短时微缓存，减轻源站压力
-- **受管流式响应**：播放列表连续 12 秒、媒体分片连续 15 秒未读取到新数据时会中止上游流并记录 `idle_timeout`；客户端取消也会同步释放读取器和计时器
+默认进入新手模式，只隐藏「代理与网络」和「安全防护」两栏；切到高手模式才会展开这两栏和更细的调优字段。每个分区有哪些开关、字段取值上限、备份与恢复口径，见 [`docs/panel.md`](./docs/panel.md)。
 
-### 3. 轻量级元数据预热
-- 预热目标：海报、白名单 `.m3u8` / `.mpd`、字幕等“导火索”资源
-- 预热方式：通过 `ctx.waitUntil` 异步拉取并写入 `caches.default`
-- 熔断策略：后台预热默认 `3 秒` 内拿不到响应就主动 `abort`，避免慢源站拖垮 Worker 后台连接池
-- 并发策略：相同缓存键会加入已有 single-flight，整个 isolate 同时最多保留 4 个不同预热任务
-- 字节预算：默认累计读取 4 MiB、可配置上限 8 MiB；响应声明大小或实际流式读取超过剩余预算时会主动取消
-- 禁区：一旦识别为视频主字节流后缀，立即停止预热，不额外消耗 Worker 内存与 CPU
-- 转码保护：包含 `Transcoding` 参数的 `m3u8`、或不在白名单路径内的播放列表，不会写入 Worker 缓存
+## 文档导航
 
-### 4. 上传与重试策略
-- 非 `GET/HEAD` 请求不会一律做内存缓冲重试。
-- 只有当 `Content-Length` 明确存在且不超过 `256 KiB` 时，Worker 才会把请求体缓冲到内存里，便于安全重试。
-- 大于该阈值、长度未知或缓冲失败时，会直接保留流式转发，避免大文件上传把 Worker 内存顶爆。
+仓库分两层文档：本文件面向使用者，`docs/` 面向需要逐项配置或读实现的人。
 
-### 5. Cloudflare Cache Rules 教程
-建议单独为视频路径配置一条 Cloudflare Cache Rule，把真正的大流缓存下沉到数据面：
-
-#### 第一步：进入 Cache Rules 配置页面
-
-  1. 登录 Cloudflare 控制台，点击进入你绑定了网关的**域名**。
-  2. 在左侧菜单栏中，依次展开 **缓存 (Caching)** -> **Cache Rules (缓存规则)**。
-  3. 点击右侧的 **创建规则 (Create rule)** 蓝色按钮。
-
-#### 第二步：配置匹配条件 (Expression)
-
-  这是为了告诉 Cloudflare 哪些请求是“大视频流”，需要被缓存：
-
-  1. **规则名称 (Rule name)**：随便填，例如 `Emby Video Cache`。
-
-  2. **传入请求匹配时的条件 (When incoming requests match)**：点击右侧的 **编辑表达式 (Edit expression)** 切换到代码模式。
-
-  3. 将教程中的代码直接粘贴进去：
-
-     Plaintext
-
-     ```
-     (http.request.uri.path contains "/emby/videos/") or (http.request.uri.path contains "/Videos/") or (http.request.uri.path.extension in {"mp4" "mkv" "ts" "m4s"})
-     ```
-
-     *(提示：这行代码的意思是，只要 URL 路径包含 `/emby/videos/` 或 `/Videos/`，或者文件后缀是流媒体格式，就触发这条缓存规则。)*
-
-#### 第三步：设置缓存行为与核心魔法
-
-  往下滚动页面，配置具体的缓存动作：
-
-  1. **缓存资格 (Cache eligibility)**：选择 **符合缓存条件 (Eligible for cache)**（有些界面可能显示为 Cache everything）。
-  2. **边缘 TTL (Edge TTL)**：
-     - 选择 **忽略源站并使用此 TTL (Ignore origin and use this TTL)**。
-     - 时间选择 **一个月 **（或者你希望视频在边缘节点停留的时长）。
-  3. **缓存键/缓存密钥 (Cache key)**：**这是最关键的一步！**
-     - 勾选或展开 **缓存键 (Cache key)** 选项。
-     - 找到 **查询字符串 (Query string)** 设置。
-     - 选择 **忽略查询字符串 (Ignore query string)** 
-  4. 点击右下角的 **部署 (Deploy)** 即可生效。
-
-补充说明：
-- Worker 侧只负责鉴权、路由和轻量元数据缓存；视频主字节流的跨用户共享，关键依赖的是这里的 **Ignore query string**。
-- 如果你的站点路径前缀不是 `/emby/videos/`，请按实际路径改表达式。
-
-### 6. 直连与省流
-通过节点级“主视频流策略”（`mainVideoStreamMode`，直连 / 代理 / 跟随全局）与“源站直连节点”名单，可以让不适合 Worker 中继的数据直接回到客户端，避免无意义的带宽绕行。跨域 30x 重定向则由鉴权能否随跳转携带自动决定是否继续代理。
-
----
-
-## 安全机制
-
-### 登录防暴力破解
-绑定 D1 后，后台登录失败次数会写入 `auth_failures` 并按访问者 IP 计数；连续失败 5 次后锁定 **15 分钟**。未绑定 D1 时登录仍可使用，但失败次数不会持久化，因此不会形成跨请求锁定。
-
-### 管理后台加固
-- 支持通过环境变量 `ADMIN_PATH` 自定义后台入口，默认仍是 `/admin`
-- 冷启动时会对 `JWT_SECRET` / `ADMIN_PASS` 做一次初始化健康检查
-- 登录 Cookie 的作用域会收敛到管理路径前缀，而不是整个站点根路径
-
-### 敏感操作二次确认
-- DNS 修改 API 需要显式携带 `X-Admin-Confirm: saveDnsRecords`；兼容单条更新时仍可使用 `X-Admin-Confirm: updateDnsRecord`
-- 同样需要 `X-Admin-Confirm` 的还有：`purgeCache`（清理 Cloudflare 缓存）、`exportConfig` / `exportSettings`（含密钥导出）、`clearLogs`（清理日志）、`repairD1Schema`（修复 D1 Schema）
-- 管理面板已自动补这个请求头；如果你自己写脚本调用管理 API，也要一并带上
-
-### 访问控制
-支持以下控制方式：
-
-- Geo 白名单 / 黑名单模式
-- IP 黑名单
-- 单 IP 请求限速
-- CORS 限制
-
-### 认证兼容修复
-项目对 Emby / Jellyfin 媒体服务认证头做了兼容处理：
-
-- 识别 `Authorization: Emby ...` 与 `Authorization: MediaBrowser ...`
-- 兼容 `X-Emby-Authorization`（Emby 与 Jellyfin ≤11 读取；Jellyfin 12 默认不再读取）；`X-MediaBrowser-Authorization` 上游不读取，非 `passthrough` 模式下会被删除
-- 节点级支持 `auto / emby / jellyfin / passthrough` 显式模式，便于兼容特殊上游
-- 在特定 403 / 协议异常场景下做一次安全回退重试（仅媒体 GET 类请求）
-
-节点编辑面板中的“媒体认证头模式”建议按下面理解：
-
-- `auto`（默认推荐）：识别请求里已有的认证头家族；没有可识别 scheme 时，依次从 `X-Emby-Token` / `X-MediaBrowser-Token` / `Bearer` / 查询参数 `api_key`（或 `ApiKey`）提取 token，合成 `Authorization: MediaBrowser Token=...`（Emby 与 Jellyfin 都接受该 scheme），原 token 载体保留；已识别的 `Emby` scheme 会统一改写成 `MediaBrowser`，因为 Jellyfin 12 只接受后者，显式 `emby` 模式才保留 `Emby`
-- `emby`：强制改写为 `Emby` 家族，直连重定向查询参数用 `api_key`
-- `jellyfin`：强制改写为 `MediaBrowser` 家族，直连重定向查询参数用 `ApiKey`
-- `passthrough`：完全透传（保留原始认证头），不改写 `Authorization` / `X-Emby-Authorization` / `X-MediaBrowser-Authorization`，适合你已确认上游需要保留原始头部的场景
-
-> **Jellyfin 12 注意**：`EnableLegacyAuthorization` 默认关闭后，`X-Emby-Token`、`X-MediaBrowser-Token`、`X-Emby-Authorization`、`Emby` scheme 和 `api_key` 查询参数都会被上游忽略，只剩 `Authorization: MediaBrowser Token=...` 与 `ApiKey` 查询参数。`auto` 模式已自动补 `MediaBrowser` scheme；若客户端只把 token 放在 `api_key` / `ApiKey` 查询里、没有任何认证头，非 `passthrough` 模式的 Worker 会从查询参数提取 token 并补出 `Authorization` 头；若客户端发送的 `Authorization` / `X-Emby-Authorization` 只带设备信息、token 放在 `X-Emby-Token` 等头里，Worker 也会把 token 合并进 `Authorization`，这两种迁移场景都无需额外配置；`passthrough` 模式完全透传、不做改写。
->
-> **直连回退**：只要客户端 Cookie 名称命中 `emby / jellyfin / mediabrowser / session / auth / token / credential / signature / secret` 等关键字，就判定为 Cookie 鉴权并回退到 Worker 代理，避免媒体鉴权丢失；代价是这部分流量不走直连。跨域重定向一律剥离客户端 `Authorization` 与 Cookie，只保留管理员显式配置的请求头。
->
-> **节点地址**：Jellyfin 12 移除了 `/emby` 与 `/mediabrowser` 路由前缀，节点 `target` 建议直接填站点根（如 `https://jellyfin.example`）。Worker 的节点探测和上游 `Location` 映射会容忍多出来的 `/emby` 根，普通代理请求、PlaybackInfo 改写与元数据预热仍严格按配置的 `target` 基路径回源。
->
-> **直连鉴权补全**：媒体直连重定向在客户端的媒体鉴权可随查询参数携带时（`Authorization` / `X-Emby-Authorization` 带 `Token=`、`X-Emby-Token` / `X-MediaBrowser-Token`，或 `api_key` / `ApiKey` 查询参数）才会把 token 补到跳转 URL（`auto` 同时补 `api_key` 与 `ApiKey`，`emby` 只补 `api_key`，`jellyfin` 只补 `ApiKey`）；携带私密鉴权 Cookie、非 Token `Authorization`（如 Basic）或 `X-Emby-Auth-Token` 等私密鉴权头的客户端不补。这类客户端遇到跨域跳转时，Worker 会在跳数用尽等中断点返回 409，而不是把无鉴权的节点 `Location` 透传给客户端。
-
-### 上游真实 IP 透传控制
-
-- 节点级支持 `realClientIpMode = forward / strip / disable`，其中 `forward` 在界面中显示为“透传 `X-Real-IP` 和 `X-Forwarded-For`”，`strip` 在界面中显示为“仅保留 `X-Real-IP`”，`disable` 在界面中显示为“强制不透传【慎用】”
-- 项目会先清洗 `X-Real-IP` / `X-Forwarded-For` / `Forwarded` 以及 `Connection` / `Upgrade` 等请求头，再按配置注入真实内容，避免伪造并减少协议升级异常
-- 这里的“真实 IP”指 Cloudflare 识别到的连接来源 IP，可以是用户直连出口，也可以是用户代理出口
-- 真实客户端 IP 透传由 `X-Real-IP` 和 `X-Forwarded-For` 决定；默认情况下节点会透传这两个请求头，`forward` 与默认行为一致，其中 `X-Forwarded-For` 不是完整代理链，而是单个真实 IP
-- 注入发生在节点自定义请求头之后，因此节点里新增同名请求头也不能覆盖 `X-Real-IP` / `X-Forwarded-For`
-- `strip` 会仅保留 `X-Real-IP`，不补写 `X-Forwarded-For`；用于处理个别上游按 `X-Forwarded-For` 风控导致 `403/503` 的场景
-- `disable` 会强制不透传 `X-Real-IP` 和 `X-Forwarded-For`；适用于个别上游不接受这两个请求头的场景，需谨慎使用
-
-节点编辑面板中的“真实客户端 IP 透传”建议按下面理解：
-
-- `forward`（界面显示为“透传 `X-Real-IP` 和 `X-Forwarded-For`”，默认推荐）：对当前节点透传 `X-Real-IP` 和 `X-Forwarded-For`
-- `strip`（界面显示为“仅保留 `X-Real-IP`”）：对当前节点改为仅保留 `X-Real-IP`，不补写 `X-Forwarded-For`；用于处理个别上游按 `X-Forwarded-For` 风控时使用
-- `disable`（界面显示为“强制不透传【慎用】”）：对当前节点强制不透传 `X-Real-IP` 和 `X-Forwarded-For`
-
----
-
-## 数据存储说明
-
-### KV 速查清单
-
-
-> 全局设置与节点字段落到哪个 KV 绑定/键、又驱动哪些 D1 表，见 [`docs/architecture.md` 第 8 节「设置项与绑定/键映射」](./docs/architecture.md#8-设置项与绑定键映射)。
-#### 主要键位
-
-| 键位模式 | 用途 | 说明 |
-|---|---|---|
-| `node:{name}` | 节点实体配置 | 单个节点的地址、密钥、标签、线路、排序等信息；代理请求会按 URL 中的节点名直接读取这里 |
-| `sys:nodes_index:v1` | 节点索引 | 节点列表页、导入导出和搜索时优先读取；缺失时可根据 `node:*` 自动重建 |
-| `sys:theme` | 全局配置 | 后台“全局设置”保存后的主配置，包含日志、监控、Cloudflare 联动、Telegram 等参数 |
-| `sys:config_meta:v1` | 设置版本元数据 | 记录当前 `sys:theme` 的 hash 与 revision，保存时用于并发冲突检测 |
-| `sys:dns_record_history:v1:{zoneId}:host:{hostname}` | DNS 修改历史 | 记录当前站点最近的 `CNAME` 修改值，供后台 DNS 历史卡片回填 |
-
-> `sys:ops_status:*`、`sys:cf_dash_cache*`、`sys:scheduled_lock:v1`、`sys:telegram_alert_state:v1`、`sys:config_snapshots:v1`、`sys:config_snapshots_meta:v1` 和 `fail:*` 都是旧版 KV 键。当前对应数据分别存放在 D1 的 `sys_status`、`cf_dashboard_cache`、`sys_locks` 和 `auth_failures` 中，设置快照本身已不再写入；KV 整理和保存设置都会删除检测到的这些遗留键。
-
-> 如果升级后出现“全局设置读取失败 / 设置页空白 / 节点索引丢失但 `node:*` 还在”的情况，可在后台的“账号与备份”区域使用 **一键整理 KV 数据**：
-> 1. 遍历 KV 并保留所有 `node:*`
-> 2. 基于实际节点键重建 `sys:nodes_index:v1`
-> 3. 强制读取并清洗 `sys:theme`
-> 4. 删除旧版仪表盘缓存、运维状态、定时租约、Telegram 告警状态和登录失败计数等遗留键
-
-#### 管理 API（`POST ADMIN_PATH`）
-
-| action | 读 / 写 KV | 主要用途 | 备注 |
-|---|---|---|---|
-| `saveConfig` | 写 | 保存全局设置到 `sys:theme` | 同时写 `sys:config_meta:v1`，并删除遗留的 `sys:config_snapshots:v1` |
-| `importSettings` | 写 | 导入 settings-only 备份到 `sys:theme` | 会按当前版本规则清洗配置；不生成快照 |
-| `save` / `import` | 写 | 新增或批量导入节点 | 最终会写入 `node:*`，并同步更新 `sys:nodes_index:v1` |
-| `delete` | 删 | 删除节点 | 会删除对应 `node:*`，并重建节点索引 |
-| `exportSettings` / `exportConfig` | 读 | 导出全局设置或完整备份 | 数据来源就是当前 KV 中的配置与节点 |
-| `importFull` | 写 | 导入完整备份（节点 + 全局设置） | 会整体写回节点实体与全局配置 |
-| `getRuntimeStatus` | 读 | 读取运行状态 | 从 D1 `sys_status` 读取；未绑定或不可用时返回空运行状态，不读取旧 KV 状态键 |
-| `previewTidyData` | 读 | 预览 KV 或 D1 整理计划 | 返回分组计数、警告与短期签名计划令牌；实际执行前会再次核对计划 |
-| `tidyKvData` | 读 + 写 + 删 | 执行一键整理 KV 数据 | 重建索引、清洗 `sys:theme`、删除遗留缓存键和过期租约键 |
-| `listDnsRecords` / `saveDnsRecords` / `updateDnsRecord` | 读 + 写 | 读取当前站点 DNS、按模式整体保存或兼容单条更新 | UI 主链路走 `saveDnsRecords`；DNS 历史仅记录 `CNAME`，实际变更走 Cloudflare API |
-
-> 后台登录接口 `POST ADMIN_PATH/login` 不走 `action` 分发；绑定 D1 时会读写 `auth_failures`，按 IP 记录失败次数并执行临时锁定。
-
-#### 后台入口 / 按钮
-
-| 页面位置 | 入口 / 按钮 | 对应 action / 接口 | 作用说明 |
-|---|---|---|---|
-| `节点管理` | 保存节点 / 导入节点 / 删除节点 | `save` / `import` / `delete` | 节点实体最终都写入 `node:*`，并同步维护节点索引 |
-| `设置 -> 任意设置分区` | 保存设置 | `saveConfig` | 将当前设置保存到 `sys:theme` |
-| `设置 -> 备份与恢复` | 导出全局设置 / 导出完整备份 | `exportSettings` / `exportConfig` | 从 KV 读取当前配置和节点，导出为 JSON |
-| `设置 -> 备份与恢复` | 导入全局设置 / 导入完整备份 | `importSettings` / `importFull` | 把 JSON 内容重新写回 KV |
-| `设置 -> 备份与恢复`（高手模式） | `一键整理 KV 数据` | `tidyKvData` | 修复旧版本升级后的索引、脏配置和遗留缓存键问题 |
-| `设置 -> 备份与恢复`（高手模式） | `一键整理 D1 数据` | `tidyD1Data` | 先通过 `previewTidyData` 获取签名计划，再按硬预算清理日志、统计、缓存和过期状态 |
-| `DNS 编辑` | 刷新 / 保存 DNS | `listDnsRecords` / `saveDnsRecords` | 按当前站点整体同步 `CNAME` 或 `A / AAAA` 草稿，并维护 CNAME 历史 |
-| `仪表盘` | 打开页面或刷新页面 | `getRuntimeStatus` | 查看 D1 中的日志刷盘、定时任务和租约状态；D1 不可用时返回空运行状态 |
-| `后台登录页` | 提交登录密码 | `POST ADMIN_PATH/login` | 绑定 D1 时登录失败会写入 `auth_failures`；连续失败 5 次后锁定 15 分钟 |
-
-### D1 中的用途
-- 请求日志写入（`proxy_logs`）
-- 日志查询（时间范围、状态码、IP、关键词）
-- 日志过期清理
-- 可选 FTS5 全文检索（`proxy_logs_fts`）
-- 定时任务按保留天数清理过期日志和统计桶，并按积压、数据量、最小间隔与时间预算决定是否执行 FTS rebuild / `PRAGMA optimize`
-- Telegram 每日报表统计
-- 仪表盘本地统计兜底
-- `sys_status` 运行状态表（日志刷盘状态、定时任务租约等动态状态）
-- DNS/IP 池、探测缓存、Cloudflare 仪表盘 / 运行缓存、认证失败记录与定时任务锁
-
-> D1 整理的预览计数最多扫描 10001 行并以 `10000+` 显示下界；执行时每批 500 行，单轮最多处理 10000 行或运行 25 秒。达到预算后返回剩余 scope，管理端会提示再次预览并继续；基础日志超过 10000 行时不会自动执行 FTS rebuild。
-
-### DB 速查清单
-
-#### 管理 API（`POST ADMIN_PATH`）
-
-| action | 需要 D1 | 主要用途 | 备注 |
-|---|---|---|---|
-| `getDashboardStats` | 可选 | 读取仪表盘请求量、流量趋势、播放次数等统计 | 优先读 Cloudflare GraphQL；失败或未配置时会尽量回退到本地 D1 日志口径 |
-| `getRuntimeStatus` | 可选 | 读取日志刷盘状态、定时任务状态、租约状态等运行信息 | 从 D1 `sys_status` 读取；D1 不可用时返回空运行状态 |
-| `getLogs` | 必需 | 按页查询请求日志 | 默认带时间范围；关键词搜索最多限制在 3 天窗口内 |
-| `initLogsDb` | 必需 | 初始化当前完整 D1 schema | 创建日志、FTS5、运行状态、统计、锁、缓存等当前所需结构，并迁移历史日志索引 |
-| `clearLogs` | 必需 | 清空日志表 | 会清空 `proxy_logs`，并在可用时重建 FTS 索引 |
-| `previewTidyData` / `tidyD1Data` | 必需 | 预览并执行 D1 整理 | 先检查 schema 并生成签名计划；执行时按批次、行数和时间预算公平清理各 scope |
-| `sendDailyReport` | 必需 | 立即生成并发送 Telegram 日报 | 依赖 D1 日志统计和已配置好的 `tgBotToken` / `tgChatId` |
-
-#### 后台入口 / 按钮
-
-| 页面位置 | 入口 / 按钮 | 对应 action | 作用说明 |
-|---|---|---|---|
-| `日志记录` | `初始化 DB` | `initLogsDb` | 首次绑定 D1 后执行一次，完成当前完整 schema（含 FTS5）初始化 |
-| `日志记录` | `清空日志` | `clearLogs` | 删除所有请求日志；适合调试或重新开始统计 |
-| `日志记录` | `刷新` | `getLogs` | 重新按当前筛选条件拉取日志列表 |
-| `仪表盘` | 打开页面或刷新页面 | `getDashboardStats` + `getRuntimeStatus` | 用于展示请求量、流量趋势、刷盘状态和定时任务状态 |
-| `设置 -> 备份与恢复`（高手模式） | `一键整理 D1 数据` | `previewTidyData` + `tidyD1Data` | 展示实际删除 / 保留分组，确认后按签名计划执行；有剩余数据时可再次运行 |
-| `设置 -> 监控告警` | `手动发送日报` | `sendDailyReport` | 立即按当前 D1 统计口径生成 Telegram 每日报表 |
-
-#### 主要表结构
-
-| 表 / 结构 | 类型 | 关键字段 | 用途说明 |
-|---|---|---|---|
-| `proxy_logs` | 普通表 | `id`, `timestamp`, `node_name`, `request_path`, `request_method`, `status_code`, `response_time`, `client_ip`, `inbound_colo`, `outbound_colo`, `user_agent`, `referer`, `category`, `error_detail`, `detail_json`, `created_at` | 请求日志主表；日志页查询、日报统计、仪表盘本地兜底都依赖它 |
-| `proxy_logs` 索引 | 普通索引 | `timestamp`, `(client_ip, timestamp DESC)`, `(status_code, timestamp)`, `(category, timestamp)` | 优化按时间范围、客户端 IP、状态码和分类等常见查询 |
-| `proxy_logs_fts` | FTS5 虚拟表 | `node_name`, `request_path`, `user_agent`, `error_detail`, `detail_json` | 关键词搜索专用；通过触发器同步新增日志，并按维护预算决定是否重建历史索引 |
-| `proxy_stats_hourly` | 普通表 | 日期 / 小时桶、请求数、播放数、PlaybackInfo 数、更新时间 | 仪表盘本地小时聚合；过期日期桶分页删除，统计口径变化时清空后从新日志重新累计 |
-| `sys_status` | 普通表 | `scope`, `payload`, `updated_at` | 保存日志刷盘状态、定时任务状态等动态运行信息 |
-| `sys_locks` / `auth_failures` | 普通表 | scope / token / 到期时间、认证失败计数 | 维护任务租约与后台登录保护；过期记录由 D1 整理清理 |
-| `dns_ip_pool_*` / `dns_ip_probe_cache` | 普通表 | IP 池、抓取源、抓取缓存、探测结果 | 保存 DNS/IP 工作区和探测缓存数据 |
-| `cf_dashboard_cache` / `cf_runtime_cache` | 普通表 | cache key、payload、版本与到期时间 | 保存 Cloudflare 统计和运行时缓存；过期行由 D1 整理分页删除 |
-
-> 常见 `sys_status.scope` 包括：`ops_status:root`、`ops_status:log`、`ops_status:scheduled`。如果 D1 不可用，运行状态读取返回空对象，不再回退旧 KV 状态键。
-
-> 如果未绑定 D1，核心代理与节点管理通常仍可工作；但日志查询、日志初始化、FTS5 搜索、日报统计和 D1 兜底仪表盘能力会缺失或降级。
-
----
-
-## 请求处理流程图
-
-```mermaid
-flowchart TD
-  Start("用户请求到达 Worker") --> Ctx["构建 route context：host / path / ADMIN_PATH / 初始化健康"]
-  Ctx --> HP{"enableHostPrefixProxy 且 host 是配置 host 的子域?"}
-  HP -- 是 --> Proxy["NodeProxyFacade 节点代理"]
-  Ctx --> Admin{"管理端路由?"}
-
-  Admin -- "GET / 或 favicon" --> Landing["落地页 / 静态图标<br/>标题注入 APP_VERSION"]
-  Admin -- "ADMIN_PATH GET" --> Shell["管理端 HTML<br/>已上传 HTML 优先，否则 ASSETS /index.html"]
-  Shell --> Client["返回客户端"]
-  Admin -- "ADMIN_PATH/login POST" --> Login["Auth 登录校验<br/>绑定 D1 时按 IP 计失败并锁定"]
-  Admin -- "ADMIN_PATH POST" --> Auth{"JWT 校验"}
-  Auth -- 失败 --> Err401["401 未授权"]
-  Auth -- 通过 --> AdminAPI["按 action 分发：节点 / 设置 / 日志 / DNS / 备份"]
-  Admin -- 否 --> Proxy
-
-  Proxy --> NodeRoute{"节点解析：host-prefix / 兼容路径 / /{节点名}/{密钥?}/{路径}"}
-  NodeRoute --> Exists{"节点是否存在"}
-  Exists -- 否 --> Err404["404 Not Found"]
-  Exists -- 是 --> Policy["访问策略：Geo / IP / 限速 / 节点密钥"]
-  Policy --> HeaderPatch["请求头清洗与 Emby / Jellyfin 鉴权补丁"]
-  HeaderPatch --> Upstream["回源：failover / 探测 / 超时 / 重试"]
-  Upstream --> Redirect{"重定向映射<br/>只跟随 301 / 302 / 303 / 307 / 308"}
-
-  Redirect -- "同源" --> Follow["继续代理跳转"]
-  Redirect -- "跨域且鉴权不可携带" --> Fail409["409 中断<br/>不透传节点 Location"]
-  Redirect -- "外部直链" --> Direct["下发 Location"]
-  Redirect -- "非 http(s) / 无法解析" --> Drop["删除 Location"]
-  Redirect -- "无重定向" --> Resp["处理响应头"]
-
-  Follow --> Resp
-  Resp --> Cache{"分类缓存策略"}
-  Cache -- "静态资源" --> StaticCache["边缘缓存"]
-  Cache -- "视频流" --> PassThrough["沿用源站 / 数据面缓存头"]
-  Cache -- "PlaybackInfo" --> Rewrite["PlaybackInfo 改写 / 有界缓存"]
-
-  StaticCache --> Finish["返回客户端"]
-  PassThrough --> Finish
-  Rewrite --> Finish
-  Direct --> Finish
-  Drop --> Finish
-  Fail409 --> Finish
-```
-
-> 重定向分支对应当前版本的 fail-closed 行为：跨域但客户端鉴权无法随跳转携带时返回 409，而不是透传无鉴权的节点 `Location`；非 http(s) 或无法解析的 `Location` 一律删除。详细分层见 [`docs/architecture.md` 第 3 节](./docs/architecture.md#3-请求生命周期)。
-
----
-
-## 致谢
-
-- 部分代码实现思路借鉴了 A 佬、HR 佬的公开讨论与方案沉淀。
-- 推送保号相关思路借鉴自 [wangwangit/SubsTracker](https://github.com/wangwangit/SubsTracker)。
-- Telegram 通知链路实现参考了 LUO 佬的方案思路。
-- 项目名称命名灵感借鉴自 [fast63362/CF-Emby-Proxy](https://github.com/fast63362/CF-Emby-Proxy)。
-
----
+| 文档 | 内容 |
+|---|---|
+| [`docs/deploy.md`](./docs/deploy.md) | 环境变量与绑定、三种部署方式、Cron、自定义域、Cache Rules |
+| [`docs/panel.md`](./docs/panel.md) | 后台页面、DNS 双模式、设置项清单与上限、节点资源上限 |
+| [`docs/proxy-internals.md`](./docs/proxy-internals.md) | 请求转发、IP 隐藏边界、缓存与预热、认证头兼容、请求流程图 |
+| [`docs/storage.md`](./docs/storage.md) | KV 键位、管理 API 的 action、D1 表结构 |
+| [`docs/architecture.md`](./docs/architecture.md) | 源码分层、请求生命周期、管理端投递链、KV / D1 边界 |
+| [`docs/development.md`](./docs/development.md) | 源码与生成物关系、常用命令、测试门禁、发布顺序 |
+| [`docs/tech-stack.md`](./docs/tech-stack.md) | CDN pin、npm 依赖角色、更新决策表 |
+| [`CHANGELOG.md`](./CHANGELOG.md) | 逐版本变更记录 |
 
 ## 常见问题
 
-### 1. 为什么报 403 / Access Denied？
-常见原因：
+**报 403 / Access Denied？** 依次检查：节点路径是否写错、节点设了密钥但 URL 没带密钥、`ENI_KV` 是否绑定（未绑定管理 API 返回 `503 KV_NOT_CONFIGURED`、节点路由 404）、是否命中地区或 IP 防火墙、是否触发单 IP 限速。
 
-1. 节点路径写错
-2. 节点设置了密钥，但访问 URL 没带密钥
-3. `ENI_KV` 没绑定：管理 API 会返回 `503 KV_NOT_CONFIGURED`，节点路由返回 404
-4. 命中了国家/地区或 IP 防火墙
-5. 单 IP 限速已触发
+**登录后台失败？** 检查 `JWT_SECRET` 是否配置、`ADMIN_PASS` 是否正确、首次部署是否完成初始化；绑定 D1 时同一 IP 连续输错 5 次会被锁 15 分钟。
 
-### 2. 为什么登录后台失败？
-- `JWT_SECRET` 未配置
-- `ADMIN_PASS` 错误
-- 首次部署尚未完成初始化，页面顶部已显示“系统未初始化”
-- 已绑定 D1，且当前 IP 连续输错 5 次后被锁定 15 分钟
+**为什么有些视频走直连？** 常见原因是节点在「源站直连名单」里、节点主视频流策略设为 `direct`、上游返回外部存储地址；另外跨域重定向且鉴权无法随跳转携带时，Worker 会返回 409 而不是直连。
 
-### 3. 为什么有些视频走直连？
-这通常是以下原因之一：
+**仪表盘没有 Cloudflare 统计？** 需要在账号设置里填 `Account ID`、`Zone ID`、`API Token`；GraphQL 查询失败时面板会回退到本地 D1 日志口径。
 
-- 节点被加入“源站直连名单”
-- 节点的主视频流策略设为直连（`mainVideoStreamMode: direct`）
-- 上游返回跨域重定向且鉴权无法随跳转携带时，Worker 会 fail-closed 返回 409（此时拿不到 30x，而不是直连）
-- 上游返回的是外部存储地址
+**Web 端被禁用还能用吗？** 本项目主要面向客户端 API 调用；源站禁用 Web 一般不影响播放器通过 API 使用。
 
-### 4. 为什么仪表盘没有 Cloudflare 统计？
-需要在设置中填入：
+**日志关键词搜索为什么建议缩短时间范围？** 因为 LIKE 模式是 `LIKE %keyword%`，范围越大扫得越多：不带时间时默认只查最近 1 天，关键词最长 50 字节；3 位数字优先按状态码精确匹配，IP / COLO 形态优先走精确匹配，剩下的关键字才做模糊匹配且只在当前时间范围内生效。想查更早的记录就把时间范围显式调大，或者切到 FTS5 模式。
 
-- `Zone ID`
-- `API Token`
-- `Account ID`
+## 致谢
 
-如果 GraphQL 查询失败，面板会回退到本地 D1 日志口径。
-
-### 5. Web 端禁用怎么办？
-本项目主要面向客户端 API 调用场景；如果服本身禁 Web，不影响多数播放器通过 API 使用。
-
-### 6. 为什么日志关键词查询被限制在 3 天内？
-为了避免 D1 在 `LIKE %keyword%` 下做大范围全表扫描，当前日志页会强制携带时间范围，并把关键词搜索限制在最多 3 天窗口内：
-
-- 不带时间时，默认回退到最近 1 天
-- 搜索 3 位数字时优先按 `status_code` 精确匹配
-- 搜索 IP 形态内容时优先按 `client_ip` 精确匹配
-- 只有其他关键字才走受限模糊匹配
+- 部分代码实现思路借鉴了 A 佬、HR 佬、maka佬的公开讨论与方案沉淀。
+- Telegram 通知链路实现参考了 LUO 佬的方案思路。
+- 项目名称命名灵感借鉴自 [fast63362/CF-Emby-Proxy](https://github.com/fast63362/CF-Emby-Proxy)。
