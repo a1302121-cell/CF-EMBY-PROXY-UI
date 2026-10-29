@@ -43,7 +43,8 @@ npm.cmd run --workspace frontend build
 从仓库根目录运行：
 
 ```powershell
-# 完整门禁：Worker、架构、bundle、Node 测试、管理端同步、Vue 语法、CDN 和 diff 检查
+# 完整门禁：Worker 语法、oxlint、oxfmt、架构、bundle 新鲜度、版本一致性、Node 测试、
+# 管理端同步、Vue 语法、vendor 摇树产物、CDN 策略和 diff 空白检查
 npm.cmd run check
 
 # 单项构建
@@ -57,6 +58,7 @@ npm.cmd run check:worker-architecture
 npm.cmd run check:worker-bundle
 npm.cmd run --workspace frontend check:admin-runtime
 npm.cmd run --workspace frontend check:cdn
+npm.cmd run --workspace frontend check:vendor
 
 # 管理端本地开发（默认 Vite 5173；预览 4173）
 npm.cmd run --workspace frontend dev
@@ -64,6 +66,9 @@ npm.cmd run --workspace frontend preview
 
 # 管理端真实浏览器冒烟（Playwright + 本地 wrangler dev，见第 7 节）
 npm.cmd run test:e2e
+
+# Worker 流式路径基准，--baseline <rev> 做 A/B（见第 8 节）
+npm.cmd run bench:stream
 ```
 
 如果只需要运行 Node 测试，可使用：
@@ -81,6 +86,9 @@ node --test tests/*.test.mjs
 - `tests/admin-contract-parity.test.mjs`：管理端跨层契约——前端调用的 action 必须能在 Worker registry 解析、boot 协议符号在壳层/loader/兜底壳三处一致、`frontend/src` 参考源仍只调用可解析的 action 并保持 5 个主视图与 8 个设置分区，以及真实 `frontend/dist/index.html` 能通过 Worker 的壳层校验（含 2 MiB 上限与资产策略）。
 - `tests/worker-bundle-smoke.test.mjs`：生成 Worker bundle 的入口和 Cloudflare handler 形状。
 - `tests/tech-stack-pins.test.mjs`：管理端 4 个 CDN 生产依赖的版本锁定，模板、组合产物与 `dist` 必须一致，且 `docs/tech-stack.md` 记录同步。
+- `tests/version-consistency.test.mjs`：`APP_VERSION` 与 README / AGENTS / CHANGELOG 四处版本标记一致，且 `AGENTS.md` 不夹带发布摘要标题。
+- `tests/admin-vendor-bundle.test.mjs`：`frontend/vendor/` 的摇树产物与 Worker 的 `assetKey`、`vendor.lock.json` 三方一致，并用颜色哨兵挡住 chart.js 的副作用注解回归（见 [`tech-stack.md` §1.1](./tech-stack.md)）。
+- `tests/bench-worker-stream.test.mjs`：流式基准的测量口径没漂（不含性能阈值，见第 8 节）。
 - `tests/frontend-color-tokens.test.mjs`：手写 CSS 的颜色令牌——`var()` 不能引用未定义且无兜底的变量、`--d1-*` 只能出现在 `data-theme="claude"` 规则里、调色板变量只在 `:root`/claude 块定义。这三条在浏览器里都是静默失效（丢声明、变透明），只能靠静态检查守。
 - `tests/fixtures/worker-architecture/negative-cases.json`：架构检查器的反例夹具。
 
@@ -97,7 +105,7 @@ node --test tests/*.test.mjs
 
 ### 版本号
 
-应用版本号唯一来源是 `worker/core/build-info.js` 的 `APP_VERSION`：Worker 落地页与管理端标题/徽章占位符 `__APP_VERSION__` 都由它派生，生成物随构建自动更新。发布时改这一处并同步 `README.md`、`AGENTS.md` 的版本字样，`npm.cmd run check` 的 version consistency 项会校验三者一致。
+应用版本号唯一来源是 `worker/core/build-info.js` 的 `APP_VERSION`：Worker 落地页与管理端标题/徽章占位符 `__APP_VERSION__` 都由它派生，生成物随构建自动更新。发布时改这一处；`npm.cmd run check` 的 version consistency 项会校验四处手工标记（README 徽章 `version-V<x>`、README 的 `当前 **V<x>**` 摘要、`AGENTS.md` 的 `当前 **V<x>**` 指针、`CHANGELOG.md` 的 `## V<x>` 小节），并拒绝 `AGENTS.md` 重新出现「版本摘要 / 更新摘要」标题。
 
 ## 6. 环境变量和本地运行
 
@@ -144,3 +152,58 @@ npx playwright test tests/e2e/visual.spec.mjs --update-snapshots # 确认变化�
 - 像素差异只是冒烟级：同一份代码连跑两次也有 0.01% 量级抗锯齿抖动。要证明"某个颜色没变"，用计算样式逐条比对（`color`/`backgroundColor`/`border*Color`/`boxShadow`/`rect` 全量导出后 diff），不是看截图。
 - 深色主题通过 `addInitScript` 写 `localStorage["theme"]="dark"` 并断言 `html` 拿到 `dark` 类，不去点界面上本来没有的主题按钮。
 - 基线以迁移后的状态为准（现在跑是 0 差异）；迁移遗留的已知差异与 v4 的四个坑见 [`tech-stack.md` 第 5 节](./tech-stack.md)。
+
+### 7.2 视图切换动效（帧耗时 / 布局位移）
+
+`tests/e2e/admin-view-motion.spec.mjs` 量的是"切视图抖不抖"，用三个浏览器原生信号取证：`layout-shift`、`long-animation-frame`、rAF 帧间隔，外加逐帧采样一个静止元素的 `top`（内容在动画期间还在挪位置，就是"抖"的物理定义）。
+
+```powershell
+npm.cmd run test:e2e:motion                                       # 量当前实现并跑门禁
+$env:MOTION_BASELINE="1"; npm.cmd run test:e2e:motion             # 把修复前的实现注入回来做 A/B
+```
+
+两个环境前提，缺一个量到的都是假数据：
+
+- Playwright 默认给 Chromium 加 `--hide-scrollbars`，滚动条不占宽度，于是"切换视图时内容被滚动条推挤 15px"根本不可见。这个 spec 用 `ignoreDefaultArgs` 把它关掉。
+- 空库会弹"DNS 记录加载失败""请先初始化日志表"，这些模态自带全屏 `backdrop-blur`，留着会让每一帧都去重采样整屏模糊（实测把切换窗口从 60fps 压到 40fps）。所以帧耗时只在 `#nodes`/`#settings`/`#dashboard` 之间量，宽度在全部视图上量。
+
+门禁是四条几何断言（确定性，不受机器影响）：切换前后 `#content-area` 宽度不变、动画期间静止内容漂移为 0、明暗主题切换前后看板首行卡片的尺寸与左侧边框宽度一致（同一条顺带断言非流量卡的卡片标题仍然解析成 `truncate` 的 `nowrap/hidden/ellipsis`）、看板统计卡的文字变长短不改变卡片行高与下方内容位置。前两条只管视图切换，后两条守的是看板首行：
+
+- 主题切换那个坑：`.dark .glass-card` 曾写成 `border:1px solid` 这种无层级规则，会压过 utilities 里的 `border-l-4`，卡片左侧 4px 强调条在暗色下消失、卡片内容宽 3px。
+- 按行数变高的坑：三张统计卡的文字全部是数据驱动的（"视频流量" ↔ "今日视频流量 (CF Zone 总流量)"、"未配置" ↔ 具体提示），文字少一行卡片就矮一截，把下方内容整体推挤（实测 20 / 16 / 33px，首屏 CLS 0.023）。模板给这三块文字加了 `min-height:2lh / 2lh / 3lh` 的下限，变短不缩、变长才继续长，首屏 CLS 降到 0.0006。
+
+这两条都只能靠几何断言守：CSS 里看不出"文字会不会少一行"，`interpolate-size:allow-keywords` 也救不了——内容驱动的 `height:auto` 前后都计算成 `auto`，过渡根本不会触发（已实测逐帧只有 1 个高度值）。所以做法是锁死高度，不是加动画。帧耗时只兜病态回归（单帧 > 100ms），因为 headless 软件栅格的绝对值不可移植。
+
+改动视图切换动画时的取舍（2026-05 实测，同机同进程 A/B）：
+
+| 指标 | 修复前 | 修复后 |
+| --- | --- | --- |
+| 切换时内容区宽度变化 | +15 / -15 px | 0 |
+| 动画期间静止内容漂移 | 5.00 px | 0 |
+| 动画期间出现的亚像素位置数 | 17–18 | 1 |
+
+`#content-area` 上的 `scrollbar-gutter: stable` 会让内容区在"没有滚动条"的视图上永久少 15px 宽（Windows 经典滚动条），视觉基线因此重录过一次。这是为消除横向重排付的固定成本，不要再改回 `auto`。
+
+## 8. Worker 流式路径基准
+
+`scripts/bench-worker-stream.mjs` 固定量四项流式指标，另附一个 tee 保留量探针，进出两端都用同一套口径，改动流式代码时直接跑 A/B：
+
+```powershell
+npm.cmd run bench:stream                                  # 只测当前工作区
+npm.cmd run bench:stream -- --baseline bd55db1            # 与某个 rev 对比，打印百分比
+npm.cmd run bench:stream -- --json --rounds 1             # 机器可读，测试用的就是这个
+```
+
+| 指标 | 守着什么 |
+| --- | --- |
+| 受管流每块成本 (ns) / 泵送上限 (MiB/s) | `buildManagedProxyResponseBody` 的 `pull` 里每块要做的事；idle 计时器就在这条路径上 |
+| 请求分类 API / 视频 / 音频 (ns) | `classifyRequest` 的正则链，含音频判定和路由正则合并 |
+| 响应头 CPU (ns) | `buildProxyResponseHeaders` 的剔除集合 |
+| 响应头线上字节 (B) | 客户端实际收到的头大小，剔除生效时可省 140 B |
+| tee 保留量 | `response.clone()` 未读分支不取消会留住整包（实测 16 MiB body → 16.00 MiB 保留，取消后 0） |
+
+`--baseline` 用 `git show` 把该 rev 的 `worker/` 抽到临时目录再导入，不建 worktree、不动 `node_modules`（`worker/` 内部只有相对 import）。
+
+这台工具的意义只在百分比，而且**仅供娱乐参考**：绝对值随机器状态漂（同一份代码两次跑能差 20% 以上），不能拿去跟别人的机器比，也不能当验收依据；百分比只用于同机同进程 A/B，粗筛"这次改动有没有往坏的方向走"。另外两点同样要记着：这是 Node 的 V8，不是 workerd，`setTimeout/clearTimeout` 的实现不同，方向可信、幅度可能差 ±50%；节省量按分块数缩放，`每个分片节省 ≈ 每块差值 × 分片大小 ÷ 实际块大小`，CF 按 16–128 KiB 投递，块越小省得越多。
+
+所以基准不进 `npm.cmd run check`（时序受干扰）：要判定**行为**有没有退化，写 `tests/` 里的断言；要判定**真实成本**，用 `npm.cmd run tail` 看线上的 Worker CPU time。`tests/bench-worker-stream.test.mjs` 守的也只是"测量口径没漂"，不是性能阈值。

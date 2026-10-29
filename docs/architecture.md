@@ -107,14 +107,14 @@ frontend/admin-runtime.template.html
   -> Wrangler Static Assets (`ASSETS`) / Worker 管理端 shell 投递
 ```
 
-sync 这一步不止替换占位符，还包含一层**编译产物改写**（`applyHeadProbeContract`，约 20 个锚点、24 次以上替换）：把节点探测从 HEAD 改成 GET（文案、`pingTimeout` 默认值与配置边界、探测路径状态与下拉框）、换成 `getNodeProbeMeta` / `formatNodeProbeResult`，并向 `UI_DEFAULTS`、`CONFIG_PREVIEW_SANITIZE_RULES.allowedFields`、`booleanTrueFields`、`CONFIG_FORM_BINDINGS` 与字段名表注入 `hedgeProbePreferGet`。
+sync 这一步不止替换占位符，还包含一层**编译产物改写**（`applyHeadProbeContract`，17 处 `replaceRequired` / `replaceAllRequired` 锚点）：把节点探测从 HEAD 改成 GET（文案、`pingTimeout` 默认值与配置边界、探测路径状态与下拉框）、换成 `getNodeProbeMeta` / `formatNodeProbeResult`，并向 `UI_DEFAULTS`、`CONFIG_PREVIEW_SANITIZE_RULES.allowedFields`、`booleanTrueFields`、`CONFIG_FORM_BINDINGS` 与字段名表注入 `hedgeProbePreferGet`。
 
-这一层不是临时手段：线上 bundle 是 643 KB 无 sourcemap 的压缩产物，`frontend/src` 是分叉之前的源世代，无法重新编译出当前 bundle，所以线上 UI 的语义变更只能落在编译后文本上。代价是**模板与线上不是同一款产品**：模板里仍写着 HEAD 语义，专家模式的"优先使用 GET"复选框只存在于生成物。改动它之前先读 `applyHeadProbeContract`；锚点匹配失败会直接抛错（`replaceRequired`），不会静默降级，改写结果由 `tests/frontend-runtime-enhancements.test.mjs` 的 "node GET probes use the fixed public-info path without path selectors" 锁定。
+这一层不是临时手段：线上 bundle 是模板里那段约 0.65 MB 无 sourcemap 的压缩产物（大小以 `frontend/admin-runtime.template.html` 实际字节数为准），`frontend/src` 是分叉之前的源世代，无法重新编译出当前 bundle，所以线上 UI 的语义变更只能落在编译后文本上。代价是**模板与线上不是同一款产品**：模板里仍写着 HEAD 语义，专家模式的"优先使用 GET"复选框只存在于生成物。改动它之前先读 `applyHeadProbeContract`；锚点匹配失败会直接抛错（`replaceRequired`），不会静默降级，改写结果由 `tests/frontend-runtime-enhancements.test.mjs` 的 "node GET probes use the fixed public-info path without path selectors" 锁定。
 部署时 Wrangler 将 `frontend/dist` 与 Worker 一起上传。已上传到 KV 或显式配置的管理端 HTML 保持最高优先级；未配置时，Worker 从 `ASSETS` 读取 `/index.html`，完成 HTML 校验和 bootstrap 注入后直接返回，因此新部署无需先手动上传前端。
 
 所有管理端 HTML 入口（`ASSETS`、远端 URL、KV 上传记录）都经过同一个 `validateAdminShellHtmlSource`：限制 2 MiB、校验 content-type、必须含 `#app` 根节点、必须含 runtime enhancements（`<style>` 与 `<script>` 各带 `data-admin-runtime-enhancements="1"`）、且外链资源必须符合发布策略。缺少 enhancement 层的旧版壳会被拒绝，而不是静默降级丢掉皮肤、并发保存保护和探针并发池。
 
-`frontend/src/` 是线上管理台在分叉之前的可读 Vue 源码，**不要删除**。模板里的 651 KB bundle 是同一款管理台的压缩构建产物，没有源码映射；删掉 `frontend/src/` 后仓库里就不再有任何可读的管理台实现。它与当前 bundle 共享信息架构、action 契约与启动协议，但状态层、样式和部分功能已经分叉，因此它**不是**当前 bundle 的构建输入，也无法通过"镜像"追平：只改它不改变线上 UI，生产 UI 改动仍固定在模板链落地，并按 `tests/frontend-runtime-enhancements.test.mjs` 的现有断言同步到本目录。`sync-admin-runtime.mjs --check` 会拒绝模板或组合产物中出现的 `<script type="module">`，Worker 的 `validateAdminShellHtmlSource` 也会拒绝 importmap、内联动态 `import()` 和本地 bundle 资源，所以不存在半接通的可用状态。意义、证据与禁令见 `frontend/src/README.md`。
+`frontend/src/` 是线上管理台在分叉之前的可读 Vue 源码，**不要删除**。模板里那段约 0.65 MB 的压缩 bundle 是同一款管理台的压缩构建产物，没有源码映射；删掉 `frontend/src/` 后仓库里就不再有任何可读的管理台实现。它与当前 bundle 共享信息架构、action 契约与启动协议，但状态层、样式和部分功能已经分叉，因此它**不是**当前 bundle 的构建输入，也无法通过"镜像"追平：只改它不改变线上 UI，生产 UI 改动仍固定在模板链落地，并按 `tests/frontend-runtime-enhancements.test.mjs` 的现有断言同步到本目录。`sync-admin-runtime.mjs --check` 会拒绝模板或组合产物中出现的 `<script type="module">`，Worker 的 `validateAdminShellHtmlSource` 也会拒绝 importmap、内联动态 `import()` 和本地 bundle 资源，所以不存在半接通的可用状态。意义、证据与禁令见 `frontend/src/README.md`。
 
 ## 5. 存储边界
 
@@ -132,13 +132,13 @@ D1 保存日志、统计聚合、DNS/IP 工作区数据、运行状态、缓存/
 
 ## 6. 前端功能域
 
-生产管理端的主要视图契约是 `dashboard`、`nodes`、`logs`、`dns`、`settings`。设置页按 UI、proxy、security、logs、account 五个保存组组织，并包含备份与恢复。Vue 源码对应 `frontend/src/features/{overview,nodes,logs,dns,settings,runtime,release}`；API 适配在 `frontend/src/lib`，偏好和主题在 `frontend/src/composables`。
+生产管理端的主要视图契约是 `dashboard`、`nodes`、`logs`、`dns`、`settings`。设置页有 9 个分区（系统 UI、DNS 设置、代理与网络、静态资源策略、安全防护、日志设置、监控告警、账号设置、备份与恢复），其中 8 个分区各有独立的保存按钮（UI / DNS / 代理网络 / 静态资源策略 / 安全防护 / 日志设置 / 监控设置 / 账号设置，「Worker 放置」单独保存，备份与恢复只有导入导出与整理）。Vue 源码对应 `frontend/src/features/{overview,nodes,logs,dns,settings,runtime,release}`；API 适配在 `frontend/src/lib`，偏好和主题在 `frontend/src/composables`。
 
 ## 7. 配置与外部依赖
 
 - Cloudflare 绑定和 Cron 位于 `wrangler.toml`：KV binding `ENI_KV`、D1 binding `DB`、静态前端 binding `ASSETS`，Cron 为每小时一次。
 - Worker 环境变量包括 `HOST`、可选 `LEGACY_HOST`、`ADMIN_PATH`、`JWT_SECRET`、`ADMIN_PASS` 以及兼容的绑定名称。
-- 应用版本号唯一来源是 `worker/core/build-info.js` 的 `APP_VERSION`；Worker 落地页标题与管理端标题/徽章占位符 `__APP_VERSION__` 都由它派生。发布时改这一处，并同步 `README.md`、`AGENTS.md` 的版本字样，`npm.cmd run check` 的 version consistency 项会校验三者一致。
+- 应用版本号唯一来源是 `worker/core/build-info.js` 的 `APP_VERSION`；Worker 落地页标题与管理端标题/徽章占位符 `__APP_VERSION__` 都由它派生。发布时只改这一处，但 `npm.cmd run check` 的 version consistency 项会校验四处手工维护的标记：README 徽章 `version-V<x>`、README 的 `当前 **V<x>**` 摘要、`AGENTS.md` 的 `当前 **V<x>**` 指针、`CHANGELOG.md` 的 `## V<x>` 小节；同时它会拒绝 `AGENTS.md` 再长出「版本摘要 / 更新摘要」标题，发布摘要只放 README。
 - 前端环境变量位于 `frontend/.env.example`，主要控制 API base、admin path、release channel 和开发代理目标；CDN 地址由 Worker 的 `indexUrl`/远端壳配置决定，不经过前端构建。
 - 前端外部 vendor 资源由 CDN path 检查器约束；不要在生产模板中引入 inline dynamic import 或未声明的相对发布资源。
 - 这 4 个 vendor 脚本的**内容**不再来自浏览器直连 CDN：`frontend/scripts/build-admin-vendor.mjs` 摇树后按 Worker 的 `assetKey` 落到 `frontend/vendor/`（随 `ASSETS` 部署到 `dist/vendor/`）。Worker 投递壳时把 4 个绝对 URL 改写成 `/ADMIN_PATH/__release/<rev>/vendor/<assetKey>`，`<rev>` 有三种来源：

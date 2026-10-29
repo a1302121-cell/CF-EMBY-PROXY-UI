@@ -96,6 +96,8 @@ var cacheState = {
   PlaybackInfoResponseCache: /* @__PURE__ */ new Map(),
   PlaybackProgressRelay: /* @__PURE__ */ new Map(),
   MetadataPrewarmTasks: /* @__PURE__ */ new Map(),
+  // 键自带会话鉴权，故按插入顺序淘汰 + 读时校验 TTL，不并入清理周期（同 MedbItemsCountsCache）。
+  EntryDirectRangeProbeCache: /* @__PURE__ */ new Map(),
   MedbItemsCountsCache: /* @__PURE__ */ new Map(),
   DashboardMonthlyTrafficCache: /* @__PURE__ */ new Map(),
   SingleFlightTasks: /* @__PURE__ */ new Map(),
@@ -2154,7 +2156,7 @@ function assertAdminIndexSourceConfigValid(rawConfig = {}) {
   if (!rawIndexUrl || parseAdminLocalIndexSourceUrl(rawIndexUrl)) return;
   throw createStructuredConfigError(
     "ADMIN_INDEX_SOURCE_UPLOAD_ONLY",
-    "管理台 HTML 仅支持本地上传，请通过启动门或 Worker 和 HTML 更新面板提交 index.html",
+    "管理台 HTML 仅支持本地上传，请通过启动门或 Worker 和 HTML 更新面板提交 .html 文件",
     400,
     { field: "indexUrl" },
   );
@@ -2273,6 +2275,10 @@ var DEFAULT_VIDEO_PROGRESS_SNAPSHOT_MAX_BYTES = CACHE_DEFAULTS.VideoProgressSnap
 var DEFAULT_IMAGE_CACHE_TTL_DAYS = CACHE_DEFAULTS.CacheTtlImagesDays;
 var DEFAULT_PLAYBACK_ROUTE_HOT_CACHE_TTL_MS = CACHE_DEFAULTS.PlaybackRouteHotCacheTtlMs;
 var DEFAULT_PLAYBACK_ROUTE_HOT_CACHE_MAX = CACHE_DEFAULTS.PlaybackRouteHotCacheMax;
+// 直连 Range 的 HEAD 探测只在同一会话连续分段请求之间复用：TTL 短到签名地址不会过期，
+// 又长到覆盖一次播放里的数百个 Range 请求。
+var ENTRY_DIRECT_RANGE_PROBE_CACHE_TTL_MS = 3e4;
+var ENTRY_DIRECT_RANGE_PROBE_CACHE_MAX = 256;
 var ADMIN_JSON_REQUEST_MAX_BYTES = 12 * 1024 * 1024;
 var ADMIN_FULL_BACKUP_MAX_REQUEST_BYTES = ADMIN_JSON_REQUEST_MAX_BYTES - 64 * 1024;
 var D1_TEXT_VALUE_MAX_BYTES = 2e6;
@@ -2328,7 +2334,11 @@ var SUBTITLE_EXTENSION_REGEX = /\.(?:srt|ass|vtt|sub)$/i;
 var EMBY_IMAGE_PATH_REGEX = /(?:\/Images\/|\/Icons\/|\/Branding\/|\/emby\/covers\/)/i;
 var STREAM_MANIFEST_EXTENSION_REGEX = /\.(?:m3u8|mpd)$/i;
 var STREAM_SEGMENT_EXTENSION_REGEX = /\.(?:ts|m4s)$/i;
-var STREAMING_MEDIA_EXTENSION_REGEX = /\.(?:mp4|m4v|m4a|ogv|webm|mkv|mov|avi|wmv|flv)$/i;
+var STREAMING_MEDIA_EXTENSION_REGEX =
+  /\.(?:mp4|m4v|mp3|m4a|m4b|flac|aac|ogg|oga|opus|wav|wma|ogv|webm|mkv|mov|avi|wmv|flv)$/i;
+// 音频和视频的主字节流走同一个判定：Audio 没有扩展名时只能靠路由段识别，否则会落进 isApiRequest。
+var VIDEO_STREAM_ROUTE_REGEX = /\/videos\/[^/]+\/(?:stream|original|download|file)\b/i;
+var AUDIO_STREAM_ROUTE_REGEX = /\/audio\/[^/]+\/(?:stream|original|download|file|universal)\b/i;
 var DROP_REQUEST_HEADER_SET = /* @__PURE__ */ new Set([
   "host",
   "x-real-ip",
@@ -2380,6 +2390,14 @@ var DROP_RESPONSE_HEADER_SET = /* @__PURE__ */ new Set([
   "referrer-policy",
   "x-powered-by",
   "server",
+  // 逐跳头只对单条连接成立，透传等于让下游把上游的连接语义当成自己的。
+  // upgrade 不在这里：101 握手响应必须把 Upgrade 还给客户端。
+  "connection",
+  "keep-alive",
+  "proxy-connection",
+  "te",
+  "trailer",
+  "transfer-encoding",
 ]);
 var LEGACY_PROXY_CONTEXT_COOKIE_NAME = "legacy_proxy_ctx";
 var LEGACY_PROXY_CONTEXT_COOKIE_MAX_AGE_SEC = 86400;
@@ -3247,15 +3265,15 @@ function defineAdminShellTemplate(dependencies = {}, shell = {}) {
         <section class="admin-gate-card">
           <header class="admin-gate-head">
             <p class="admin-gate-kicker">Index Source</p>
-            <h1 class="admin-gate-title">上传 index.html</h1>
+            <h1 class="admin-gate-title">上传管理台 HTML</h1>
           </header>
           <form id="admin-index-gate-form" class="admin-gate-body" novalidate>
             <label class="admin-gate-field">
-              <span class="admin-gate-label">index.html</span>
+              <span class="admin-gate-label">HTML 文件 (.html)</span>
               <input id="admin-gate-local-file" class="admin-gate-input" type="file" accept=".html,text/html" required />
               <span id="admin-gate-local-hint" class="admin-gate-hint">文件上限 2 MiB</span>
             </label>
-            <div id="admin-gate-status" class="admin-gate-status${hasLocalUpload ? " is-success" : ""}" role="status" aria-live="polite">${hasLocalUpload ? "当前已有 HTML 版本，可上传新文件替换。" : "请选择 index.html。"}</div>
+            <div id="admin-gate-status" class="admin-gate-status${hasLocalUpload ? " is-success" : ""}" role="status" aria-live="polite">${hasLocalUpload ? "当前已有 HTML 版本，可上传新文件替换。" : "请选择管理台 HTML 文件。"}</div>
             <div class="admin-gate-actions">
               <button id="admin-gate-submit" type="submit" class="admin-gate-btn">上传并进入管理台</button>
             </div>
@@ -3283,8 +3301,7 @@ function defineAdminShellTemplate(dependencies = {}, shell = {}) {
             : Math.max(0, Math.round(value / 1024)) + " KiB";
         }
         function validateFile(file) {
-          if (!file) return "请选择 index.html。";
-          if (String(file.name || "").trim().toLowerCase() !== "index.html") return "文件名必须是 index.html。";
+          if (!file) return "请选择管理台 HTML 文件。";
           if (file.size > 2 * 1024 * 1024) return "文件超过 2 MiB 上限。";
           return "";
         }
@@ -3305,7 +3322,7 @@ function defineAdminShellTemplate(dependencies = {}, shell = {}) {
           }
           if (submitButton) submitButton.disabled = true;
           if (localFileInput) localFileInput.disabled = true;
-          setGateStatus("正在上传并校验 index.html...", "");
+          setGateStatus("正在上传并校验 HTML...", "");
           let redirecting = false;
           try {
             const response = await fetch(ADMIN_INDEX_GATE_RUNTIME.adminPath || "/admin", {
@@ -3324,7 +3341,7 @@ function defineAdminShellTemplate(dependencies = {}, shell = {}) {
               throw new Error(String(message || "上传失败"));
             }
             redirecting = true;
-            setGateStatus("index.html 已更新，正在进入管理台...", "success");
+            setGateStatus("HTML 已更新，正在进入管理台...", "success");
             window.location.assign(ADMIN_INDEX_GATE_RUNTIME.adminPath || "/admin");
           } catch (error) {
             setGateStatus(error?.message ? "上传失败：" + error.message : "上传失败，请稍后重试。", "error");
@@ -8614,7 +8631,8 @@ function isPlaybackCriticalProxyPath(proxyPath = "") {
   )
     return true;
   return (
-    /\/videos\/[^/]+\/(?:stream|original|download|file)\b/i.test(normalizedPath) ||
+    VIDEO_STREAM_ROUTE_REGEX.test(normalizedPath) ||
+    AUDIO_STREAM_ROUTE_REGEX.test(normalizedPath) ||
     /\/items\/[^/]+\/download\b/i.test(normalizedPath)
   );
 }
@@ -11255,22 +11273,16 @@ function detectCloudflareWorkerScriptUploadSyntax(scriptContent = "") {
   return "service-worker";
 }
 function validateUploadedWorkerScriptSource(scriptContent = "", fileName = "worker.js") {
-  const normalizedFileName = normalizeCloudflareWorkerScriptUploadFileName(fileName);
-  if (normalizedFileName.toLowerCase() !== "worker.js")
-    throw createStructuredConfigError(
-      "WORKER_UPLOAD_FILE_NAME_INVALID",
-      "Worker 文件名必须是 worker.js",
-      400,
-      { fileName: normalizedFileName || String(fileName || "").trim() },
-    );
+  // 上传文件名只用于展示：任意 .js 名字都收，缺省落成 worker.js，不再要求必须叫 worker.js。
+  const normalizedFileName = normalizeCloudflareWorkerScriptUploadFileName(fileName) || "worker.js";
   const normalizedScriptContent = String(scriptContent || "");
   const contentLength = new TextEncoder().encode(normalizedScriptContent).length;
   if (!normalizedScriptContent.trim())
-    throw createStructuredConfigError("WORKER_UPLOAD_EMPTY", "worker.js 不能为空", 400);
+    throw createStructuredConfigError("WORKER_UPLOAD_EMPTY", "Worker 脚本不能为空", 400);
   if (contentLength > 3145728)
     throw createStructuredConfigError(
       "WORKER_UPLOAD_TOO_LARGE",
-      `worker.js 体积超过限制（${contentLength} bytes）`,
+      `Worker 脚本体积超过限制（${contentLength} bytes）`,
       400,
       {
         contentLength,
@@ -11532,7 +11544,7 @@ function defineConfigActions(dependencies = {}, actions = {}) {
       if (!workerScriptContent.trim() || !indexHtml.trim())
         return jsonError(
           "WORKER_HTML_FILES_REQUIRED",
-          "必须同时上传 worker.js 和 index.html，缺一不可",
+          "必须同时上传 Worker 脚本和 HTML 文件，缺一不可",
           400,
           {
             workerFileProvided: Boolean(workerScriptContent.trim()),
@@ -11546,18 +11558,12 @@ function defineConfigActions(dependencies = {}, actions = {}) {
           workerScriptContent,
           data?.workerFileName,
         );
+        // HTML 只看类型不看名字：任意 .html 文件名都收，缺省落成 index.html。
         const indexFileName =
           String(data?.indexFileName || "")
             .trim()
             .split(/[\\/]+/)
-            .pop() || "";
-        if (indexFileName.toLowerCase() !== "index.html")
-          return jsonError(
-            "ADMIN_INDEX_UPLOAD_FILE_NAME_INVALID",
-            "HTML 文件名必须是 index.html",
-            400,
-            { fileName: indexFileName || String(data?.indexFileName || "").trim() },
-          );
+            .pop() || "index.html";
         indexRecord = await buildAdminLocalIndexUploadRecord(indexHtml, indexFileName);
       } catch (error) {
         return jsonError(
@@ -11708,13 +11714,6 @@ function defineConfigActions(dependencies = {}, actions = {}) {
             .trim()
             .split(/[\\/]+/)
             .pop() || "";
-        if (fileName.toLowerCase() !== "index.html")
-          return jsonError(
-            "ADMIN_INDEX_UPLOAD_FILE_NAME_INVALID",
-            "HTML 文件名必须是 index.html",
-            400,
-            { fileName: fileName || String(data?.fileName || "").trim() },
-          );
         const record = await buildAdminLocalIndexUploadRecord(data?.indexHtml, fileName);
         const persisted = await kernel.persistAdminIndexUpload(record, {
           env,
@@ -12505,12 +12504,7 @@ function defineNodeActions(dependencies = {}, actions = {}) {
             .trim()
             .split(/[\\/]+/)
             .pop() || "";
-        if (backupFileName.toLowerCase() !== "index.html")
-          return jsonError(
-            "ADMIN_INDEX_BACKUP_INVALID",
-            "完整备份中的 HTML 文件名必须是 index.html",
-            400,
-          );
+        // 备份里的 HTML 名字跟着导出时的上传名走，revision 才是唯一判据，不再校验文件名。
         try {
           importedIndexRecord = await buildAdminLocalIndexUploadRecord(
             data.adminIndexUpload.html,
@@ -23230,6 +23224,33 @@ async function sleepWithRequestLifecycle(ms, requestLifecycle = null) {
   });
 }
 //#endregion
+// 键里带本会话完整出口 URL（含查询鉴权）与节点修订，所以不会跨用户或跨节点复用；
+// 不做哈希：32 位碰撞会把 A 会话的签名地址发给 B 会话。
+function buildEntryDirectRangeProbeCacheKey(execution, probeUrl) {
+  return [
+    String(execution?.nodeName || ""),
+    String(execution?.nodeKey || ""),
+    String(execution?.nodeDerivedCacheRevision || ""),
+    String(execution?.entryMode || ""),
+    probeUrl instanceof URL ? probeUrl.toString() : String(probeUrl || ""),
+  ].join("\n");
+}
+function readEntryDirectRangeProbeCache(cacheKey) {
+  const entry = cacheState.EntryDirectRangeProbeCache.get(cacheKey);
+  if (!entry) return null;
+  if (Number(entry.expiresAt) > nowMs()) return entry;
+  cacheState.EntryDirectRangeProbeCache.delete(cacheKey);
+  return null;
+}
+function rememberEntryDirectRangeProbe(cacheKey, entry) {
+  const expiresAt = nowMs() + ENTRY_DIRECT_RANGE_PROBE_CACHE_TTL_MS;
+  setBoundedMapEntry(
+    cacheState.EntryDirectRangeProbeCache,
+    cacheKey,
+    { ...entry, expiresAt },
+    ENTRY_DIRECT_RANGE_PROBE_CACHE_MAX,
+  );
+}
 //#region worker/features/proxy/failover/cache-delivery-methods.js
 function defineProxyCacheDeliveryMethods(dependencies = {}, kernel = {}) {
   return {
@@ -23364,6 +23385,62 @@ function defineProxyCacheDeliveryMethods(dependencies = {}, kernel = {}) {
     ) {
       if (typeof buildFetchOptions !== "function") return null;
       const probeUrl = kernel.resolveEntryDirectTargetUrl(execution, activeTargetBase);
+      const probeCacheKey = buildEntryDirectRangeProbeCacheKey(execution, probeUrl);
+      const cachedProbe = readEntryDirectRangeProbeCache(probeCacheKey);
+      if (cachedProbe) {
+        // 命中也只回放上游那次 HEAD 的结果，下发头按本次请求重算，避免复用别的 Origin 的 CORS。
+        if (cachedProbe.redirect !== true) return null;
+        const cachedNextUrl = new URL(cachedProbe.nextUrl);
+        const cachedProbeResponse = new Response(null, {
+          status: Number(cachedProbe.status) || 0,
+          statusText: String(cachedProbe.statusText || ""),
+          headers: new Headers(cachedProbe.headerEntries || []),
+        });
+        const cachedHeaders = kernel.buildProxyResponseHeaders(
+          cachedProbeResponse,
+          execution.request,
+          execution.dynamicCors,
+          execution.finalOrigin,
+          execution.requestTraits,
+          {
+            enableH3: execution.enableH3,
+            forceH1: execution.forceH1,
+            imageCacheMaxAge: execution.imageCacheMaxAge,
+          },
+        );
+        const cachedDirectRedirectUrl =
+          kernel.buildClientVisibleRedirectUrl(
+            cachedNextUrl,
+            execution.playbackRelayTargetUrl || activeTargetBase,
+            execution.nodeName,
+            execution.nodeKey,
+            execution.requestUrl,
+            { entryMode: execution.entryMode },
+          ) || cachedNextUrl;
+        kernel.applyProxyRedirectHeaders(
+          cachedHeaders,
+          cachedProbeResponse,
+          activeTargetBase,
+          execution.nodeName,
+          execution.nodeKey,
+          cachedDirectRedirectUrl,
+          probeUrl,
+          {
+            linkVariant: execution.linkVariant,
+            entryMode: execution.entryMode,
+          },
+        );
+        kernel.recordEntryDirectRangeProbeAccessLog(execution, {
+          status: cachedProbeResponse.status,
+          directRedirectUrl: cachedDirectRedirectUrl,
+          decisionReason: `${String(entryDecision?.reason || entryDecision?.traceLabel || "").trim()} | EntryRangeProbeCache=hit`,
+        });
+        return new Response(null, {
+          status: cachedProbeResponse.status,
+          statusText: cachedProbeResponse.statusText,
+          headers: cachedHeaders,
+        });
+      }
       /** @type {Response|null} */
       let probeResponse = null;
       let releaseProbeFetchController = () => {};
@@ -23389,6 +23466,8 @@ function defineProxyCacheDeliveryMethods(dependencies = {}, kernel = {}) {
           probeResponse.body?.cancel?.();
         } catch {}
         releaseProbeFetchController();
+        // 上游不跳转：缓存这个结论，后续分段请求可以直接走 307，不必再 HEAD 一次。
+        rememberEntryDirectRangeProbe(probeCacheKey, { redirect: false });
         probeLifecycle.dispose();
         return null;
       }
@@ -23490,27 +23569,20 @@ function defineProxyCacheDeliveryMethods(dependencies = {}, kernel = {}) {
           entryMode: execution.entryMode,
         },
       );
-      if (
-        kernel.shouldRecordAccessLog(execution, {
-          statusCode: probeResponse.status,
-          category: kernel.classifyProxyLogCategory(execution.requestTraits),
-        })
-      )
-        kernel.recordAccessLog(
-          execution,
-          kernel.buildDirectAccessLogPayload(
-            execution,
-            probeResponse.status,
-            execution.defaultOutboundColo || "",
-            {
-              directRedirectUrl,
-              redirectTrace,
-              decisionReason: String(
-                entryDecision?.reason || entryDecision?.traceLabel || "",
-              ).trim(),
-            },
-          ),
-        );
+      kernel.recordEntryDirectRangeProbeAccessLog(execution, {
+        status: probeResponse.status,
+        directRedirectUrl,
+        redirectTrace,
+        decisionReason: String(entryDecision?.reason || entryDecision?.traceLabel || "").trim(),
+      });
+      // 只在已经确认“上游会跳转且 Location 可解析”时缓存，避免回放一个不可用的跳转。
+      rememberEntryDirectRangeProbe(probeCacheKey, {
+        redirect: true,
+        status: probeResponse.status,
+        statusText: probeResponse.statusText,
+        headerEntries: [...probeResponse.headers.entries()],
+        nextUrl: nextUrl.toString(),
+      });
       releaseProbeFetchController();
       probeLifecycle.dispose();
       return new Response(execution.requestMethod === "HEAD" ? null : probeResponse.body, {
@@ -23703,6 +23775,10 @@ function defineProxyCacheDeliveryMethods(dependencies = {}, kernel = {}) {
           !headers.has("If-Range")
         )
           headers.set("If-Range", requestTraits.ifRangeHeader);
+        // 客户端的 If-Range 校验器只对“客户端上次命中的那台源站”成立。换 target 后
+        // 校验器（ETag / Last-Modified）来自另一台主机，上游判定失配会回 200 全量，
+        // 而客户端在等第 N 个字节的 206；丢掉校验器至少能拿到同偏移的 206。
+        if (options.stripRangeValidator === true) headers.delete("If-Range");
         if (effectiveMethod === "GET" || effectiveMethod === "HEAD")
           headers.delete("Content-Length");
         /** @type {WorkerRequestInit} */
@@ -24725,6 +24801,24 @@ function defineProxyDiagnosticMethods(dependencies = {}, kernel = {}) {
         outboundColo,
       };
     },
+    recordEntryDirectRangeProbeAccessLog(execution, options = {}) {
+      const status = Number(options.status) || 0;
+      if (
+        !kernel.shouldRecordAccessLog(execution, {
+          statusCode: status,
+          category: kernel.classifyProxyLogCategory(execution.requestTraits),
+        })
+      )
+        return;
+      kernel.recordAccessLog(
+        execution,
+        kernel.buildDirectAccessLogPayload(execution, status, execution.defaultOutboundColo || "", {
+          directRedirectUrl: options.directRedirectUrl,
+          redirectTrace: options.redirectTrace,
+          decisionReason: options.decisionReason,
+        }),
+      );
+    },
     buildStreamDiagnosticDetail(execution, response, options = {}) {
       const requestTraits = execution?.requestTraits || {};
       if (
@@ -25207,11 +25301,25 @@ function defineProxyMetadataResponseMethods(dependencies = {}, kernel = {}) {
       });
     },
     async storeMetadataCache(cacheKey, response, requestTraits, options = {}) {
-      const cache = getDefaultCacheHandle();
-      if (!cache || !cacheKey || !response || response.status !== 200) return false;
-      if (options.proxiedExternalRedirect === true) return false;
-      if (requestTraits.isManifest && !shouldWorkerCacheMetadataUrl(options.sourceUrl))
+      // 调用方传进来的是 response.clone()：不写缓存就必须把这条分支取消，否则 tee 会把
+      // 每一块也推进这个没人读的队列，响应越大占的内存越多。
+      const drop = () => {
+        try {
+          Promise.resolve(response?.body?.cancel?.()).catch(() => {});
+        } catch {}
         return false;
+      };
+      const cache = getDefaultCacheHandle();
+      if (!cache || !cacheKey || !response || response.status !== 200) return drop();
+      if (options.proxiedExternalRedirect === true) return drop();
+      if (requestTraits.isManifest && !shouldWorkerCacheMetadataUrl(options.sourceUrl))
+        return drop();
+      // 带 Content-Encoding 的响应只能按编码字节原样落盘，而命中路径不会跟客户端重新
+      // 协商 Accept-Encoding，宁可少缓存一次也不下发解不开的 body。
+      const contentEncoding = String(response.headers.get("Content-Encoding") || "")
+        .trim()
+        .toLowerCase();
+      if (contentEncoding && contentEncoding !== "identity") return drop();
       try {
         await cache.put(
           cacheKey,
@@ -25219,7 +25327,7 @@ function defineProxyMetadataResponseMethods(dependencies = {}, kernel = {}) {
         );
         return true;
       } catch {
-        return false;
+        return drop();
       }
     },
     resolveMetadataTarget(candidate, activeTargetBase, name, key) {
@@ -25787,8 +25895,9 @@ function defineProxyMetadataResponseMethods(dependencies = {}, kernel = {}) {
                 controller.close();
                 return;
               }
+              // 计时只覆盖 reader.read() 窗口。enqueue 之后若继续计时，客户端暂停或缓冲
+              // 超过阈值会被 stream_idle_timeout 误杀，日志还会记成上游 504。
               controller.enqueue(value);
-              armIdleTimer();
             } catch (error) {
               clearIdleTimer();
               const abortReason = requestLifecycle.getAbortReason();
@@ -25992,6 +26101,9 @@ function defineProxyUpstreamFetchMethods(dependencies = {}, kernel = {}) {
       let retryTargetRecords = Array.isArray(state.retryTargetRecords)
         ? state.retryTargetRecords.slice()
         : [];
+      // 入口 target 最可能是客户端上一段 Range 的提供者，只有它认得客户端的 If-Range；
+      // 其余 target 一律按“校验器不可比”处理。
+      const entryTargetKey = buildTargetRecordKey(retryTargetRecords[0]);
       let lastTargetRecord = retryTargetRecords[0];
       let lastFinalUrl = buildUpstreamProxyUrl(lastTargetRecord, state.proxyPath);
       lastFinalUrl.search = state.requestUrl.search;
@@ -26012,6 +26124,7 @@ function defineProxyUpstreamFetchMethods(dependencies = {}, kernel = {}) {
               state.buildFetchOptions,
               {
                 isRetry: effectiveRetry,
+                stripRangeValidator: buildTargetRecordKey(targetRecord) !== entryTargetKey,
                 protocolFallbackRetry: state.protocolFallbackRetry === true,
                 stripAuthOnProtocolFallback: state.stripAuthOnProtocolFallback === true,
                 timeoutMs: state.upstreamTimeoutMs,
@@ -27338,15 +27451,16 @@ function defineProxyRoutingDecisionMethods(dependencies = {}, kernel = {}) {
       const isPlaybackStartedRequest = isPlaybackSessionStartedPath(proxyPath);
       const isPlaybackSessionControlRequest =
         isPlaybackProgressRequest || isPlaybackStoppedRequest || isPlaybackStartedRequest;
-      const looksLikeVideoRoute =
+      const looksLikeMediaStreamRoute =
         STREAMING_MEDIA_EXTENSION_REGEX.test(proxyPath) ||
-        /\/videos\/[^/]+\/(stream|original|download|file)/i.test(proxyPath) ||
+        VIDEO_STREAM_ROUTE_REGEX.test(proxyPath) ||
+        AUDIO_STREAM_ROUTE_REGEX.test(proxyPath) ||
         /\/items\/[^/]+\/download/i.test(proxyPath) ||
         requestUrl.searchParams.get("Static") === "true" ||
         requestUrl.searchParams.get("Download") === "true";
       const isSafeMethod = requestMethod === "GET" || requestMethod === "HEAD";
       const isBigStream =
-        looksLikeVideoRoute && !isManifest && !isSegment && !isSubtitle && !isImage;
+        looksLikeMediaStreamRoute && !isManifest && !isSegment && !isSubtitle && !isImage;
       const isPlaybackCriticalRequest =
         isPlaybackInfoRequest || isSmartStrmMedia || isBigStream || isManifest || isSegment;
       const isApiRequest =
@@ -28558,6 +28672,8 @@ function defineProxyFailoverProbeMethods(dependencies = {}, kernel = {}) {
           state.buildFetchOptions,
           {
             isRetry: true,
+            // 唤醒重试必然换了 target（上面已排除 winner === failed），客户端校验器不再成立。
+            stripRangeValidator: true,
             protocolFallbackRetry: state.protocolFallbackRetry === true,
             stripAuthOnProtocolFallback: state.stripAuthOnProtocolFallback === true,
             timeoutMs: state.upstreamTimeoutMs,
@@ -28802,6 +28918,9 @@ function defineProxyTransportMethods(dependencies = {}, kernel = {}) {
     ) {
       const modifiedHeaders = new Headers(response.headers);
       DROP_RESPONSE_HEADER_SET.forEach((h) => modifiedHeaders.delete(h));
+      // 101 是握手响应：Connection 属于握手的一部分，逐跳头清理不能把它剔掉。
+      if (response.status === 101 && response.headers.has("Connection"))
+        modifiedHeaders.set("Connection", response.headers.get("Connection"));
       modifiedHeaders.set("Access-Control-Allow-Origin", finalOrigin);
       if (dynamicCors && dynamicCors["Access-Control-Expose-Headers"])
         modifiedHeaders.set(
@@ -28832,6 +28951,8 @@ function defineProxyTransportMethods(dependencies = {}, kernel = {}) {
       );
       if (
         response.status >= 400 ||
+        // 206 是部分内容：共享缓存（CDN、代理、浏览器）都不能按“换一个偏移就能复用”来存它。
+        response.status === 206 ||
         requestTraits.isManifest ||
         requestTraits.isBigStream ||
         requestTraits.isSmartStrmMedia

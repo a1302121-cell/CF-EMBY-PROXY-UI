@@ -3816,6 +3816,241 @@ test("failover 403 is returned directly without a protocol fallback retry", asyn
   }
 });
 
+test("client If-Range survives same-target retries but is dropped for another target", async () => {
+  const request = new Request("https://worker.test/node/secret/Videos/1/stream", {
+    headers: { Range: "bytes=1024-2047", "If-Range": '"origin-a-etag"' },
+  });
+  const requestTraits = {
+    isBigStream: true,
+    rangeHeader: "bytes=1024-2047",
+    ifRangeHeader: '"origin-a-etag"',
+  };
+  const buildFetchOptions = proxyService.createBuildFetchOptions(
+    { request, requestMethod: "GET", requestTraits, protocolFallback: false },
+    {
+      newHeaders: new Headers(request.headers),
+      adminCustomHeaders: new Set(),
+      preparedBody: null,
+      preparedBodyMode: "none",
+    },
+  );
+
+  const sameTarget = await buildFetchOptions(new URL("https://origin-a.test/Videos/1/stream"));
+  assert.equal(sameTarget.headers.get("If-Range"), '"origin-a-etag"');
+
+  // 换 target 后客户端的校验器来自另一台主机，必须丢弃，否则上游会因校验器失配回 200 全量。
+  const otherTarget = await buildFetchOptions(new URL("https://origin-b.test/Videos/1/stream"), {
+    stripRangeValidator: true,
+  });
+  assert.equal(otherTarget.headers.get("If-Range"), null);
+  assert.equal(otherTarget.headers.get("Range"), "bytes=1024-2047");
+});
+
+test("cross-target retry asks for the range without the client validator", async () => {
+  const primaryTarget = createTargetRecord("https://origin-a.test");
+  const failoverTarget = createTargetRecord("https://origin-b.test");
+  const originalPerformUpstreamFetch = proxyService.performUpstreamFetch;
+  const originalFailoverWait = proxyService.maybeRunForegroundFailoverWait;
+  const attempts = [];
+  proxyService.performUpstreamFetch = async (
+    targetRecord,
+    proxyPath,
+    requestUrl,
+    buildFetchOptions,
+    options = {},
+  ) => {
+    attempts.push({
+      target: targetRecord,
+      stripRangeValidator: options.stripRangeValidator === true,
+    });
+    const status = attempts.length === 1 ? 503 : 206;
+    return {
+      response: new Response("partial", {
+        status,
+        headers: { "Content-Range": "bytes 1024-2047/4096" },
+      }),
+      finalUrl: new URL("https://origin.test/Videos/1/stream"),
+      targetRecord,
+      releaseFetchController() {},
+    };
+  };
+  proxyService.maybeRunForegroundFailoverWait = async () => null;
+  try {
+    const result = await proxyService.fetchUpstreamWithRetryLoop({
+      retryTargetRecords: [primaryTarget, failoverTarget],
+      proxyPath: "/Videos/1/stream",
+      requestUrl: new URL("https://worker.test/node/secret/Videos/1/stream"),
+      buildFetchOptions: {},
+      maxExtraAttempts: 1,
+      isRetry: false,
+      allowAutomaticRetry: true,
+      retryableStatuses: new Set([500, 502, 503, 504]),
+      protocolFallback: false,
+      preparedBodyMode: null,
+      execution: {
+        requestMethod: "GET",
+        requestTraits: { isBigStream: true, ifRangeHeader: '"origin-a-etag"' },
+        failoverContext: null,
+        failoverForegroundWaitUsed: false,
+      },
+    });
+    assert.equal(result.response.status, 206);
+    assert.deepEqual(
+      attempts.map((attempt) => attempt.stripRangeValidator),
+      [false, true],
+      "entry target keeps the validator, the failover target must not",
+    );
+  } finally {
+    proxyService.performUpstreamFetch = originalPerformUpstreamFetch;
+    proxyService.maybeRunForegroundFailoverWait = originalFailoverWait;
+  }
+});
+
+test("partial content never reaches a shared cache", () => {
+  const request = new Request("https://worker.test/node/secret/Videos/1/Subtitles/2/Stream.srt", {
+    headers: { Range: "bytes=0-511" },
+  });
+  const requestTraits = {
+    isImage: false,
+    isStaticFile: false,
+    isSubtitle: true,
+    isManifest: false,
+    isMetadataCacheable: true,
+    isBigStream: false,
+    isSmartStrmMedia: false,
+    isSegment: false,
+  };
+  const headers = proxyService.buildProxyResponseHeaders(
+    new Response("partial", {
+      status: 206,
+      headers: { "Content-Range": "bytes 0-511/4096" },
+    }),
+    request,
+    {},
+    "*",
+    requestTraits,
+    { imageCacheMaxAge: 3600 },
+  );
+  assert.equal(headers.get("Cache-Control"), "no-store");
+  assert.equal(headers.get("Content-Range"), "bytes 0-511/4096");
+});
+
+test("entry direct range probe reuses one HEAD across segmented range requests", async () => {
+  isolateState.EntryDirectRangeProbeCache.clear();
+  const originalPerformFetch = proxyService.performFetchWithTimeout;
+  const originalRecordLog = proxyService.recordEntryDirectRangeProbeAccessLog;
+  let probeCount = 0;
+  proxyService.performFetchWithTimeout = async () => {
+    probeCount += 1;
+    return {
+      response: new Response(null, {
+        status: 302,
+        headers: { Location: "https://cdn.test/signed/stream?token=abc" },
+      }),
+      finalUrl: null,
+      releaseFetchController() {},
+    };
+  };
+  proxyService.recordEntryDirectRangeProbeAccessLog = () => {};
+  const buildExecution = () => ({
+    request: new Request("https://worker.test/node/secret/Videos/1/stream?api_key=k", {
+      headers: { Range: "bytes=0-1023" },
+    }),
+    requestMethod: "GET",
+    requestTraits: { isBigStream: true, rangeHeader: "bytes=0-1023" },
+    nodeName: "node-a",
+    nodeKey: "secret",
+    nodeDerivedCacheRevision: "rev-1",
+    entryMode: "path",
+    linkVariant: "main",
+    dynamicCors: {},
+    finalOrigin: "*",
+    enableH3: false,
+    forceH1: false,
+    imageCacheMaxAge: 3600,
+    upstreamTimeoutMs: 8000,
+    entryRoutingDecision: { dataPlaneMode: "entry_direct", reason: "entry_direct_media" },
+  });
+  try {
+    const firstResponse = await proxyService.maybeProbeEntryDirectRangeRedirectResponse(
+      buildExecution(),
+      new URL("https://origin-a.test"),
+      () => ({ method: "HEAD" }),
+      { reason: "entry_direct_media" },
+    );
+    const secondResponse = await proxyService.maybeProbeEntryDirectRangeRedirectResponse(
+      buildExecution(),
+      new URL("https://origin-a.test"),
+      () => ({ method: "HEAD" }),
+      { reason: "entry_direct_media" },
+    );
+    assert.equal(probeCount, 1, "the second range request must reuse the cached probe");
+    assert.equal(firstResponse.status, 302);
+    assert.equal(secondResponse.status, 302);
+    assert.equal(secondResponse.headers.get("Location"), firstResponse.headers.get("Location"));
+  } finally {
+    proxyService.performFetchWithTimeout = originalPerformFetch;
+    proxyService.recordEntryDirectRangeProbeAccessLog = originalRecordLog;
+    isolateState.EntryDirectRangeProbeCache.clear();
+  }
+});
+
+test("entry direct range probe caches a non-redirecting upstream instead of re-probing", async () => {
+  isolateState.EntryDirectRangeProbeCache.clear();
+  const originalPerformFetch = proxyService.performFetchWithTimeout;
+  let probeCount = 0;
+  proxyService.performFetchWithTimeout = async () => {
+    probeCount += 1;
+    return {
+      response: new Response(null, { status: 200, headers: { "Content-Length": "4096" } }),
+      finalUrl: null,
+      releaseFetchController() {},
+    };
+  };
+  const buildExecution = () => ({
+    request: new Request("https://worker.test/node/secret/Videos/1/stream?api_key=k", {
+      headers: { Range: "bytes=0-1023" },
+    }),
+    requestMethod: "GET",
+    requestTraits: { isBigStream: true, rangeHeader: "bytes=0-1023" },
+    nodeName: "node-b",
+    nodeKey: "secret",
+    nodeDerivedCacheRevision: "rev-1",
+    entryMode: "path",
+    linkVariant: "main",
+    dynamicCors: {},
+    finalOrigin: "*",
+    enableH3: false,
+    forceH1: false,
+    imageCacheMaxAge: 3600,
+    upstreamTimeoutMs: 8000,
+  });
+  try {
+    assert.equal(
+      await proxyService.maybeProbeEntryDirectRangeRedirectResponse(
+        buildExecution(),
+        new URL("https://origin-a.test"),
+        () => ({ method: "HEAD" }),
+        { reason: "entry_direct_media" },
+      ),
+      null,
+    );
+    assert.equal(
+      await proxyService.maybeProbeEntryDirectRangeRedirectResponse(
+        buildExecution(),
+        new URL("https://origin-a.test"),
+        () => ({ method: "HEAD" }),
+        { reason: "entry_direct_media" },
+      ),
+      null,
+    );
+    assert.equal(probeCount, 1, "a non-redirecting upstream must not be re-probed");
+  } finally {
+    proxyService.performFetchWithTimeout = originalPerformFetch;
+    isolateState.EntryDirectRangeProbeCache.clear();
+  }
+});
+
 test("runtime route context normalizes hostnames once and defers CORS headers", async () => {
   const request = new Request("https://Node.Media.Example.COM./Videos/1/stream", {
     headers: { Origin: "https://client.test" },
@@ -7046,6 +7281,75 @@ test("Worker and HTML update uploads only the script bound to the current host",
   }
 });
 
+test("Worker and HTML update accepts uploads whose files are not named worker.js / index.html", async () => {
+  const { kv } = createInMemoryKvStore({
+    [kernel.CONFIG_KEY]: {
+      cfAccountId: "account-id",
+      cfZoneId: "zone-id",
+      cfApiToken: "api-token",
+    },
+  });
+  const env = { ENI_KV: kv, __CONFIG_CACHE_NAMESPACE: "worker-html-any-file-name" };
+  const uploads = [];
+  invalidateRuntimeConfigCache();
+
+  try {
+    const response = await withWorkerGlobals(
+      {
+        fetch: async (input, init = {}) => {
+          const url = String(input);
+          if (url.includes("/workers/domains")) {
+            return Response.json({
+              success: true,
+              result: [{ hostname: "current.example", service: "current-worker" }],
+            });
+          }
+          if (url.includes("/workers/scripts/")) {
+            const files = init.body.get("files");
+            const metadata = init.body.get("metadata");
+            uploads.push({
+              url,
+              fileName: files?.name,
+              mainModule: JSON.parse(await metadata.text()).main_module,
+            });
+            return Response.json({ success: true, result: {} });
+          }
+          throw new Error(`unexpected Cloudflare request: ${url}`);
+        },
+      },
+      () =>
+        adminActions.updateWorkerAndAdminIndex(
+          {
+            workerFileName: "my-release-#3.js",
+            workerScriptContent: "export default { fetch() { return new Response('ok'); } }",
+            indexFileName: "admin-shell-v2.html",
+            indexHtml: adminShellDocument({ body: '<div id="app"></div>' }),
+          },
+          {
+            env,
+            kv,
+            ctx: null,
+            request: new Request("https://current.example/admin"),
+          },
+        ),
+    );
+    const payload = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.worker.fileName, "my-release-#3.js");
+    assert.equal(payload.html.fileName, "admin-shell-v2.html");
+    assert.deepEqual(uploads, [
+      {
+        url: "https://api.cloudflare.com/client/v4/accounts/account-id/workers/scripts/current-worker/content",
+        fileName: "my-release-#3.js",
+        mainModule: "my-release-#3.js",
+      },
+    ]);
+  } finally {
+    invalidateRuntimeConfigCache();
+  }
+});
+
 test("local index source persists in KV and renders through the same-origin vendor path", async () => {
   const { kv } = createInMemoryKvStore({ "sys:theme": {} });
   const env = { ADMIN_PATH: "/admin", ENI_KV: kv };
@@ -7989,6 +8293,320 @@ test("managed stream errors still log under error-only mode", async () => {
   assert.equal(payloads.length, 1, "a stream abort must still be logged in error-only mode");
   assert.equal(payloads[0].statusCode, 502);
   assert.equal(payloads[0].category, "error");
+});
+
+function createStreamTestLifecycle() {
+  const listeners = new Set();
+  const lifecycle = {
+    abortReason: "",
+    onAbort(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    getAbortReason() {
+      return this.abortReason;
+    },
+    abort(reason) {
+      this.abortReason = reason;
+      for (const listener of listeners) listener(reason);
+    },
+    dispose() {
+      listeners.clear();
+    },
+  };
+  return lifecycle;
+}
+
+function buildManagedStreamTestExecution(requestLifecycle, proxyPath) {
+  return {
+    requestMethod: "GET",
+    request: new Request(`https://worker.test/alpha${proxyPath}`),
+    requestUrl: new URL(`https://worker.test/alpha${proxyPath}`),
+    proxyPath,
+    requestTraits: { isSegment: true },
+    upstreamTimeoutMs: 0,
+    currentConfig: { logEnabled: true, logWriteMode: "all" },
+    requestLifecycle,
+  };
+}
+
+// 计时只覆盖等待上游数据的窗口：分片已经躺在队列里等客户端来取时不能算上游空闲。
+test("managed stream does not abort while a chunk waits for the consumer", async () => {
+  const lifecycle = createStreamTestLifecycle();
+  let upstreamCancelled = false;
+  const upstreamState = {
+    response: new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(new Uint8Array([1, 2, 3]));
+        },
+        cancel() {
+          upstreamCancelled = true;
+        },
+      }),
+      { status: 200 },
+    ),
+    finalUrl: new URL("https://origin.test/Videos/1/hls1/main/0.ts"),
+    activeTargetBase: new URL("https://origin.test"),
+  };
+  const execution = buildManagedStreamTestExecution(lifecycle, "/Videos/1/hls1/main/0.ts");
+  const payloads = [];
+  const originalRecordAccessLog = proxyService.recordAccessLog;
+  const originalResolveIdleTimeout = proxyService.resolveResponseStreamIdleTimeoutMs;
+  proxyService.recordAccessLog = (_execution, payload) => payloads.push(payload);
+  proxyService.resolveResponseStreamIdleTimeoutMs = () => 20;
+  try {
+    // 队列填满后客户端一直不来取：计时器若还在跑，20ms 后就会把这条流 abort 成 504。
+    const body = proxyService.buildManagedProxyResponseBody(execution, upstreamState, null);
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    assert.equal(upstreamCancelled, false, "buffered chunks must not abort the upstream stream");
+    assert.deepEqual(
+      payloads.map((payload) => payload.statusCode),
+      [],
+    );
+    await body.cancel("test_done");
+  } finally {
+    proxyService.recordAccessLog = originalRecordAccessLog;
+    proxyService.resolveResponseStreamIdleTimeoutMs = originalResolveIdleTimeout;
+  }
+});
+
+// 上游真的不再给数据时，idle 超时仍然要生效。
+test("managed stream still aborts when upstream stops sending", async () => {
+  const lifecycle = createStreamTestLifecycle();
+  let upstreamCancelled = false;
+  const upstreamState = {
+    response: new Response(
+      new ReadableStream({
+        pull() {},
+        cancel() {
+          upstreamCancelled = true;
+        },
+      }),
+      { status: 200 },
+    ),
+    finalUrl: new URL("https://origin.test/Videos/1/hls1/main/0.ts"),
+    activeTargetBase: new URL("https://origin.test"),
+  };
+  const execution = buildManagedStreamTestExecution(lifecycle, "/Videos/1/hls1/main/0.ts");
+  const payloads = [];
+  const originalRecordAccessLog = proxyService.recordAccessLog;
+  const originalResolveIdleTimeout = proxyService.resolveResponseStreamIdleTimeoutMs;
+  proxyService.recordAccessLog = (_execution, payload) => payloads.push(payload);
+  proxyService.resolveResponseStreamIdleTimeoutMs = () => 20;
+  try {
+    proxyService.buildManagedProxyResponseBody(execution, upstreamState, null);
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    assert.equal(upstreamCancelled, true);
+    assert.deepEqual(
+      payloads.map((payload) => payload.statusCode),
+      [504],
+    );
+    assert.match(String(payloads[0].errorDetail), /stream_idle_timeout_20ms/);
+  } finally {
+    proxyService.recordAccessLog = originalRecordAccessLog;
+    proxyService.resolveResponseStreamIdleTimeoutMs = originalResolveIdleTimeout;
+  }
+});
+
+// 传进 storeMetadataCache 的是 response.clone()，不落盘的每条分支都必须取消。
+function buildTrackedCacheResponse(headers = {}) {
+  let cancelled = false;
+  const response = new Response(
+    new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("#EXTM3U\n"));
+        controller.close();
+      },
+      cancel() {
+        cancelled = true;
+      },
+    }),
+    { status: 200, headers: { "Content-Type": "application/x-mpegurl", ...headers } },
+  );
+  return { response, wasCancelled: () => cancelled };
+}
+
+function createTrackedEdgeCache() {
+  const stored = [];
+  return {
+    stored,
+    cache: {
+      async put(request, response) {
+        stored.push(await response.text());
+      },
+    },
+  };
+}
+
+const metadataCacheTestKey = () => new Request("https://worker.test/_metadata/Videos/1/main.m3u8");
+const metadataCacheTestUrl = (search = "") =>
+  new URL(`https://origin.test/Videos/1/main.m3u8${search}`);
+const metadataCacheTestTick = () => new Promise((resolve) => setImmediate(resolve));
+
+test("metadata cache storage cancels the clone it refuses to store", async () => {
+  const { cache, stored } = createTrackedEdgeCache();
+  await withWorkerGlobals({ caches: { default: cache } }, async () => {
+    // 转码播放列表不在 Worker 缓存白名单里。
+    const transcoding = buildTrackedCacheResponse();
+    assert.equal(
+      await proxyService.storeMetadataCache(
+        metadataCacheTestKey(),
+        transcoding.response,
+        { isManifest: true },
+        { sourceUrl: metadataCacheTestUrl("?Transcoding=true") },
+      ),
+      false,
+    );
+    await metadataCacheTestTick();
+    assert.equal(transcoding.wasCancelled(), true);
+
+    // 白名单里的播放列表仍然照常写入，取消逻辑不能误伤命中路径。
+    const cacheable = buildTrackedCacheResponse();
+    assert.equal(
+      await proxyService.storeMetadataCache(
+        metadataCacheTestKey(),
+        cacheable.response,
+        { isManifest: true },
+        { sourceUrl: metadataCacheTestUrl() },
+      ),
+      true,
+    );
+    await metadataCacheTestTick();
+    assert.equal(cacheable.wasCancelled(), false);
+    assert.deepEqual(stored, ["#EXTM3U\n"]);
+  });
+});
+
+// 带编码的 body 只能原样落盘，而缓存命中路径不会跟客户端重新协商 Accept-Encoding。
+test("metadata cache storage skips compressed responses", async () => {
+  const { cache, stored } = createTrackedEdgeCache();
+  await withWorkerGlobals({ caches: { default: cache } }, async () => {
+    const encoded = buildTrackedCacheResponse({ "Content-Encoding": "gzip" });
+    assert.equal(
+      await proxyService.storeMetadataCache(
+        metadataCacheTestKey(),
+        encoded.response,
+        { isManifest: true },
+        { sourceUrl: metadataCacheTestUrl() },
+      ),
+      false,
+    );
+    await metadataCacheTestTick();
+    assert.equal(encoded.wasCancelled(), true);
+    assert.deepEqual(stored, []);
+  });
+});
+
+test("audio byte streams classify as media streams instead of API requests", () => {
+  const classify = (proxyPath) =>
+    proxyService.classifyRequest(
+      new Request(`https://worker.test/alpha${proxyPath}`),
+      proxyPath,
+      new URL(`https://worker.test/alpha${proxyPath}`),
+      {},
+    );
+  for (const proxyPath of [
+    "/Audio/1/stream",
+    "/Audio/1/stream.flac",
+    "/Audio/1/universal",
+    "/audio/1/stream.mp3",
+    "/Videos/1/stream.mp3",
+  ]) {
+    const traits = classify(proxyPath);
+    assert.equal(traits.isBigStream, true, `${proxyPath} must be a media stream`);
+    assert.equal(traits.isApiRequest, false, `${proxyPath} must not be an API request`);
+    assert.equal(traits.canStripAuthOnProtocolFallback, true, proxyPath);
+  }
+  // 音频元数据与播放信息仍然走 API 分支。
+  for (const proxyPath of ["/Audio/1", "/Audio/1/Lyrics", "/Items/1/PlaybackInfo"]) {
+    const traits = classify(proxyPath);
+    assert.equal(traits.isBigStream, false, proxyPath);
+    assert.equal(traits.isApiRequest, true, proxyPath);
+  }
+});
+
+test("audio stream paths count as playback critical for routing", () => {
+  for (const segments of [
+    ["alpha", "audio", "1", "stream"],
+    ["alpha", "audio", "1", "universal"],
+    ["alpha", "audio", "1", "stream.mp3"],
+  ])
+    assert.equal(
+      routeTesting.isPlaybackCriticalRouteContext({ segments }),
+      true,
+      segments.join("/"),
+    );
+  for (const segments of [
+    ["alpha", "audio", "1"],
+    ["alpha", "users", "1"],
+  ])
+    assert.equal(
+      routeTesting.isPlaybackCriticalRouteContext({ segments }),
+      false,
+      segments.join("/"),
+    );
+});
+
+test("hop-by-hop response headers are not relayed to the client", () => {
+  const request = new Request("https://worker.test/alpha/Videos/1/stream");
+  const response = new Response("bytes", {
+    headers: {
+      "Content-Type": "video/mp4",
+      Connection: "keep-alive",
+      "Keep-Alive": "timeout=5",
+      "Proxy-Connection": "keep-alive",
+      TE: "trailers",
+      Trailer: "X-Upstream-Trailer",
+      "Transfer-Encoding": "chunked",
+      "X-Powered-By": "Emby",
+    },
+  });
+  const headers = proxyService.buildProxyResponseHeaders(
+    response,
+    request,
+    {},
+    "*",
+    { isBigStream: true },
+    {},
+  );
+  for (const hopHeader of [
+    "Connection",
+    "Keep-Alive",
+    "Proxy-Connection",
+    "TE",
+    "Trailer",
+    "Transfer-Encoding",
+    "X-Powered-By",
+  ])
+    assert.equal(headers.get(hopHeader), null, hopHeader);
+  assert.equal(headers.get("Content-Type"), "video/mp4");
+});
+
+// 101 只能伪造成 response-like 对象：fetch 规范的 Response 构造器不接受 101。
+test("websocket handshake keeps its Connection and Upgrade headers", () => {
+  const handshake = {
+    status: 101,
+    statusText: "Switching Protocols",
+    headers: new Headers({
+      Connection: "Upgrade",
+      Upgrade: "websocket",
+      "Sec-WebSocket-Accept": "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=",
+    }),
+  };
+  const headers = proxyService.buildProxyResponseHeaders(
+    handshake,
+    new Request("https://worker.test/alpha/embywebsocket", {
+      headers: { Upgrade: "websocket", Connection: "Upgrade" },
+    }),
+    {},
+    "*",
+    { isWsUpgrade: true },
+    {},
+  );
+  assert.equal(headers.get("Connection"), "Upgrade");
+  assert.equal(headers.get("Upgrade"), "websocket");
+  assert.equal(headers.get("Sec-WebSocket-Accept"), "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=");
 });
 
 test("upstream error logs respect the same pre-gate", () => {
