@@ -48,7 +48,7 @@ Worker 作为公网入口，外部只能看到 Cloudflare 边缘节点，而不�
 - **Worker Cache Key**：会主动剥离 Token、设备号、客户端版本、播放会话等与媒体二进制无关的 Emby 状态参数
 - **Cloudflare `cf` 提示**：回源 `fetch` 不附加任何 `cf` 字段（没有 `cacheEverything` / `cacheTtl`），不覆盖 Dashboard 里的 Cache Rules
 - **编码响应不入元数据缓存**：带 `Content-Encoding`（gzip / br 等）的响应不写 `caches.default`，因为缓存命中路径不会跟客户端重新协商 `Accept-Encoding`
-- **起播探测请求**：保留短时微缓存，减轻源站压力
+- **起播探测请求**：直连 Range 的 HEAD 探测结果按 isolate 缓存 30 秒、上限 256 条（键含节点、线路、目标 URL），同一节点的数百个分段请求不再各付一次 HEAD
 - **受管流式响应**：播放列表连续 12 秒、媒体分片连续 15 秒没等到上游新数据时会中止上游流并记录 `stream_idle_timeout`；这段计时只覆盖“等上游读”的窗口，分片已经读出来、在队列里等客户端来取时不计时，所以慢客户端或暂停不会把上游连接误杀；客户端取消也会同步释放读取器和计时器
 
 ### 3. 轻量级元数据预热
@@ -80,7 +80,7 @@ Worker 作为公网入口，外部只能看到 Cloudflare 边缘节点，而不�
 
 ### 敏感操作二次确认
 - DNS 修改 API 需要显式携带 `X-Admin-Confirm: saveDnsRecords`；兼容单条更新时仍可使用 `X-Admin-Confirm: updateDnsRecord`
-- 同样需要 `X-Admin-Confirm` 的还有：`purgeCache`（清理 Cloudflare 缓存）、`exportConfig` / `exportSettings`（含密钥导出）、`clearLogs`（清理日志）、`repairD1Schema`（修复 D1 Schema）
+- 同样需要 `X-Admin-Confirm` 的还有：`purgeCache`（清理 Cloudflare 缓存）、`exportConfig` / `exportSettings`（含密钥导出）、`clearLogs`（清理日志），以及 `initLogsDb` 的高风险修复分支（确认头值是 `repairD1Schema`；它不是一个独立的 action，`confirmHighRisk` 只在带这个头时才为 `true`）
 - 管理面板已自动补这个请求头；如果你自己写脚本调用管理 API，也要一并带上
 
 ### 访问控制

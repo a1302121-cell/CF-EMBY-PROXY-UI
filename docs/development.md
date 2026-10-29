@@ -43,7 +43,8 @@ npm.cmd run --workspace frontend build
 从仓库根目录运行：
 
 ```powershell
-# 完整门禁：Worker、架构、bundle、Node 测试、管理端同步、Vue 语法、CDN 和 diff 检查
+# 完整门禁：Worker 语法、oxlint、oxfmt、架构、bundle 新鲜度、版本一致性、Node 测试、
+# 管理端同步、Vue 语法、vendor 摇树产物、CDN 策略和 diff 空白检查
 npm.cmd run check
 
 # 单项构建
@@ -57,6 +58,7 @@ npm.cmd run check:worker-architecture
 npm.cmd run check:worker-bundle
 npm.cmd run --workspace frontend check:admin-runtime
 npm.cmd run --workspace frontend check:cdn
+npm.cmd run --workspace frontend check:vendor
 
 # 管理端本地开发（默认 Vite 5173；预览 4173）
 npm.cmd run --workspace frontend dev
@@ -84,6 +86,9 @@ node --test tests/*.test.mjs
 - `tests/admin-contract-parity.test.mjs`：管理端跨层契约——前端调用的 action 必须能在 Worker registry 解析、boot 协议符号在壳层/loader/兜底壳三处一致、`frontend/src` 参考源仍只调用可解析的 action 并保持 5 个主视图与 8 个设置分区，以及真实 `frontend/dist/index.html` 能通过 Worker 的壳层校验（含 2 MiB 上限与资产策略）。
 - `tests/worker-bundle-smoke.test.mjs`：生成 Worker bundle 的入口和 Cloudflare handler 形状。
 - `tests/tech-stack-pins.test.mjs`：管理端 4 个 CDN 生产依赖的版本锁定，模板、组合产物与 `dist` 必须一致，且 `docs/tech-stack.md` 记录同步。
+- `tests/version-consistency.test.mjs`：`APP_VERSION` 与 README / AGENTS / CHANGELOG 四处版本标记一致，且 `AGENTS.md` 不夹带发布摘要标题。
+- `tests/admin-vendor-bundle.test.mjs`：`frontend/vendor/` 的摇树产物与 Worker 的 `assetKey`、`vendor.lock.json` 三方一致，并用颜色哨兵挡住 chart.js 的副作用注解回归（见 [`tech-stack.md` §1.1](./tech-stack.md)）。
+- `tests/bench-worker-stream.test.mjs`：流式基准的测量口径没漂（不含性能阈值，见第 8 节）。
 - `tests/frontend-color-tokens.test.mjs`：手写 CSS 的颜色令牌——`var()` 不能引用未定义且无兜底的变量、`--d1-*` 只能出现在 `data-theme="claude"` 规则里、调色板变量只在 `:root`/claude 块定义。这三条在浏览器里都是静默失效（丢声明、变透明），只能靠静态检查守。
 - `tests/fixtures/worker-architecture/negative-cases.json`：架构检查器的反例夹具。
 
@@ -100,7 +105,7 @@ node --test tests/*.test.mjs
 
 ### 版本号
 
-应用版本号唯一来源是 `worker/core/build-info.js` 的 `APP_VERSION`：Worker 落地页与管理端标题/徽章占位符 `__APP_VERSION__` 都由它派生，生成物随构建自动更新。发布时改这一处并同步 `README.md`、`AGENTS.md` 的版本字样，`npm.cmd run check` 的 version consistency 项会校验三者一致。
+应用版本号唯一来源是 `worker/core/build-info.js` 的 `APP_VERSION`：Worker 落地页与管理端标题/徽章占位符 `__APP_VERSION__` 都由它派生，生成物随构建自动更新。发布时改这一处；`npm.cmd run check` 的 version consistency 项会校验四处手工标记（README 徽章 `version-V<x>`、README 的 `当前 **V<x>**` 摘要、`AGENTS.md` 的 `当前 **V<x>**` 指针、`CHANGELOG.md` 的 `## V<x>` 小节），并拒绝 `AGENTS.md` 重新出现「版本摘要 / 更新摘要」标题。
 
 ## 6. 环境变量和本地运行
 

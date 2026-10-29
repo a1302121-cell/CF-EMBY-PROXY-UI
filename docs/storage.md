@@ -14,6 +14,8 @@ README「数据存储说明」的展开版：KV 键位、管理 API 的 action �
 | `sys:theme` | 全局配置 | 后台“全局设置”保存后的主配置，包含日志、监控、Cloudflare 联动、Telegram 等参数 |
 | `sys:config_meta:v1` | 设置版本元数据 | 记录当前 `sys:theme` 的 hash 与 revision，保存时用于并发冲突检测 |
 | `sys:dns_record_history:v1:{zoneId}:host:{hostname}` | DNS 修改历史 | 记录当前站点最近的 `CNAME` 修改值，供后台 DNS 历史卡片回填 |
+| `sys:nodes_index_meta:v1` | 节点索引元数据 | 记录节点索引的 revision / 更新时间，列表页与备份判断索引是否新鲜 |
+| `sys:worker_placement_region:v1:{scriptName}` | Worker 放置覆盖值 | 后台「Worker 放置」选 `region` 时按脚本名记录选定的区域；`default` / `smart` 清除它 |
 
 > `sys:ops_status:*`、`sys:cf_dash_cache*`、`sys:scheduled_lock:v1`、`sys:telegram_alert_state:v1`、`sys:config_snapshots:v1`、`sys:config_snapshots_meta:v1` 和 `fail:*` 都是旧版 KV 键。当前对应数据分别存放在 D1 的 `sys_status`、`cf_dashboard_cache`、`sys_locks` 和 `auth_failures` 中，设置快照本身已不再写入；KV 整理和保存设置都会删除检测到的这些遗留键。
 
@@ -37,8 +39,15 @@ README「数据存储说明」的展开版：KV 键位、管理 API 的 action �
 | `previewTidyData` | 读 | 预览 KV 或 D1 整理计划 | 返回分组计数、警告与短期签名计划令牌；实际执行前会再次核对计划 |
 | `tidyKvData` | 读 + 写 + 删 | 执行一键整理 KV 数据 | 重建索引、清洗 `sys:theme`、删除遗留缓存键和过期租约键 |
 | `listDnsRecords` / `saveDnsRecords` / `updateDnsRecord` | 读 + 写 | 读取当前站点 DNS、按模式整体保存或兼容单条更新 | UI 主链路走 `saveDnsRecords`；DNS 历史仅记录 `CNAME`，实际变更走 Cloudflare API |
+| `tidyD1Data` | 不读写 KV | 按签名计划执行 D1 整理 | 与 `previewTidyData` 配对，清理日志、统计、缓存与过期状态 |
+| `uploadAdminIndex` / `updateWorkerAndAdminIndex` | 读写 + 删 | 上传管理台 HTML、更新 Worker 脚本 | 写 KV 上传记录（含 manifest 与 revision）；Worker 更新走 Cloudflare API，失败会回滚 HTML 记录 |
+| `saveWorkerPlacement` / `getWorkerPlacementStatus` | 写 / 读 | 切换 Worker 放置模式并回读状态 | `region` 写 `sys:worker_placement_region:v1:{scriptName}`，`default` / `smart` 删除它 |
+| `saveMainVideoStreamPolicyShortcuts` | 写 | 批量开关节点的主视频流策略 | 批量改写 `node:*` 后同步节点索引 |
+| `list` / `getNode` / `pingNode` | 读 | 节点列表、单节点详情、单节点探测 | 探测走网络，不写 KV；节点列表优先读 `sys:nodes_index:v1` |
 
 > 后台登录接口 `POST ADMIN_PATH/login` 不走 `action` 分发；绑定 D1 时会读写 `auth_failures`，按 IP 记录失败次数并执行临时锁定。
+>
+> 上表只列会碰 KV 或后台主要按钮的 action；DNS/IP 池（`getDnsIpWorkspace`、`saveDnsIpPoolSources`、`importDnsIpPoolItems` 等）、bootstrap（`getAdminBootstrap`、`loadConfig`、`previewConfig`）、告警（`testTelegram`、`sendPredictedAlert`）等其余 action 不写 KV，完整清单以 Worker registry 的 `adminActionNames` 为准，跨层契约由 `tests/admin-contract-parity.test.mjs` 守住。
 
 ### 后台入口 / 按钮
 
@@ -51,6 +60,9 @@ README「数据存储说明」的展开版：KV 键位、管理 API 的 action �
 | `设置 -> 备份与恢复`（高手模式） | `一键整理 KV 数据` | `tidyKvData` | 修复旧版本升级后的索引、脏配置和遗留缓存键问题 |
 | `设置 -> 备份与恢复`（高手模式） | `一键整理 D1 数据` | `tidyD1Data` | 先通过 `previewTidyData` 获取签名计划，再按硬预算清理日志、统计、缓存和过期状态 |
 | `DNS 编辑` | 刷新 / 保存 DNS | `listDnsRecords` / `saveDnsRecords` | 按当前站点整体同步 `CNAME` 或 `A / AAAA` 草稿，并维护 CNAME 历史 |
+| `设置 -> 代理与网络`（高手模式） | `Worker 放置` | `saveWorkerPlacement` / `getWorkerPlacementStatus` | 改 Cloudflare 脚本的 `placement`，按脚本名在 `sys:worker_placement_region:v1:{scriptName}` 记覆盖值 |
+| `设置 -> 备份与恢复` | 「Worker 和 HTML 更新」卡片（同时更新 Worker 和 HTML） | `updateWorkerAndAdminIndex` | HTML 与上传记录写 KV（只认文件类型，不认文件名）；Worker 脚本更新走 Cloudflare API，失败回滚 HTML 记录 |
+| 首次启动的上传页 / `ADMIN_PATH?setup=1` | 上传管理台 HTML | `uploadAdminIndex` | 只换管理台 HTML，不碰 Worker 脚本；上限 2 MiB |
 | `仪表盘` | 打开页面或刷新页面 | `getRuntimeStatus` | 查看 D1 中的日志刷盘、定时任务和租约状态；D1 不可用时返回空运行状态 |
 | `后台登录页` | 提交登录密码 | `POST ADMIN_PATH/login` | 绑定 D1 时登录失败会写入 `auth_failures`；连续失败 5 次后锁定 15 分钟 |
 
@@ -75,9 +87,10 @@ README「数据存储说明」的展开版：KV 键位、管理 API 的 action �
 |---|---|---|---|
 | `getDashboardStats` | 可选 | 读取仪表盘请求量、流量趋势、播放次数等统计 | 优先读 Cloudflare GraphQL；失败或未配置时会尽量回退到本地 D1 日志口径 |
 | `getRuntimeStatus` | 可选 | 读取日志刷盘状态、定时任务状态、租约状态等运行信息 | 从 D1 `sys_status` 读取；D1 不可用时返回空运行状态 |
-| `getLogs` | 必需 | 按页查询请求日志 | 默认带时间范围；关键词搜索最多限制在 3 天窗口内 |
-| `initLogsDb` | 必需 | 初始化当前完整 D1 schema | 创建日志、FTS5、运行状态、统计、锁、缓存等当前所需结构，并迁移历史日志索引 |
+| `getLogs` | 必需 | 按页查询请求日志 | 未给时间时默认最近 1 天窗口；每页最多 200 条；LIKE 关键词最长 50 字节，3 位数字按状态码、IP / COLO 走精确匹配 |
+| `initLogsDb` | 必需 | 初始化 / 修复当前完整 D1 schema | `repairMode: safe` 只做无损步骤；主键类高风险修复要带 `repairToken` 与 `repairMode: confirmed-destructive`，并由 `X-Admin-Confirm: repairD1Schema` 二次确认。创建日志、FTS5、运行状态、统计、锁、缓存等结构 |
 | `clearLogs` | 必需 | 清空日志表 | 会清空 `proxy_logs`，并在可用时重建 FTS 索引 |
+| `getD1SchemaStatus` | 必需 | 只读检查 schema 与待修复项 | 返回契约版本、缺失 / 高危问题与可修复项；「初始化 DB」的两阶段流程先读它再决定要不要高风险重建 |
 | `previewTidyData` / `tidyD1Data` | 必需 | 预览并执行 D1 整理 | 先检查 schema 并生成签名计划；执行时按批次、行数和时间预算公平清理各 scope |
 | `sendDailyReport` | 必需 | 立即生成并发送 Telegram 日报 | 依赖 D1 日志统计和已配置好的 `tgBotToken` / `tgChatId` |
 

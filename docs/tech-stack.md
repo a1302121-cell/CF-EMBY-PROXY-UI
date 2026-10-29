@@ -33,7 +33,7 @@
 
    内置壳这条分支曾经缺失：`renderBundledAdminPage` 不传 `assetRevision`，改写被整体跳过，壳里留着 4 个 `cdn.jsdelivr.net` 绝对 URL，断网即白屏。回归由 `tests/worker-defensive-boundaries.test.mjs` 的「bundled frontend assets render…」与 `tests/e2e/admin-smoke.spec.mjs` 的第二条用例覆盖。
 
-收益（实测，`npm run build:vendor` 会打印同样一张表）：
+收益（实测，`npm.cmd run --workspace frontend build:vendor` 会打印同样一张表）：
 
 | 资源 | 上游 | 摇树后 | 说明 |
 | --- | --- | --- | --- |
@@ -139,7 +139,7 @@ $env:VISUAL_MAX_DIFF="0"; npm.cmd run test:visual           # 打印全部差异
 
 ### 5.5 颜色一律走 CSS 变量，不再写死 hex
 
-手写样式（模板里的 3 个 `<style>` 与增强脚本注入的 80 KB 样式）原来散着 483 处 hex/rgba 字面量，同一个色值在经典皮肤和 claude 皮肤各写一遍，改一处就漏一处。现在分两层：
+手写样式（模板里的 3 个 `<style>` 与增强脚本注入的约 90 KB 样式）原来散着 483 处 hex/rgba 字面量，同一个色值在经典皮肤和 claude 皮肤各写一遍，改一处就漏一处。现在分两层：
 
 | 层 | 变量 | 定义位置 | 形态 |
 | --- | --- | --- | --- |
@@ -180,7 +180,7 @@ html[data-theme="claude"]{--d1-action:#8e3a22;--d1-action-hover:#7a301b;--d1-act
 ## 6. 验证入口
 
 ```powershell
-npm.cmd run check        # 11 项门禁，其中 Node 测试含 4 个 CDN pin 的锁定
+npm.cmd run check        # 12 项门禁，其中 Node 测试含 4 个 CDN pin 的锁定与摇树产物校验
 npm.cmd run test:e2e     # Playwright：真实浏览器 + 本地 Worker（KV/D1 从空库开始）
 ```
 

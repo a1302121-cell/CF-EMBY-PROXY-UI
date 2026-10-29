@@ -50,7 +50,7 @@ CF-EMBY-PROXY-UI 用一台 Cloudflare Worker 给多台 Emby / Jellyfin 服务器
 - 不想暴露源站真实 IP
 - 想要可视化后台维护节点，而不是手改配置文件
 
-管理端由 `frontend/admin-runtime.template.html` 与 `frontend/scripts/admin-runtime-enhancements.mjs` 组合，经 Vite 输出到 `frontend/dist/index.html`，由 Wrangler 作为静态资源和 Worker 一起部署。应用版本号唯一来源是 `worker/core/build-info.js` 的 `APP_VERSION`，Worker 落地页与管理端标题都从它派生。源码分层与请求生命周期见 [`docs/architecture.md`](./docs/architecture.md)。
+管理端由 `frontend/admin-runtime.template.html` 与 `frontend/scripts/admin-runtime-enhancements.mjs` 组合成 `frontend/index.html`，再由 `publish-dist.mjs` 拷贝为 `frontend/dist/index.html`（单文件交付，不经过打包器），最后由 Wrangler 作为静态资源和 Worker 一起部署。应用版本号唯一来源是 `worker/core/build-info.js` 的 `APP_VERSION`，Worker 落地页与管理端标题都从它派生。源码分层与请求生命周期见 [`docs/architecture.md`](./docs/architecture.md)。
 
 ## 核心能力
 
@@ -141,7 +141,7 @@ CF-EMBY-PROXY-UI 用一台 Cloudflare Worker 给多台 Emby / Jellyfin 服务器
 - **节点管理**：搜索节点、导入/导出配置、单节点或全局 GET 健康探测
 - **日志记录**：按日期范围查询请求记录、初始化 DB、手动清理
 - **DNS 编辑**：站点级草稿编辑、推荐优选域名、CNAME 历史回填、实用链接
-- **设置页**：系统 UI、代理与网络、静态资源策略、安全防护、日志设置、监控告警、账号设置、备份与恢复
+- **设置页**：系统 UI、DNS 设置、代理与网络、静态资源策略、安全防护、日志设置、监控告警、账号设置、备份与恢复
 
 默认进入新手模式，只隐藏「代理与网络」和「安全防护」两栏；切到高手模式才会展开这两栏和更细的调优字段。每个分区有哪些开关、字段取值上限、备份与恢复口径，见 [`docs/panel.md`](./docs/panel.md)。
 
@@ -172,7 +172,7 @@ CF-EMBY-PROXY-UI 用一台 Cloudflare Worker 给多台 Emby / Jellyfin 服务器
 
 **Web 端被禁用还能用吗？** 本项目主要面向客户端 API 调用；源站禁用 Web 一般不影响播放器通过 API 使用。
 
-**日志关键词查询为什么限制在 3 天内？** 避免 D1 在 `LIKE %keyword%` 下全表扫描：不带时间时默认最近 1 天，3 位数字优先按状态码精确匹配，IP 形态内容优先按 `client_ip` 匹配，其余关键字才走受限模糊匹配。
+**日志关键词搜索为什么建议缩短时间范围？** 因为 LIKE 模式是 `LIKE %keyword%`，范围越大扫得越多：不带时间时默认只查最近 1 天，关键词最长 50 字节；3 位数字优先按状态码精确匹配，IP / COLO 形态优先走精确匹配，剩下的关键字才做模糊匹配且只在当前时间范围内生效。想查更早的记录就把时间范围显式调大，或者切到 FTS5 模式。
 
 ## 致谢
 

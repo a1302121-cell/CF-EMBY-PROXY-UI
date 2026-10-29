@@ -31,7 +31,7 @@ README 只保留使用者需要的主干；细节按下面四份文档展开，�
 │  ├─ admin-runtime.template.html  当前生产 UI 模板源
 │  ├─ scripts/             同步、增强、开发服务器、CDN 检查
 │  ├─ src/                 Vue 功能源码，当前也由语法/行为检查覆盖
-│  └─ dist/                Vite 生成物
+│  └─ dist/                index.html 拷贝 + vendor/，随 ASSETS 部署
 ├─ scripts/                Worker 构建、架构检查、项目总检查
 ├─ tests/                  Node 内置 test runner 测试与架构负例
 ├─ wrangler.toml           Cloudflare Worker、KV、D1、Cron 配置
