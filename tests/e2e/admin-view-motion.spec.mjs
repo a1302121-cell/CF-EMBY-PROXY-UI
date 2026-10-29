@@ -205,3 +205,95 @@ test("图标占位在 lucide 接管之前就占好位置", async ({ page }) => {
   expect(probe.width).toBeGreaterThan(0);
   expect(probe.height).toBeGreaterThan(0);
 });
+
+test("主题切换不改变看板首行卡片的几何", async ({ page }) => {
+  await loginAndWaitForAdminBoot(page);
+  await expect(page.locator("#view-dashboard")).toBeVisible();
+  await page.waitForTimeout(1500);
+
+  // 三条统计卡带 `border-l-4 border-blue-500`（左侧 4px 强调条）。暗色规则曾经写成
+  // `border:1px solid`，那是无层级规则，会压过 utilities 里的 `border-l-4`：强调条消失、
+  // 卡片内容跟着横移 3px。这条盯住两种主题下每张卡的尺寸和左侧边框宽度必须一致。
+  const geometry = () =>
+    page.evaluate(() =>
+      [...document.querySelectorAll("#view-dashboard .grid > .glass-card")].map((card) => {
+        const rect = card.getBoundingClientRect();
+        const style = getComputedStyle(card);
+        return `${Math.round(rect.width)}x${Math.round(rect.height)} left=${style.borderLeftWidth}`;
+      }),
+    );
+
+  // 卡片标题带 `truncate`，这条工具类由运行时 Tailwind 生成（静态子集里只有一句
+  // `.text-sm.text-slate-500.truncate{font-weight:700}`），这里锚住它仍然解析成单行 + 省略号。
+  // 例外是流量卡标题：enhancements 给它打了 `[data-dashboard-traffic-label="1"]` 并显式改回
+  // `white-space:normal !important`（右上角切换按钮占了 2.75rem，标题选择换行而不是省略），
+  // 所以断言取第一张卡（请求量）的标题。它才是首行最高的那张，换行与否直接决定整行高度。
+  const titleStyle = await page.evaluate(() => {
+    const title = document.querySelector("#view-dashboard .grid > .glass-card > p");
+    const style = getComputedStyle(title);
+    return {
+      whiteSpace: style.whiteSpace,
+      overflow: style.overflow,
+      textOverflow: style.textOverflow,
+    };
+  });
+  expect(titleStyle).toEqual({
+    whiteSpace: "nowrap",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+  });
+
+  const light = await geometry();
+  expect(light.length).toBeGreaterThanOrEqual(3);
+
+  await page.locator('[data-admin-toolbar-action="theme"]').click();
+  await page.waitForTimeout(600);
+  expect(await geometry()).toEqual(light);
+
+  // 切回亮色，避免把主题留给同一个 page 上的后续断言
+  await page.locator('[data-admin-toolbar-action="theme"]').click();
+  await page.waitForTimeout(600);
+  expect(await geometry()).toEqual(light);
+});
+
+test("看板统计卡的文字变长短不推挤下方内容", async ({ page }) => {
+  await loginAndWaitForAdminBoot(page);
+  await expect(page.locator("#view-dashboard")).toBeVisible();
+  await page.waitForTimeout(1500);
+
+  // 三张统计卡里流量卡最高，它的文字都是数据驱动的："视频流量" ↔ "今日视频流量 (CF Zone
+  // 总流量)"、"未配置" ↔ 具体提示。以前这些文字变短会少一行，整张行高跟着缩（实测 20 / 16 /
+  // 33px），下方所有内容整体上跳。模板把三块文字的下限高度锁在各自设计的行数上，这里穷举。
+  const measure = () =>
+    page.evaluate(() => {
+      const grid = document.querySelector("#view-dashboard .grid");
+      const below = grid?.nextElementSibling;
+      return `${Math.round(grid?.getBoundingClientRect().height ?? -1)}/${Math.round(below?.getBoundingClientRect().top ?? -1)}`;
+    });
+
+  const baseline = await measure();
+  for (const selector of [
+    "#view-dashboard [data-dashboard-traffic-label]",
+    "#dash-traffic-hint",
+    "#dash-traffic-detail",
+  ]) {
+    const backup = await page.evaluate((sel) => {
+      const node = document.querySelector(sel);
+      if (!node) return null;
+      const text = node.textContent;
+      node.textContent = "未配置";
+      return text;
+    }, selector);
+    expect(backup, `${selector} 应该存在`).not.toBeNull();
+    await page.waitForTimeout(150);
+    expect(await measure(), `${selector} 变短后行高与下方位置都必须不变`).toBe(baseline);
+    await page.evaluate(
+      ([sel, text]) => {
+        document.querySelector(sel).textContent = text;
+      },
+      [selector, backup],
+    );
+    await page.waitForTimeout(150);
+    expect(await measure(), `${selector} 恢复后行高与下方位置都必须不变`).toBe(baseline);
+  }
+});
