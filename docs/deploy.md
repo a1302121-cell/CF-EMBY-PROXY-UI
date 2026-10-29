@@ -6,7 +6,9 @@ README 的部署细节展开版：环境变量与绑定、三种部署方式的�
 
 在 Cloudflare Worker 的 设置 -> 变量和机密 或 绑定页面 中进行配置。建议首次部署时对照下表直接填写：
 
-#### [必需项]
+### 一、 Worker 核心配置（控制台填写）
+
+#### 必需项
 
 这些是系统正常运行的基础，**必须配置**。
 
@@ -16,7 +18,7 @@ README 的部署细节展开版：环境变量与绑定、三种部署方式的�
 | **`ADMIN_PASS`** | 加密变量 (Secret) | **后台登录密码**。用于验证管理面板的访问权限。 | `MyStrongPassword123` |
 | **`JWT_SECRET`** | 加密变量 (Secret) | **安全会话密钥**。用于生成和校验后台登录状态 (JWT)，防止越权访问。 | 建议填入一段高强度的随机长字符串。 |
 
-####  [可选项]
+#### 可选项
 
 按需配置，用于开启日志统计或自定义系统行为。
 
@@ -142,7 +144,7 @@ README 的部署细节展开版：环境变量与绑定、三种部署方式的�
 9. 在 GitHub 仓库的 **Settings -> Secrets and variables -> Actions** 中新增以下 Secrets
    - `CLOUDFLARE_ACCOUNT_ID`：你的 Cloudflare Account ID
    - `CLOUDFLARE_API_TOKEN`：使用 **Edit Cloudflare Workers** 模板创建的 API Token
-10. 将仓库中的 [deploy-worker.yml](./.github/workflows/deploy-worker.yml) 提交并推送到 `main` 或 `master` 分支
+10. 将仓库中的 [deploy-worker.yml](../.github/workflows/deploy-worker.yml) 提交并推送到 `main` 或 `master` 分支
 11. GitHub Actions 会使用 Node 24 执行 `npm ci`、`npm run check` 和 `npm run build:cdn`，随后由 Wrangler 按 `wrangler.toml` 构建 `worker.js`，并将 Worker 与 `frontend/dist` 一起部署到 Cloudflare Workers
 12. 如果你的默认部署分支不是 `main` 或 `master`，请先修改 `.github/workflows/deploy-worker.yml` 里的 `branches` 配置
 13. 首次部署后，后续每次向已配置分支 `push` 新提交，GitHub Actions 都会自动重新部署
@@ -241,6 +243,8 @@ Worker选择：Worker 一栏选择你第一步创建的那个Worker
 - 可按需开启 **Tiered Cache**
 
 > 反代访问端口需使用 Cloudflare 支持的 HTTPS 端口，例如 `443 / 2053 / 2083 / 2087 / 2096 / 8443`。
+
+> 第九步（可选）：视频大流建议再配一条 Cache Rule 把缓存下沉到数据面，做法见下方 [Cloudflare Cache Rules 教程](#cloudflare-cache-rules-教程)。该做法有触碰 Cloudflare TOS 的风险，请自行评估。
 
 ## Cloudflare Cache Rules 教程
 
