@@ -29,7 +29,7 @@ function loadEnhancementTestHooks(documentOverrides = {}, windowOverrides = {}) 
   assert.notEqual(closureEnd, -1, "enhancement script must use the expected closure");
   const instrumentedScript =
     inlineScript.slice(0, closureEnd) +
-    "window.__enhancementTestHooks = { formatD1SchemaStatus, formatD1InitializationResult, formatD1RepairPlan, formatD1RepairError, patchSafetyContractMethods, getDashboardMonthPeriodKey, isDashboardMonthlyTrafficCacheFresh, toggleDashboardTrafficPeriod, dashboardTrafficState, normalizeHeadProbeResult, formatHeadProbeResult, formatHeadProbeTitle, normalizeHeadProbePath, normalizeHostPrefixDnsHostname, isHostPrefixNodeLinkActive, runWithConcurrency, NODE_GET_PROBE_CONCURRENCY, readStoredUiSkin, readBootstrapUiSkin, normalizeUiSkin, applyUiSkin, resolveInitialUiThemeMode, applyUiThemeMode, swapUiTheme, patchThemeTransitionMethods, resolveCurrentUiSkin, syncServerUiSkin, persistUiSkinPreference, syncDialogAccessibility, handleDialogEscapeKey, withUiRequestTimeout, installAdminBootstrapFetchDedupe, patchLogPageCache, dashboardLayerState, readFreshSettingsBootstrap, updateAdminBootstrapCache, buildCurrentLogPageSignature, fetch: window.fetch };\n" +
+    "window.__enhancementTestHooks = { formatD1SchemaStatus, formatD1InitializationResult, formatD1RepairPlan, formatD1RepairError, patchSafetyContractMethods, patchTmdbNodeMethods, getDashboardMonthPeriodKey, isDashboardMonthlyTrafficCacheFresh, toggleDashboardTrafficPeriod, dashboardTrafficState, normalizeHeadProbeResult, formatHeadProbeResult, formatHeadProbeTitle, normalizeHeadProbePath, normalizeHostPrefixDnsHostname, isHostPrefixNodeLinkActive, runWithConcurrency, NODE_GET_PROBE_CONCURRENCY, readStoredUiSkin, readBootstrapUiSkin, normalizeUiSkin, applyUiSkin, resolveInitialUiThemeMode, applyUiThemeMode, swapUiTheme, patchThemeTransitionMethods, patchDnsIpPoolDeleteMethods, resolveCurrentUiSkin, syncServerUiSkin, persistUiSkinPreference, syncDialogAccessibility, handleDialogEscapeKey, withUiRequestTimeout, installAdminBootstrapFetchDedupe, patchLogPageCache, dashboardLayerState, readFreshSettingsBootstrap, updateAdminBootstrapCache, buildCurrentLogPageSignature, fetch: window.fetch };\n" +
     inlineScript.slice(closureEnd);
   const window = {
     addEventListener() {},
@@ -154,6 +154,57 @@ test("config save enhancement adds an idempotency token", async () => {
 
   assert.match(requests[1].payload.mutationId, /^cfg-/);
   assert.equal(messages.length, 0);
+});
+
+test("node save injects the TMDB aggregation flag into the save payload", async () => {
+  // 节点保存载荷是模板里的固定字段表，开关只能靠补一次 apiCall 送进去。
+  const checkbox = { checked: true };
+  const { patchTmdbNodeMethods } = loadEnhancementTestHooks({
+    querySelector(selector) {
+      return selector === '[data-admin-node-tmdb-aggregation="1"] input' ? checkbox : null;
+    },
+  });
+  const requests = [];
+  const app = {
+    nodeModalForm: { tmdbAggregationEnabled: true },
+    async apiCall(action, payload) {
+      requests.push({ action, payload });
+      return { success: true };
+    },
+    buildNodeModalFormState(node) {
+      return { form: {}, hydratedNode: node };
+    },
+    async saveNode() {
+      // 模板里的节点保存载荷一定带 originalName（真实字段表的第一项）。
+      return await this.apiCall("save", { originalName: "", name: "alpha", headers: {} });
+    },
+  };
+  patchTmdbNodeMethods(app);
+  // 补丁只装一次：重复调用不叠包装。
+  patchTmdbNodeMethods(app);
+  const patchedApiCall = app.apiCall;
+
+  const state = app.buildNodeModalFormState({ tmdbAggregationEnabled: true });
+  assert.equal(state.form.tmdbAggregationEnabled, true);
+  assert.equal(app.buildNodeModalFormState({}).form.tmdbAggregationEnabled, false);
+
+  await app.saveNode();
+  assert.equal(requests[0].action, "save");
+  assert.equal(requests[0].payload.tmdbAggregationEnabled, true);
+  assert.equal(requests[0].payload.name, "alpha", "原有字段不能被覆盖");
+
+  // 别的 action、以及不带 originalName 的 save（非节点载荷）都要原样透传。
+  await app.apiCall("saveConfig", { config: { tgChatId: "1" } });
+  await app.apiCall("save", { something: "else" });
+  assert.equal(requests[1].payload.tmdbAggregationEnabled, undefined);
+  assert.equal(requests[2].payload.tmdbAggregationEnabled, undefined);
+
+  // 补丁在保存之后依然在，不再换入换出（并发保存不会互相还原）。
+  assert.equal(app.apiCall, patchedApiCall);
+  checkbox.checked = false;
+  app.nodeModalForm.tmdbAggregationEnabled = false;
+  await app.saveNode();
+  assert.equal(requests[3].payload.tmdbAggregationEnabled, false);
 });
 
 // 模板是压缩产物，无法整体执行。按「方法签名 → 下一个方法签名」切片，
@@ -1252,7 +1303,7 @@ test("admin runtime enhancement script survives template-literal escaping", () =
   // 字符类里出现孤立的 s/d/w/b（本意是 \s \d \w \b）就是模板字符串吃掉反斜杠的痕迹。
   const suspicious = [
     ...ADMIN_RUNTIME_ENHANCEMENT_SCRIPT.matchAll(
-      /(?:return\s+|\()\/((?:[^\/\\\n[]|\\.|\[(?:[^\]\\]|\\.)*\])+)\/([gimsuy]*)\.test\(/g,
+      /(?:return\s+|\()\/((?:[^/\\\n[]|\\.|\[(?:[^\]\\]|\\.)*\])+)\/([gimsuy]*)\.test\(/g,
     ),
   ].filter(([, body]) => /\[[^\]]*(?<![\\A-Za-z])[sdwb](?![A-Za-z])/.test(body));
   assert.deepEqual(
@@ -1262,7 +1313,7 @@ test("admin runtime enhancement script survives template-literal escaping", () =
   );
   const literals = [
     ...ADMIN_RUNTIME_ENHANCEMENT_SCRIPT.matchAll(
-      /(?:return\s+|\()\/((?:[^\/\\\n[]|\\.|\[(?:[^\]\\]|\\.)*\])+)\/([gimsuy]*)\.test\(/g,
+      /(?:return\s+|\()\/((?:[^/\\\n[]|\\.|\[(?:[^\]\\]|\\.)*\])+)\/([gimsuy]*)\.test\(/g,
     ),
   ];
   assert.ok(literals.length > 0, "no regex literals found in generated script");
@@ -1766,20 +1817,138 @@ test("daily report kind checkboxes and the master switch stay in sync", async ()
   assert.equal(kvTarget.checked, true);
 });
 
-test("account settings keep TMDB credentials without the aggregation UI", async () => {
-  const template = await readFile(
-    new URL("../frontend/admin-runtime.template.html", import.meta.url),
-    "utf8",
-  );
-  // TMDB 凭证只是配置兼容字段：Worker 侧字段还在，前端不再提供聚合面板。
+test("account settings keep TMDB credentials and the node toggle is injected by enhancements", async () => {
+  const [template, enhancementSource] = await Promise.all([
+    readFile(new URL("../frontend/admin-runtime.template.html", import.meta.url), "utf8"),
+    readFile(
+      new URL("../frontend/scripts/admin-runtime-enhancements.mjs", import.meta.url),
+      "utf8",
+    ),
+  ]);
+  // TMDB 三项仍是配置字段（字段表里有 id），但 V20 把输入框从压缩产物里删了。
   assert.match(template, /"tmdbApiReadToken","tmdbApiV3Key","tmdbLanguage"/);
   assert.match(template, /id:"cfg-tmdb-read-token"/);
   assert.match(template, /id:"cfg-tmdb-api-key"/);
   assert.match(template, /id:"cfg-tmdb-language"/);
-  // 聚合面板、策略下拉与 todb 凭证已移除，前端不得再出现这些入口。
-  for (const removed of ["EMOS", "todb", "tmdbAggregationEnabled", "aggregationMode"]) {
+  // 跨节点聚合与 todb 凭证没回来：模板里不得有策略下拉、聚合模式或 todb 入口。
+  for (const removed of ["EMOS", "todb", "aggregationMode"]) {
     assert.equal(template.includes(removed), false, `聚合 UI 残留：${removed}`);
   }
+  // 节点开关与账号设置的三段凭据输入都由增强脚本注入，模板不动。
+  assert.match(enhancementSource, /data-admin-node-tmdb-aggregation/);
+  assert.match(
+    enhancementSource,
+    /syncTmdbAggregationControl\(window\.App, content, advancedFields\)/,
+  );
+  assert.match(enhancementSource, /tmdbAggregationEnabled: enabled/);
+  assert.match(enhancementSource, /syncTmdbCredentialPanel\(window\.App\)/);
+  for (const [id, key] of [
+    ["cfg-tmdb-read-token", "tmdbApiReadToken"],
+    ["cfg-tmdb-api-key", "tmdbApiV3Key"],
+    ["cfg-tmdb-language", "tmdbLanguage"],
+  ]) {
+    assert.match(enhancementSource, new RegExp(`'#${id}', '${key}'`), `${id} 未绑定 ${key}`);
+  }
+  // 整块插在「后台登录有效期」与「Cloudflare 联动」之间，所以锚点是 JWT 天数那个面板。
+  assert.match(
+    enhancementSource,
+    /querySelector\('#cfg-jwt-days'\)\?\.closest\('\.ui-settings-panel'\)/,
+  );
+  assert.match(enhancementSource, /loginPanel\.insertAdjacentElement\('afterend', panel\)/);
+  // 凭据连通性测试：两个按钮都走 app.apiCall，Worker 侧必须注册同名 action（契约测试会兜）。
+  assert.match(enhancementSource, /data-credential-test="tmdb"/);
+  assert.match(enhancementSource, /data-credential-test="cloudflare"/);
+  assert.match(enhancementSource, /apiCall\('testTmdbCredential', \{/);
+  assert.match(enhancementSource, /apiCall\('testCloudflareApiToken', \{/);
+  assert.match(enhancementSource, /readInput\('#cfg-cf-token', 'cfApiToken'\)/);
+});
+
+test("Cloudflare 令牌测试按钮落在 Cloudflare 联动面板，而不是 TMDB 凭据面板", async () => {
+  const enhancementSource = await readFile(
+    new URL("../frontend/scripts/admin-runtime-enhancements.mjs", import.meta.url),
+    "utf8",
+  );
+  // 按钮要贴着它测的输入框：注入锚点是 #cfg-cf-token，插在密码框包裹层之后。
+  assert.match(enhancementSource, /syncCloudflareTokenTest\(\);/);
+  assert.match(enhancementSource, /querySelector\('#cfg-cf-token'\)/);
+  assert.match(enhancementSource, /holder\.insertAdjacentElement\('afterend', row\)/);
+  // 独立常量承载这一行，按钮和结果位都在里面。
+  const markupStart = enhancementSource.indexOf("const CLOUDFLARE_TOKEN_TEST_MARKUP");
+  assert.notEqual(markupStart, -1, "缺少 CLOUDFLARE_TOKEN_TEST_MARKUP");
+  const markupBlock = enhancementSource.slice(
+    markupStart,
+    enhancementSource.indexOf("function syncCloudflareTokenTest", markupStart),
+  );
+  assert.match(markupBlock, /data-credential-test="cloudflare"/);
+  assert.match(markupBlock, /data-credential-test-result="1"/);
+  // 反向守卫：TMDB 凭据面板里不能再出现 Cloudflare 按钮。
+  const tmdbStart = enhancementSource.indexOf("const TMDB_CREDENTIAL_MARKUP");
+  const tmdbBlock = enhancementSource.slice(
+    tmdbStart,
+    enhancementSource.indexOf("function syncTmdbCredentialPanel", tmdbStart),
+  );
+  assert.match(tmdbBlock, /data-credential-test="tmdb"/);
+  assert.doesNotMatch(tmdbBlock, /data-credential-test="cloudflare"/);
+});
+
+test("credential fields link out to the official page that issues them", async () => {
+  const enhancementSource = await readFile(
+    new URL("../frontend/scripts/admin-runtime-enhancements.mjs", import.meta.url),
+    "utf8",
+  );
+  assert.match(enhancementSource, /syncCredentialHelpLinks\(\);/);
+  for (const [id, href] of [
+    ["cfg-tg-token", "https://t.me/BotFather"],
+    ["cfg-cf-account", "https://dash.cloudflare.com/?to=/:account/workers-and-pages"],
+    [
+      "cfg-cf-zone",
+      "https://developers.cloudflare.com/fundamentals/account/find-account-and-zone-ids/",
+    ],
+    ["cfg-cf-token", "https://dash.cloudflare.com/profile/api-tokens"],
+    ["cfg-cf-kv-namespace", "https://dash.cloudflare.com/?to=/:account/workers/kv/namespaces"],
+    ["cfg-cf-d1-database", "https://dash.cloudflare.com/?to=/:account/workers/d1"],
+  ]) {
+    assert.ok(enhancementSource.includes(`['#${id}', '${href}']`), `${id} 的跳转图标缺少 ${href}`);
+  }
+  // TMDB 聚合凭据整块由增强脚本注入，图标直接写在标题里。
+  assert.ok(
+    enhancementSource.includes("credentialHelpLink('https://www.themoviedb.org/settings/api')"),
+  );
+  // 外部跳转带 noopener；图标是内联 SVG，不等 lucide 替换 <i data-lucide>。
+  assert.match(
+    enhancementSource,
+    /rel="noopener noreferrer" data-admin-credential-link="1" title="/,
+  );
+  assert.match(enhancementSource, /\[data-admin-credential-link\] svg\{width:\.875rem/);
+});
+
+test("deleting pool IPs reloads the workspace right after the delete", async () => {
+  const { patchDnsIpPoolDeleteMethods } = loadEnhancementTestHooks();
+  const calls = [];
+  const app = {
+    async deleteSelectedDnsIpPoolItems() {
+      calls.push("delete");
+      return { ok: true };
+    },
+    async refreshDnsIpWorkspace(forceRefresh) {
+      calls.push(`refresh:${forceRefresh}`);
+      return null;
+    },
+  };
+  patchDnsIpPoolDeleteMethods(app);
+  const result = await app.deleteSelectedDnsIpPoolItems();
+  assert.deepEqual(result, { ok: true });
+  // 删完必须强制刷新一次，普通刷新会走服务端缓存、看不到刚删的结果。
+  assert.deepEqual(calls, ["delete", "refresh:true"]);
+
+  // 重复 patch 不叠包装；缺少刷新方法时删除照常返回。
+  patchDnsIpPoolDeleteMethods(app);
+  await app.deleteSelectedDnsIpPoolItems();
+  assert.deepEqual(calls, ["delete", "refresh:true", "delete", "refresh:true"]);
+
+  const withoutRefresh = { async deleteSelectedDnsIpPoolItems() {} };
+  patchDnsIpPoolDeleteMethods(withoutRefresh);
+  await withoutRefresh.deleteSelectedDnsIpPoolItems();
 });
 
 test("D1 schema dialog reports only the current schema contract", () => {
@@ -2244,7 +2413,8 @@ test("deploy workflow builds and publishes the frontend as Worker static assets"
   assert.match(wranglerConfig, /\[assets\][\s\S]*binding\s*=\s*"ASSETS"/);
   assert.match(wranglerConfig, /\[assets\][\s\S]*run_worker_first\s*=\s*true/);
   assert.match(wranglerConfig, /\[assets\][\s\S]*html_handling\s*=\s*"none"/);
-  assert.match(deployWorkflow, /node-version:\s*24/);
+  // Node 版本只认 .nvmrc 一处：写死 `node-version: 24` 会和 ci.yml 的 pin 分成两个真相源。
+  assert.match(deployWorkflow, /node-version-file:\s*\.nvmrc/);
   assert.match(deployWorkflow, /run:\s*npm ci/);
   assert.match(deployWorkflow, /run:\s*npm run check/);
   assert.match(deployWorkflow, /run:\s*npm run build:cdn/);
@@ -2504,7 +2674,46 @@ test("admin runtime composition refuses a half-connected module script entry", a
     "utf8",
   );
   assert.match(source, /assertNoModuleScriptEntry\(source, "admin runtime template"\)/);
-  assert.match(source, /assertNoModuleScriptEntry\(composed, "frontend\/index\.html"\)/);
+  assert.match(source, /assertNoModuleScriptEntry\(tailwind\.html, "frontend\/index\.html"\)/);
+});
+
+// 预编译的候选集来自源码文本的宽松切词，切出来的正则碎片（`[a-z0-9](?:[a-z0-9-`）会被
+// Tailwind 当成任意值工具类，生成一条语法非法的声明；浏览器遇到它就丢弃整张表的剩余部分
+// （包括所有 `md:` 变体），而构建期一点声音都没有。这条测试盯的就是那个过滤器。
+test("Tailwind 预编译的候选集不会被源码里的正则碎片污染", async () => {
+  const { scanAdminTailwindCandidates } =
+    await import("../frontend/scripts/build-admin-tailwind.mjs");
+  const junk = scanAdminTailwindCandidates([
+    "const names = String(value).match(/[a-z0-9](?:[a-z0-9-]+)/g) || [];",
+  ]);
+  assert.equal(junk.includes("[a-z0-9](?:[a-z0-9-"), false);
+  // 括号只允许出现在任意值 `[...]` 里：方括号外的 `(`/`)` 只会来自被切碎的源码。
+  for (const token of junk) {
+    assert.equal(/[()]/.test(token.replace(/\[[^\]]*\]/g, "")), false, `未过滤：${token}`);
+  }
+
+  const keep = [
+    "pt-[env(safe-area-inset-top)]",
+    "md:hover:bg-slate-900/60",
+    "w-[50%]",
+    "bg-[#fff]",
+    "md:relative",
+  ];
+  const scanned = scanAdminTailwindCandidates([`<div class="${keep.join(" ")}">`]);
+  for (const token of keep) assert.ok(scanned.includes(token), `丢失候选：${token}`);
+});
+
+test("管理台样式是预编译产物，且响应式变体确实落在壳里", async () => {
+  const html = await readFile(new URL("../frontend/dist/index.html", import.meta.url), "utf8");
+  const block = html.match(/<style data-admin-tailwind="compiled">([\s\S]*?)<\/style>/);
+  assert.ok(block, "frontend/dist/index.html 缺少预编译样式块");
+  const css = block[1];
+  assert.equal(html.includes('type="text/tailwindcss"'), false, "模板里的主题块没有被替换");
+  assert.equal(/@tailwindcss\/browser/.test(html), false, "壳里不应再有浏览器内编译器");
+  // `md:`/`dark:` 这类变体是嵌套规则，整张表被截断时最先消失的就是它们。
+  assert.ok(css.includes(".md\\:relative"), "预编译产物缺少 md:relative");
+  assert.ok(css.includes("&:hover"), "预编译产物缺少 hover 变体");
+  assert.equal(css.includes("(?" + ":"), false, "预编译产物含有正则碎片生成的非法声明");
 });
 
 test("in-flight settings bootstrap requests share one network round trip", async () => {
