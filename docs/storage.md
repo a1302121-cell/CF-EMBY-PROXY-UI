@@ -13,11 +13,12 @@ README「数据存储说明」的展开版：KV 键位、管理 API 的 action �
 | `sys:nodes_index:v1` | 节点索引 | 节点列表页、导入导出和搜索时优先读取；缺失时可根据 `node:*` 自动重建 |
 | `sys:theme` | 全局配置 | 后台“全局设置”保存后的主配置，包含日志、监控、Cloudflare 联动、Telegram 等参数 |
 | `sys:config_meta:v1` | 设置版本元数据 | 记录当前 `sys:theme` 的 hash 与 revision，保存时用于并发冲突检测 |
+| `sys:config_theme_prev:v1` | 上一次保存前的配置 | 每次覆盖 `sys:theme` 之前把当时的值整份写进来，只保留一代；「恢复上次配置」就是把它写回去 |
 | `sys:dns_record_history:v1:{zoneId}:host:{hostname}` | DNS 修改历史 | 记录当前站点最近的 `CNAME` 修改值，供后台 DNS 历史卡片回填 |
 | `sys:nodes_index_meta:v1` | 节点索引元数据 | 记录节点索引的 revision / 更新时间，列表页与备份判断索引是否新鲜 |
 | `sys:worker_placement_region:v1:{scriptName}` | Worker 放置覆盖值 | 后台「Worker 放置」选 `region` 时按脚本名记录选定的区域；`default` / `smart` 清除它 |
 
-> `sys:ops_status:*`、`sys:cf_dash_cache*`、`sys:scheduled_lock:v1`、`sys:telegram_alert_state:v1`、`sys:config_snapshots:v1`、`sys:config_snapshots_meta:v1` 和 `fail:*` 都是旧版 KV 键。当前对应数据分别存放在 D1 的 `sys_status`、`cf_dashboard_cache`、`sys_locks` 和 `auth_failures` 中，设置快照本身已不再写入；KV 整理和保存设置都会删除检测到的这些遗留键。
+> `sys:ops_status:*`、`sys:cf_dash_cache*`、`sys:scheduled_lock:v1`、`sys:telegram_alert_state:v1`、`sys:config_snapshots:v1`、`sys:config_snapshots_meta:v1` 和 `fail:*` 都是旧版 KV 键。当前对应数据分别存放在 D1 的 `sys_status`、`cf_dashboard_cache`、`sys_locks` 和 `auth_failures` 中；旧版那套多代设置快照不再写入，KV 整理和保存设置都会删除检测到的这些遗留键（现行的一代快照是另一个键 `sys:config_theme_prev:v1`，整理时保留）。
 
 > 如果升级后出现“全局设置读取失败 / 设置页空白 / 节点索引丢失但 `node:*` 还在”的情况，可在后台的“账号与备份”区域使用 **一键整理 KV 数据**：
 > 1. 遍历 KV 并保留所有 `node:*`
@@ -29,21 +30,32 @@ README「数据存储说明」的展开版：KV 键位、管理 API 的 action �
 
 | action | 读 / 写 KV | 主要用途 | 备注 |
 |---|---|---|---|
-| `saveConfig` | 写 | 保存全局设置到 `sys:theme` | 同时写 `sys:config_meta:v1`，并删除遗留的 `sys:config_snapshots:v1` |
-| `importSettings` | 写 | 导入 settings-only 备份到 `sys:theme` | 会按当前版本规则清洗配置；不生成快照 |
+| `saveConfig` | 写 | 保存全局设置到 `sys:theme` | 同时写 `sys:config_meta:v1` 与一代快照 `sys:config_theme_prev:v1`，并删除遗留的 `sys:config_snapshots:v1`；有防重置闸门，见下 |
+| `importSettings` | 写 | 导入 settings-only 备份到 `sys:theme` | 会按当前版本规则清洗配置；写入前的配置同样进 `sys:config_theme_prev:v1` |
+| `restorePreviousConfig` | 读 + 写 | 把 `sys:config_theme_prev:v1` 写回 `sys:theme` | 恢复本身也留快照，所以可以再切回去；没有快照时返回 404 `CONFIG_PREV_SNAPSHOT_MISSING`，不动现有配置 |
 | `save` / `import` | 写 | 新增或批量导入节点 | 最终会写入 `node:*`，并同步更新 `sys:nodes_index:v1` |
 | `delete` | 删 | 删除节点 | 会删除对应 `node:*`，并重建节点索引 |
-| `exportSettings` / `exportConfig` | 读 | 导出全局设置或完整备份 | 数据来源就是当前 KV 中的配置与节点 |
-| `importFull` | 写 | 导入完整备份（节点 + 全局设置） | 会整体写回节点实体与全局配置 |
+| `exportSettings` / `exportConfig` | 读 | 导出全局设置、设置与密钥、完整备份 | 数据来源就是当前 KV 中的配置、节点与管理端 HTML 上传记录 |
+| `exportNodes` | 读 | 只导出节点（节点列表页「导出节点配置」） | 直接用 `loadAllNodeEntitiesFromKvStrict` 读 `node:*`，不经过完整备份的 12 MiB 回导闸门；节点实体带 `secret` / `headers`，所以要求 `X-Admin-Confirm: exportNodes`，缺失时返回 428 `CONFIRMATION_REQUIRED` |
+| `importFull` | 写 | 导入完整备份（节点 + 全局设置 + 管理端 HTML） | 节点按同名为 upsert（备份里没有的节点保留），设置整体替换，备份带的 HTML 写成新 revision 并切换 `sys:admin_active_index`；`config` / `nodes` 形状非法或任一节点超限则整批拒绝且不写 KV |
 | `getRuntimeStatus` | 读 | 读取运行状态 | 从 D1 `sys_status` 读取；未绑定或不可用时返回空运行状态，不读取旧 KV 状态键 |
 | `previewTidyData` | 读 | 预览 KV 或 D1 整理计划 | 返回分组计数、警告与短期签名计划令牌；实际执行前会再次核对计划 |
 | `tidyKvData` | 读 + 写 + 删 | 执行一键整理 KV 数据 | 重建索引、清洗 `sys:theme`、删除遗留缓存键和过期租约键 |
+
 | `listDnsRecords` / `saveDnsRecords` / `updateDnsRecord` | 读 + 写 | 读取当前站点 DNS、按模式整体保存或兼容单条更新 | UI 主链路走 `saveDnsRecords`；DNS 历史仅记录 `CNAME`，实际变更走 Cloudflare API |
 | `tidyD1Data` | 不读写 KV | 按签名计划执行 D1 整理 | 与 `previewTidyData` 配对，清理日志、统计、缓存与过期状态 |
 | `uploadAdminIndex` / `updateWorkerAndAdminIndex` | 读写 + 删 | 上传管理台 HTML、更新 Worker 脚本 | 写 KV 上传记录（含 manifest 与 revision）；Worker 更新走 Cloudflare API，失败会回滚 HTML 记录 |
 | `saveWorkerPlacement` / `getWorkerPlacementStatus` | 写 / 读 | 切换 Worker 放置模式并回读状态 | `region` 写 `sys:worker_placement_region:v1:{scriptName}`，`default` / `smart` 删除它 |
 | `saveMainVideoStreamPolicyShortcuts` | 写 | 批量开关节点的主视频流策略 | 批量改写 `node:*` 后同步节点索引 |
 | `list` / `getNode` / `pingNode` | 读 | 节点列表、单节点详情、单节点探测 | 探测走网络，不写 KV；节点列表优先读 `sys:nodes_index:v1` |
+
+### 配置写入的防重置闸门
+
+`saveConfig` 落盘前会把请求载荷和 KV 里的当前配置做一次逐字段比对（用 `getConfigDiffEntries` 的同一套清洗规则，基线是 `sanitizeRuntimeConfig({})`）。只要「非默认值 → 默认值 / 空」的字段数超过 `CONFIG_MASS_RESET_FIELD_BUDGET`（8 个），就返回 409 `CONFIG_MASS_RESET_BLOCKED`，KV 一个字节都不写。错误 details 只带 `resetCount`、`resetFields`（字段名）与 `budget`，**不带任何字段值**，避免把密钥类字段带出去。
+
+- 带 `confirmMassReset: true` 的同一个请求会放行：这是管理台在 409 后向使用者确认过一次的结果。备份导入（`importSettings` / `importFull`）与 `tidyKvData` 走各自路径，不受这条闸门约束。
+- 0 到 8 个字段的退回照常放行：废弃字段、别名清理、单分区小改动都在这个量级内。
+- 客户端另有一道水合闸：`runtimeConfig` 字段数不到 20 时，`saveConfig` / `importSettings` / `importFull` / `tidyKvData` 在管理台本地就被拒绝，不会发出请求。
 
 > 后台登录接口 `POST ADMIN_PATH/login` 不走 `action` 分发；绑定 D1 时会读写 `auth_failures`，按 IP 记录失败次数并执行临时锁定。
 >
@@ -57,6 +69,7 @@ README「数据存储说明」的展开版：KV 键位、管理 API 的 action �
 | `设置 -> 任意设置分区` | 保存设置 | `saveConfig` | 将当前设置保存到 `sys:theme` |
 | `设置 -> 备份与恢复` | 导出全局设置 / 导出完整备份 | `exportSettings` / `exportConfig` | 从 KV 读取当前配置和节点，导出为 JSON |
 | `设置 -> 备份与恢复` | 导入全局设置 / 导入完整备份 | `importSettings` / `importFull` | 把 JSON 内容重新写回 KV |
+| `节点管理` | 导出节点配置 | `exportNodes` | 只读 `node:*` 导出节点，与完整备份的 12 MiB 回导上限无关；带自定义确认头，导出内容含节点凭据 |
 | `设置 -> 备份与恢复`（高手模式） | `一键整理 KV 数据` | `tidyKvData` | 修复旧版本升级后的索引、脏配置和遗留缓存键问题 |
 | `设置 -> 备份与恢复`（高手模式） | `一键整理 D1 数据` | `tidyD1Data` | 先通过 `previewTidyData` 获取签名计划，再按硬预算清理日志、统计、缓存和过期状态 |
 | `DNS 编辑` | 刷新 / 保存 DNS | `listDnsRecords` / `saveDnsRecords` | 按当前站点整体同步 `CNAME` 或 `A / AAAA` 草稿，并维护 CNAME 历史 |

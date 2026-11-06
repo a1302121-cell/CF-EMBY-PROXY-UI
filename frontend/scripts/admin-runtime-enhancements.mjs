@@ -884,8 +884,78 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
   // 不该把「配置版本已变化」甩给用户；同时串行化，避免两次并发写互相踩版本号。
   const uiSkinSaveState = { running: false, target: '', saved: '' };
 
+  // 面板拿到服务端配置之前 runtimeConfig 是空对象，这时任何 saveConfig 都会把「本机默认值」写进 KV
+  // （2026-11-04 整份全局设置被重置就是这么发生的：bootstrap 卡住 90 秒，期间点了皮肤开关）。
+  // 写操作因此先过水合闸；bootstrap 成功拿到非空 config 才放行。
+  const CONFIG_HYDRATION_REQUIRED_ACTIONS = new Set([
+    'saveConfig',
+    'importSettings',
+    'importFull',
+    'tidyKvData'
+  ]);
+  // 面板水合后 runtimeConfig 有 70+ 个字段；皮肤点击会先乐观写一个 adminUiSkin 进去，
+  // 所以「非空」不算水合，必须到量级才算拿到了服务端配置。
+  const CONFIG_HYDRATED_MIN_FIELDS = 20;
+  let adminConfigHydrated = false;
+
+  function hasConfigFields(config) {
+    return (
+      !!config && typeof config === 'object' && Object.keys(config).length >= CONFIG_HYDRATED_MIN_FIELDS
+    );
+  }
+
+  function isAdminConfigHydrated(app) {
+    if (adminConfigHydrated) return true;
+    const config = app?.runtimeConfig;
+    // 没有 runtimeConfig 的调用方（脚本、单测里的假 app）不是管理端面板，不在这里拦；
+    // 面板的初始状态恰好是空对象，那个才是这次事故的入口。
+    if (!config || typeof config !== 'object') return true;
+    if (hasConfigFields(config)) {
+      adminConfigHydrated = true;
+      return true;
+    }
+    return false;
+  }
+
+  function markAdminConfigHydrated() {
+    adminConfigHydrated = true;
+    clearConfigHydrationBanner();
+  }
+
+  function clearConfigHydrationBanner() {
+    const bar = document?.getElementById?.('admin-config-hydration');
+    if (bar) bar.remove();
+  }
+
+  function showConfigHydrationBanner() {
+    if (typeof document === 'undefined' || !document.body) return;
+    if (document.getElementById('admin-config-hydration')) return;
+    const bar = document.createElement('div');
+    bar.id = 'admin-config-hydration';
+    bar.setAttribute('role', 'alert');
+    bar.style.cssText =
+      'position:fixed;left:0;right:0;top:0;z-index:2147483000;display:flex;flex-wrap:wrap;gap:.5rem .75rem;' +
+      'align-items:center;justify-content:center;padding:.5rem .75rem;font-size:13px;line-height:1.4;' +
+      'background:#b45309;color:#fff;box-shadow:0 2px 10px rgba(0,0,0,.25)';
+    const text = document.createElement('span');
+    text.textContent = '配置尚未加载完成，已阻止一切写入；下面的设置不是服务器上的真实值。';
+    const retry = document.createElement('button');
+    retry.type = 'button';
+    retry.textContent = '重新加载';
+    retry.style.cssText =
+      'background:#fff;color:#b45309;border:0;border-radius:6px;padding:.2rem .6rem;font-weight:600;cursor:pointer';
+    retry.addEventListener('click', () => navigateWithAdminCacheBust());
+    bar.append(text, retry);
+    document.body.appendChild(bar);
+  }
+
   async function saveUiSkinConfig(app, skin, config, expectedRevision) {
     const base = config && typeof config === 'object' ? config : app?.runtimeConfig || {};
+    // 只带皮肤字段的补丁在服务端会把其余字段补成默认值：没有完整配置基线时宁可不写。
+    if (!isAdminConfigHydrated(app) || Object.keys(base).length === 0) {
+      console.warn('skip ui skin save: admin config is not hydrated yet');
+      return null;
+    }
     return await app.apiCall('saveConfig', {
       config: { ...base, adminUiSkin: skin },
       expectedConfigRevision: String(expectedRevision || ''),
@@ -1502,8 +1572,28 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
     renderWorkerHtmlUpdateState();
   }
 
+  // 覆盖是单键覆盖，没有版本历史；这里把「上一次保存前」的快照做成一个按钮。
+  function syncConfigRestorePanel(app = window.App) {
+    const anchor = document.querySelector('#admin-worker-html-update-root');
+    if (!anchor || !app) return;
+    let root = document.querySelector('#admin-config-restore-root');
+    if (!root) {
+      anchor.insertAdjacentHTML('afterend', '<div id="admin-config-restore-root" class="ui-settings-panel settings-block hidden"></div>');
+      root = document.querySelector('#admin-config-restore-root');
+    }
+    if (!root || root.dataset.adminConfigRestoreReady) return;
+    root.dataset.adminConfigRestoreReady = '1';
+    root.classList.remove('hidden');
+    root.innerHTML = '<div class="ui-block-head"><div><div class="ui-section-kicker">Config Snapshot</div><div class="ui-section-title">恢复上次配置</div></div><span class="ui-chip-muted">一代</span></div>'
+      + '<p class="text-sm text-slate-500 mb-4">每次保存设置前都会把当时的配置留一份快照，只有最近一代。误改配置、导入错文件或整份重置之后，可以在这里退回上一次保存之前的状态。</p>'
+      + '<button data-admin-config-restore="1" type="button" class="inline-flex items-center justify-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-xl text-sm transition"><i data-lucide="history" class="w-4 h-4" aria-hidden="true"></i><span>恢复上次配置</span></button>';
+    root.querySelector('[data-admin-config-restore="1"]')?.addEventListener('click', () => app.restorePreviousConfig?.());
+    scheduleIconRefresh(root);
+  }
+
   function applySettingsLayout() {
     syncWorkerHtmlUpdatePanel(window.App);
+    syncConfigRestorePanel(window.App);
     syncThemeSkinPanel(window.App);
     syncTmdbCredentialPanel(window.App);
     syncCloudflareTokenTest();
@@ -2595,6 +2685,144 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
       return result;
     };
   }
+  function configNotHydratedError(action) {
+    const error = new Error(
+      '配置尚未加载完成，已阻止「' + String(action || '') + '」写入；请刷新页面等配置加载完成后再保存。'
+    );
+    error.code = 'CONFIG_NOT_HYDRATED';
+    error.status = 409;
+    return error;
+  }
+
+  // 服务端的整份重置闸门只回“要动哪些字段”，真正要不要重置由用户在这里确认。
+  async function confirmConfigMassResetAndRetry(app, action, requestPayload, error, callAction) {
+    const details = error?.details && typeof error.details === 'object' ? error.details : {};
+    const fields = Array.isArray(details.resetFields) ? details.resetFields.map(String).filter(Boolean) : [];
+    const count = Number(details.resetCount) || fields.length;
+    const sample = fields.slice(0, 10).join('、');
+    const accepted = await app.askConfirm(
+      '本次保存会把 ' + count + ' 项设置恢复为默认值' +
+        (sample ? '：' + sample + (fields.length > 10 ? ' 等' : '') : '') +
+        '。确认要继续吗？',
+      { title: '确认重置设置', tone: 'warning', confirmText: '确认重置' }
+    );
+    if (!accepted) {
+      const cancelled = new Error('已取消保存：这次保存会重置 ' + count + ' 项设置');
+      cancelled.code = 'CONFIG_MASS_RESET_CANCELLED';
+      cancelled.status = 409;
+      throw cancelled;
+    }
+    return await withUiRequestTimeout(
+      app,
+      action,
+      callAction(action, { ...requestPayload, confirmMassReset: true })
+    );
+  }
+  // 模板里只有一个隐藏的自动下载锚点，它挂在懒挂载的 #view-nodes 里。没进过「节点管理」的页面
+  // 会话中，设置页与 DNS 页的导出会拿到 200、Blob 也生成了，但没有元素可以点，浏览器什么都不做
+  // —— 界面上就是"导出没反应"。这里把下载出口换成与视图无关的 body 级 sink，并且不再写模板的
+  // downloadHref，所以 v-auto-download 不会重复触发同一次下载。
+  const DOWNLOAD_URL_REVOKE_DELAY_MS = 1000;
+  function installAdminDownloadSink(app) {
+    if (!app || typeof app.triggerDownload !== 'function') return;
+    const resolveSink = () => {
+      let sink = document.getElementById('admin-download-sink');
+      if (!sink) {
+        sink = document.createElement('a');
+        sink.id = 'admin-download-sink';
+        sink.hidden = true;
+        sink.setAttribute('aria-hidden', 'true');
+        document.body.appendChild(sink);
+      }
+      return sink;
+    };
+    app.triggerDownload = function triggerDownloadFromAnyView(href, filename) {
+      const url = String(href || '');
+      const name = String(filename || '');
+      if (url) {
+        const sink = resolveSink();
+        sink.setAttribute('href', url);
+        sink.setAttribute('download', name);
+        sink.click();
+        window.setTimeout(() => {
+          try {
+            URL.revokeObjectURL(url);
+          } catch {}
+        }, DOWNLOAD_URL_REVOKE_DELAY_MS);
+      }
+      return Promise.resolve({ href: url, filename: name });
+    };
+  }
+
+  // 与服务端 ADMIN_FULL_BACKUP_MAX_REQUEST_BYTES 对齐（12 MiB 减去请求体余量）：超过这个值 Worker 只会回 413。
+  const FULL_BACKUP_IMPORT_MAX_BYTES = 12517376;
+  function isPlainBackupObject(value) {
+    return !!value && typeof value === 'object' && !Array.isArray(value);
+  }
+
+  function buildFullBackupImportMessage({ config, nodes, adminIndexUpload, containsSecrets }) {
+    const lines = [];
+    lines.push(
+      nodes.length
+        ? '• 节点 ' + nodes.length + ' 个：同名节点会被覆盖，备份里没有的节点保留（不会删除）'
+        : '• 节点：备份里没有，节点列表保持不变'
+    );
+    lines.push(
+      config
+        ? '• 全局设置 ' + Object.keys(config).length + ' 个字段：备份未包含的字段回退为默认值（密钥与管理端皮肤保留当前值）'
+        : '• 全局设置：备份里没有，配置保持不变'
+    );
+    if (adminIndexUpload) lines.push('• 管理端 HTML：包含，导入后立即启用');
+    if (containsSecrets) lines.push('• 密钥：这份备份含明文密钥');
+    lines.push('');
+    lines.push('导入会立即覆盖当前数据；写入失败会整体回滚。');
+    return lines.join('\\n');
+  }
+
+  function buildFullBackupImportedMessage(result) {
+    const lines = [];
+    const imported = Number(result?.importedNodeCount) || 0;
+    const skipped = Number(result?.skippedNodeCount) || 0;
+    lines.push('完整数据导入成功，已立即生效。');
+    lines.push('节点：已导入 ' + imported + ' 个' + (skipped > 0 ? '，跳过 ' + skipped + ' 个' : ''));
+    if (skipped > 0) {
+      const names = (Array.isArray(result?.skippedNodes) ? result.skippedNodes : [])
+        .map((item) => String(item?.name || '').trim())
+        .filter(Boolean)
+        .slice(0, 5);
+      lines.push('跳过原因：目标不是有效的 http/https 地址' + (names.length ? '（' + names.join('、') + (skipped > names.length ? ' 等' : '') + '）' : ''));
+    }
+    if (result?.adminIndexUpload?.revision) lines.push('管理端 HTML：已恢复到备份中的版本');
+    return lines.join('\\n');
+  }
+
+  async function applyFullBackupImportResult(app, result) {
+    if (result?.revisions && typeof app.applyAdminRevisions === 'function') app.applyAdminRevisions(result.revisions);
+    if (result?.config && isPlainBackupObject(result.config) && typeof app.applyRuntimeConfig === 'function') app.applyRuntimeConfig(result.config);
+    if (Array.isArray(result?.nodes) && typeof app.applyNodesState === 'function') app.applyNodesState(result.nodes);
+    if (typeof app.patchAdminBootstrapCache === 'function') {
+      app.patchAdminBootstrapCache({
+        config: app.runtimeConfig,
+        nodes: app.nodes,
+        hostDomain: app.hostDomain,
+        revisions: app.adminRevisions
+      });
+    }
+    // 面板刷新失败不该把"导入已成功"报成失败，所以单独兜住。
+    try {
+      await app.loadSettings?.();
+    } catch (error) {
+      console.error('importFull refresh failed', error);
+      if (typeof app.showMessage === 'function') {
+        app.showMessage('备份已导入，但设置面板刷新失败：' + (error?.message || '未知错误') + '。刷新页面即可看到最新数据。', {
+          tone: 'warning',
+          modal: true
+        });
+      }
+    }
+  }
+
+
 
   function patchSafetyContractMethods(app) {
     if (!app || patchedSafetyContractApp === app) return;
@@ -2616,17 +2844,27 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
             mutationId: String(requestPayload.mutationId || ('cfg-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10)))
           };
         }
+        if (CONFIG_HYDRATION_REQUIRED_ACTIONS.has(normalizedAction) && !isAdminConfigHydrated(app)) {
+          showConfigHydrationBanner();
+          throw configNotHydratedError(normalizedAction);
+        }
         let result;
         try {
           result = await withUiRequestTimeout(app, normalizedAction, originalApiCall(action, requestPayload));
         } catch (error) {
-          if (normalizedAction === 'saveConfig' && String(error?.code || '').toUpperCase() === 'CONFIG_REVISION_CONFLICT') {
-            error.message = '配置版本已变化，请刷新设置确认差异后重新提交；当前编辑内容已保留。';
+          const errorCode = String(error?.code || '').toUpperCase();
+          if (normalizedAction === 'saveConfig' && errorCode === 'CONFIG_MASS_RESET_BLOCKED') {
+            result = await confirmConfigMassResetAndRetry(app, action, requestPayload, error, originalApiCall);
+          } else {
+            if (normalizedAction === 'saveConfig' && errorCode === 'CONFIG_REVISION_CONFLICT') {
+              error.message = '配置版本已变化，请刷新设置确认差异后重新提交；当前编辑内容已保留。';
+            }
+            throw error;
           }
-          throw error;
         }
-        if (normalizedAction === 'getSettingsBootstrap' || normalizedAction === 'getAdminBootstrap') {
+        if (normalizedAction === 'getSettingsBootstrap' || normalizedAction === 'getAdminBootstrap' || normalizedAction === 'loadConfig') {
           settingsBootstrapSyncedAt = Date.now();
+          if (hasConfigFields(result?.config)) markAdminConfigHydrated();
         }
         if (normalizedAction === 'saveConfig' && result?.config && typeof result.config === 'object') {
           updateAdminBootstrapCache(app, result.config, result.revisions);
@@ -3281,9 +3519,30 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
       }
     };
 
+    app.restorePreviousConfig = async function restorePreviousConfigToUi() {
+      const accepted = await this.askConfirm('将把全局配置恢复到上一次保存之前的内容（当前配置会留成新的快照，可以再切回来）。', {
+        title: '恢复上次配置', tone: 'warning', confirmText: '确认恢复'
+      });
+      if (!accepted) return;
+      try {
+        const result = await this.apiCall('restorePreviousConfig', {});
+        if (result?.revisions && typeof this.applyAdminRevisions === 'function') this.applyAdminRevisions(result.revisions);
+        await this.loadSettings?.();
+        this.showMessage('已恢复上一次保存前的配置', { tone: 'success' });
+      } catch (error) {
+        console.error('restorePreviousConfig failed', error);
+        const message = String(error?.code || '') === 'CONFIG_PREV_SNAPSHOT_MISSING'
+          ? '没有可恢复的快照：从本次升级后的第一次保存开始记录，之前只能靠导入备份。'
+          : '恢复上次配置失败: ' + (error?.message || '未知错误');
+        this.showMessage(message, { tone: 'error', modal: true });
+      }
+    };
+
+    installAdminDownloadSink(app);
+
     app.exportNodes = async function exportNodes() {
       try {
-        const result = await this.apiCall('exportConfig');
+        const result = await callConfirmedAdminAction(this, 'exportNodes', {}, 'exportNodes');
         this.downloadJson(Array.isArray(result?.nodes) ? result.nodes : [], 'emby_nodes_' + Date.now() + '.json');
       } catch (error) {
         console.error('exportNodes failed', error);
@@ -3316,6 +3575,70 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
       } catch (error) {
         console.error('exportSettingsWithSecrets failed', error);
         this.showMessage('设置与密钥导出失败: ' + (error?.message || '未知错误'), { tone: 'error', modal: true });
+      }
+    };
+
+    // 模板里的 importFull 只转发 {config, nodes}，把备份里的 adminIndexUpload（管理端 HTML）丢了。
+    // config.indexUrl 引用的就是这个 revision，丢了它、目标 KV 又没这条记录时，Worker 会用
+    // ADMIN_INDEX_BACKUP_MISSING 拒掉整次还原 —— 完整备份在全新部署上永远导不进去。
+    app.importFull = async function importFullFromBackupFile(event) {
+      const selectedFile = event?.target?.files?.[0];
+      if (selectedFile && selectedFile.size > FULL_BACKUP_IMPORT_MAX_BYTES) {
+        event.target.value = '';
+        this.showMessage(
+          '完整备份超过导入上限（' + Math.round(FULL_BACKUP_IMPORT_MAX_BYTES / (1024 * 1024)) + ' MiB）：当前文件 ' +
+            formatWorkerHtmlUploadBytes(selectedFile.size) + '。可分别导出设置与节点后分次导入。',
+          { tone: 'error', modal: true }
+        );
+        return;
+      }
+      let backup = null;
+      try {
+        backup = await this.readJsonFileFromInputEvent?.(event);
+      } catch (error) {
+        console.error('importFull read failed', error);
+        this.showMessage(
+          error instanceof SyntaxError ? '文件解析失败：不是有效的 JSON' : '读取备份文件失败: ' + (error?.message || '未知错误'),
+          { tone: 'error', modal: true }
+        );
+        return;
+      }
+      if (!backup) return;
+      // 空对象等同"备份里没有配置"：Worker 侧同样这么处理，否则整份设置会被默认值刷掉。
+      const config =
+        isPlainBackupObject(backup?.config) && Object.keys(backup.config).length > 0 ? backup.config : null;
+      const nodes = Array.isArray(backup?.nodes) ? backup.nodes : [];
+      if (!config && nodes.length === 0) {
+        this.showMessage('无效的备份文件：需要 config（全局设置）或 nodes（节点）至少一项。', { tone: 'warning', modal: true });
+        return;
+      }
+      const adminIndexUpload = backup?.adminIndexUpload && typeof backup.adminIndexUpload.html === 'string' && backup.adminIndexUpload.html
+        ? backup.adminIndexUpload
+        : null;
+      const accepted = await this.askConfirm(
+        buildFullBackupImportMessage({ config, nodes, adminIndexUpload, containsSecrets: backup?.containsSecrets === true }),
+        { title: '导入完整备份', tone: 'warning', confirmText: '覆盖导入' }
+      );
+      if (!accepted) return;
+      try {
+        const result = await this.apiCall('importFull', {
+          config: config || undefined,
+          nodes,
+          adminIndexUpload
+        });
+        await applyFullBackupImportResult(this, result);
+        this.showMessage(buildFullBackupImportedMessage(result), { title: '导入完整备份', tone: 'success', modal: true });
+      } catch (error) {
+        console.error('importFull failed', error);
+        const code = String(error?.code || '');
+        const message = code === 'ADMIN_INDEX_BACKUP_MISSING'
+          ? '导入被拒绝：这份备份的配置引用了本地上传的管理端 HTML，但备份文件里没有它，当前 KV 里也查不到同一版本。\\n\\n先用「Worker 和 HTML 更新」上传同一份 index.html 再导入，或用当前版本的面板重新导出一次完整备份。'
+          : code === 'ADMIN_INDEX_BACKUP_REVISION_MISMATCH'
+            ? '导入被拒绝：备份里的 index.html 与配置引用的版本不一致，请用同一份文件重新导出备份。'
+            : code === 'INVALID_BACKUP_CONFIG' || code === 'INVALID_BACKUP_NODES'
+              ? '导入被拒绝：' + (error?.message || '备份文件格式不正确')
+              : '完整数据导入失败: ' + (error?.message || '未知错误');
+        this.showMessage(message, { tone: 'error', modal: true });
       }
     };
 

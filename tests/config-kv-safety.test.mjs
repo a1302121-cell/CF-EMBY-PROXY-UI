@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { createTestApplication } from "../worker/testing/hooks.js";
@@ -857,6 +858,188 @@ test("a skin save retried with a fresh revision keeps the concurrent change", as
   }
 });
 
+// 2026-11-04 事故的复现底料：一份「除密钥外都是真值」的配置。
+// 事故当次是 bootstrap 没返回时点了皮肤开关，payload 只有 adminUiSkin，服务端把其余字段补成默认值。
+const MASS_RESET_GUARD_CONFIG = {
+  rateLimitRpm: 20,
+  logEnabled: false,
+  logRetentionDays: 14,
+  cfAccountId: "acc-1",
+  cfZoneId: "zone-1",
+  cfKvNamespaceId: "kv-1",
+  cfD1DatabaseId: "d1-1",
+  cfApiToken: "real-cf-token",
+  tgChatId: "123456789",
+  tgDailyReportEnabled: true,
+  tgDailyReportClockTimes: ["09:00", "21:00"],
+  tgAlertKvUsageEnabled: true,
+  tgAlertD1UsageEnabled: true,
+};
+
+async function withMassResetGuardConfig(namespace, run) {
+  const { kv } = createKv({
+    [kernel.CONFIG_KEY]: { ...MASS_RESET_GUARD_CONFIG },
+    [kernel.CONFIG_SNAPSHOTS_KEY]: [],
+  });
+  const env = { ENI_KV: kv, __CONFIG_CACHE_NAMESPACE: namespace };
+  invalidateRuntimeConfigCache();
+  try {
+    await run({ env, kv });
+  } finally {
+    invalidateRuntimeConfigCache();
+  }
+}
+
+test("a skin-only save cannot reset the rest of the runtime config", async () => {
+  await withMassResetGuardConfig("config-mass-reset-skin", async ({ env, kv }) => {
+    await assert.rejects(
+      adminActions.saveConfig(
+        { config: { adminUiSkin: "claude" } },
+        { env, kv, ctx: null, meta: { section: "ui", source: "skin" } },
+      ),
+      (error) => {
+        assert.equal(error?.code, "CONFIG_MASS_RESET_BLOCKED");
+        assert.equal(error?.status, 409);
+        assert.ok(error?.details?.resetCount > 8);
+        assert.ok(error.details.resetFields.includes("cfZoneId"));
+        // 清单回给管理端让用户确认，只能带字段名：密钥就在同一份配置里。
+        assert.equal(JSON.stringify(error.details).includes("real-cf-token"), false);
+        return true;
+      },
+    );
+    const stored = await kv.get(kernel.CONFIG_KEY, { type: "json" });
+    assert.equal(stored.cfZoneId, "zone-1");
+    assert.equal(stored.tgChatId, "123456789");
+    assert.equal(stored.adminUiSkin, undefined);
+  });
+});
+
+test("a full default payload is blocked even when it carries a fresh revision", async () => {
+  await withMassResetGuardConfig("config-mass-reset-defaults", async ({ env, kv }) => {
+    const loaded = await (await adminActions.loadConfig({}, { env, kv, ctx: null })).json();
+    await assert.rejects(
+      adminActions.saveConfig(
+        {
+          config: sanitizeRuntimeConfig({}),
+          expectedConfigRevision: loaded.revisions.configRevision,
+        },
+        { env, kv, ctx: null, meta: { section: "ui", source: "skin" } },
+      ),
+      (error) => error?.code === "CONFIG_MASS_RESET_BLOCKED" && error?.status === 409,
+    );
+    const stored = await kv.get(kernel.CONFIG_KEY, { type: "json" });
+    assert.equal(stored.cfZoneId, "zone-1");
+    assert.equal(stored.logEnabled, false);
+  });
+});
+
+test("a confirmed mass reset still writes, and the reset list is returned", async () => {
+  await withMassResetGuardConfig("config-mass-reset-confirmed", async ({ env, kv }) => {
+    const loaded = await (await adminActions.loadConfig({}, { env, kv, ctx: null })).json();
+    const response = await adminActions.saveConfig(
+      {
+        config: sanitizeRuntimeConfig({}),
+        expectedConfigRevision: loaded.revisions.configRevision,
+        confirmMassReset: true,
+      },
+      { env, kv, ctx: null, meta: { section: "ui", source: "skin" } },
+    );
+    assert.equal(response.status, 200);
+    const stored = await kv.get(kernel.CONFIG_KEY, { type: "json" });
+    assert.equal(stored.cfZoneId, undefined);
+    // 密钥由 mergeMissingConfigFields 兜底，确认重置也不会把 token 清空。
+    assert.equal(stored.cfApiToken, "real-cf-token");
+  });
+});
+
+test("a small settings save is not treated as a mass reset", async () => {
+  await withMassResetGuardConfig("config-mass-reset-small-save", async ({ env, kv }) => {
+    const response = await adminActions.saveConfig(
+      {
+        config: { ...MASS_RESET_GUARD_CONFIG, rateLimitRpm: 99, logEnabled: true },
+      },
+      { env, kv, ctx: null, meta: { section: "proxy", source: "ui" } },
+    );
+    assert.equal(response.status, 200);
+    const stored = await kv.get(kernel.CONFIG_KEY, { type: "json" });
+    assert.equal(stored.rateLimitRpm, 99);
+    assert.equal(stored.logEnabled, true);
+    assert.equal(stored.cfZoneId, "zone-1");
+  });
+});
+
+test("settings import keeps working as an explicit full replacement", async () => {
+  await withMassResetGuardConfig("config-mass-reset-import", async ({ env, kv }) => {
+    const response = await adminActions.importSettings(
+      { config: sanitizeRuntimeConfig({}) },
+      { env, kv, ctx: null, meta: { section: "settings", source: "settings_backup" } },
+    );
+    assert.equal(response.status, 200);
+    const stored = await kv.get(kernel.CONFIG_KEY, { type: "json" });
+    assert.equal(stored.cfZoneId, undefined);
+    assert.equal(stored.cfApiToken, "real-cf-token");
+  });
+});
+
+test("a save leaves the previous config recoverable, and restoring is reversible", async () => {
+  await withMassResetGuardConfig("config-prev-snapshot", async ({ env, kv }) => {
+    const saved = await adminActions.saveConfig(
+      { config: { ...MASS_RESET_GUARD_CONFIG, rateLimitRpm: 30 } },
+      { env, kv, ctx: null, meta: { section: "proxy", source: "ui" } },
+    );
+    assert.equal(saved.status, 200);
+    // 覆盖前的那一份进了快照：这是「整份被写坏」之后唯一的本地退路。
+    const snapshot = await kv.get(kernel.CONFIG_PREV_KEY, { type: "json" });
+    assert.equal(snapshot.rateLimitRpm, 20);
+    assert.equal(snapshot.cfZoneId, "zone-1");
+
+    const restored = await (
+      await adminActions.restorePreviousConfig({}, { env, kv, ctx: null })
+    ).json();
+    assert.equal(restored.config.rateLimitRpm, 20);
+    assert.equal((await kv.get(kernel.CONFIG_KEY, { type: "json" })).rateLimitRpm, 20);
+    // 恢复也写快照，所以恢复之后还能切回恢复前的状态。
+    assert.equal((await kv.get(kernel.CONFIG_PREV_KEY, { type: "json" })).rateLimitRpm, 30);
+  });
+});
+
+test("restoring without a snapshot fails closed", async () => {
+  const { kv } = createKv({ [kernel.CONFIG_KEY]: { rateLimitRpm: 20, cfZoneId: "zone-1" } });
+  const env = { ENI_KV: kv, __CONFIG_CACHE_NAMESPACE: "config-prev-missing" };
+  invalidateRuntimeConfigCache();
+  try {
+    const response = await adminActions.restorePreviousConfig({}, { env, kv, ctx: null });
+    assert.equal(response.status, 404);
+    assert.equal((await response.json())?.error?.code, "CONFIG_PREV_SNAPSHOT_MISSING");
+    // 没有快照时不能动现有配置。
+    assert.equal((await kv.get(kernel.CONFIG_KEY, { type: "json" })).rateLimitRpm, 20);
+  } finally {
+    invalidateRuntimeConfigCache();
+  }
+});
+
+test("the config snapshot key is not something kv tidy treats as garbage", async () => {
+  const classified = await kernel.classifyKvTidyKeys(null, [
+    kernel.CONFIG_KEY,
+    kernel.CONFIG_META_KEY,
+    kernel.CONFIG_PREV_KEY,
+    "node:demo",
+  ]);
+  assert.deepEqual([...classified.removableKeys], []);
+  assert.equal(classified.untouchedOtherKeyCount, 0);
+  assert.deepEqual(classified.nodeNames, ["demo"]);
+});
+
+test("admin cloudflare calls carry a timeout so bootstrap cannot hang for minutes", async () => {
+  const source = await readFile(
+    new URL("../worker/runtime/application-facades.js", import.meta.url),
+    "utf8",
+  );
+  assert.match(source, /var CLOUDFLARE_API_TIMEOUT_MS = 8000;/);
+  const calls = source.match(/AbortSignal\.timeout\(CLOUDFLARE_API_TIMEOUT_MS\)/g) || [];
+  assert.equal(calls.length, 2, "fetchCloudflareApiJson 与 fetchCloudflareGraphQL 都必须带超时");
+});
+
 test("active admin index renders when a remote PoP still sees stale config", async () => {
   const record = await buildAdminLocalIndexUploadRecord(
     adminShellHtml("active-from-envelope"),
@@ -1138,4 +1321,251 @@ test("config and DNS restoration still restores raw KV when DNS compensation fai
       error?.details?.kvRestoreError === "",
   );
   assert.equal(rawStateRestored, true);
+});
+
+test("full import rejects malformed config and nodes shapes instead of rewriting defaults", async () => {
+  const currentConfig = {
+    rateLimitRpm: 42,
+    upstreamTimeoutMs: 12345,
+    cfApiToken: "current-cf-secret",
+  };
+  const { kv } = createKv({ [kernel.CONFIG_KEY]: currentConfig });
+  const env = { ENI_KV: kv, __CONFIG_CACHE_NAMESPACE: "config-kv-safety-full-import-shape" };
+  invalidateRuntimeConfigCache();
+  try {
+    // mergeMissingConfigFields 对非对象返回 {}，随后会被默认值补齐 —— 必须在写 KV 前拒绝。
+    for (const badConfig of [[], "not-an-object", 123, true]) {
+      const response = await adminActions.importFull({ config: badConfig }, { env, ctx: null, kv });
+      assert.equal(response.status, 400);
+      assert.equal((await response.json()).error.code, "INVALID_BACKUP_CONFIG");
+      const stored = await kv.get(kernel.CONFIG_KEY, { type: "json" });
+      assert.equal(stored.rateLimitRpm, currentConfig.rateLimitRpm);
+      assert.equal(stored.upstreamTimeoutMs, currentConfig.upstreamTimeoutMs);
+    }
+
+    const nodesResponse = await adminActions.importFull(
+      { nodes: { alpha: { target: "https://origin.test" } } },
+      { env, ctx: null, kv },
+    );
+    assert.equal(nodesResponse.status, 400);
+    assert.equal((await nodesResponse.json()).error.code, "INVALID_BACKUP_NODES");
+    assert.equal(await kv.get(`${kernel.PREFIX}alpha`, { type: "json" }), null);
+  } finally {
+    invalidateRuntimeConfigCache();
+  }
+});
+
+test("node import rejects a missing nodes array before iterating it", async () => {
+  const { kv } = createKv({ [kernel.CONFIG_KEY]: {} });
+  const env = { ENI_KV: kv, __CONFIG_CACHE_NAMESPACE: "config-kv-safety-node-shape" };
+  invalidateRuntimeConfigCache();
+  try {
+    // 面板总带数组；手写脚本漏掉 nodes 时曾经直接 for...of undefined，抛成 500。
+    for (const action of ["import", "saveOrImport"]) {
+      const response = await adminActions.saveOrImport({}, { action, env, ctx: null, kv });
+      assert.equal(response.status, 400, `${action} should reject a missing nodes array`);
+      assert.equal((await response.json()).error.code, "INVALID_BACKUP_NODES");
+    }
+    const notArray = await adminActions.saveOrImport(
+      { nodes: { alpha: { target: "https://origin.test" } } },
+      { action: "import", env, ctx: null, kv },
+    );
+    assert.equal(notArray.status, 400);
+    assert.equal((await notArray.json()).error.code, "INVALID_BACKUP_NODES");
+    assert.equal(await kv.get(`${kernel.PREFIX}alpha`, { type: "json" }), null);
+  } finally {
+    invalidateRuntimeConfigCache();
+  }
+});
+
+test("full import treats an empty config object as no config", async () => {
+  const currentConfig = { rateLimitRpm: 42, upstreamTimeoutMs: 12345 };
+  const { kv } = createKv({ [kernel.CONFIG_KEY]: currentConfig });
+  const env = { ENI_KV: kv, __CONFIG_CACHE_NAMESPACE: "config-kv-safety-empty-config" };
+  invalidateRuntimeConfigCache();
+  try {
+    // mergeMissingConfigFields 只回填密钥与皮肤，其余字段落默认值：一个 {} 就能整份重置。
+    const response = await adminActions.importFull({ config: {} }, { env, ctx: null, kv });
+    assert.equal(response.status, 200);
+    const stored = await kv.get(kernel.CONFIG_KEY, { type: "json" });
+    assert.equal(stored.rateLimitRpm, currentConfig.rateLimitRpm);
+    assert.equal(stored.upstreamTimeoutMs, currentConfig.upstreamTimeoutMs);
+  } finally {
+    invalidateRuntimeConfigCache();
+  }
+});
+
+test("full import rejects an oversized node before writing anything", async () => {
+  const { kv } = createKv({ [kernel.CONFIG_KEY]: { rateLimitRpm: 10 } });
+  const env = { ENI_KV: kv, __CONFIG_CACHE_NAMESPACE: "config-kv-safety-full-import-limits" };
+  const oversized = {
+    name: "huge",
+    target: "https://origin.test",
+    entryMode: "kv_route",
+    remark: "x".repeat(300 * 1024),
+  };
+  const healthy = { name: "healthy", target: "https://origin.test", entryMode: "kv_route" };
+  invalidateRuntimeConfigCache();
+  try {
+    const response = await adminActions.importFull(
+      { nodes: [healthy, oversized] },
+      { env, ctx: null, kv },
+    );
+    assert.equal(response.status, 400);
+    const payload = await response.json();
+    assert.equal(payload.error.code, "NODE_RESOURCE_LIMIT_EXCEEDED");
+    assert.equal(payload.error.details.nodeName, "huge");
+    // 整批拒绝：同批里的合法节点也不能先落盘。
+    assert.equal(await kv.get(`${kernel.PREFIX}healthy`, { type: "json" }), null);
+    assert.equal(await kv.get(`${kernel.PREFIX}huge`, { type: "json" }), null);
+  } finally {
+    invalidateRuntimeConfigCache();
+  }
+});
+
+test("full import reports skipped nodes instead of silently dropping them", async () => {
+  const { kv } = createKv({ [kernel.CONFIG_KEY]: { rateLimitRpm: 10 } });
+  const env = { ENI_KV: kv, __CONFIG_CACHE_NAMESPACE: "config-kv-safety-full-import-skipped" };
+  invalidateRuntimeConfigCache();
+  try {
+    const response = await adminActions.importFull(
+      {
+        nodes: [
+          { name: "kept", target: "https://origin.test", entryMode: "kv_route" },
+          { name: "javascript-target", target: "javascript:alert(1)", entryMode: "kv_route" },
+        ],
+      },
+      { env, ctx: null, kv },
+    );
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.importedNodeCount, 1);
+    assert.equal(payload.skippedNodeCount, 1);
+    assert.deepEqual(payload.skippedNodes, [
+      { name: "javascript-target", reason: "invalid_target" },
+    ]);
+    assert.ok(await kv.get(`${kernel.PREFIX}kept`, { type: "json" }));
+  } finally {
+    invalidateRuntimeConfigCache();
+  }
+});
+
+test("node export works without the full backup size gate", async () => {
+  const { kv } = createKv({ [kernel.CONFIG_KEY]: { rateLimitRpm: 10 } });
+  const env = { ENI_KV: kv, __CONFIG_CACHE_NAMESPACE: "config-kv-safety-node-export" };
+  const originalLoadAllNodeEntitiesFromKvStrict = kernel.loadAllNodeEntitiesFromKvStrict;
+  // 完整备份会因为 12 MiB 回导上限被拒，但节点本身必须还能导出。
+  kernel.loadAllNodeEntitiesFromKvStrict = async () => [
+    { name: "big", target: "https://origin.test", remark: "x".repeat(13 * 1024 * 1024) },
+  ];
+  invalidateRuntimeConfigCache();
+  try {
+    const fullResponse = await adminActions.exportConfig(
+      {},
+      { env, ctx: null, request: new Request("https://worker.test/admin") },
+    );
+    assert.equal(fullResponse.status, 413);
+
+    // 节点实体带 secret / headers：没有确认头时只回 428，不吐凭据。
+    const denied = await adminActions.exportNodes(
+      {},
+      { env, ctx: null, request: new Request("https://worker.test/admin") },
+    );
+    assert.equal(denied.status, 428);
+    assert.equal((await denied.json()).error.code, "CONFIRMATION_REQUIRED");
+
+    const response = await adminActions.exportNodes(
+      {},
+      {
+        env,
+        ctx: null,
+        request: new Request("https://worker.test/admin", {
+          headers: { "X-Admin-Confirm": "exportNodes" },
+        }),
+      },
+    );
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.nodes.length, 1);
+    assert.equal(payload.nodes[0].name, "big");
+  } finally {
+    kernel.loadAllNodeEntitiesFromKvStrict = originalLoadAllNodeEntitiesFromKvStrict;
+    invalidateRuntimeConfigCache();
+  }
+});
+
+test("full backup roundtrip restores the uploaded admin HTML record", async () => {
+  const indexRecord = await buildAdminLocalIndexUploadRecord(
+    adminShellHtml("backup-shell"),
+    "index.html",
+  );
+  const sourceKv = createKv({
+    [kernel.CONFIG_KEY]: { rateLimitRpm: 30, indexUrl: indexRecord.sourceUrl },
+    [kernel.buildAdminIndexUploadKey(indexRecord.revision)]: indexRecord,
+    [`${kernel.PREFIX}alpha`]: { target: "https://origin.test", entryMode: "kv_route" },
+  });
+  const sourceEnv = {
+    ENI_KV: sourceKv.kv,
+    __CONFIG_CACHE_NAMESPACE: "config-kv-safety-roundtrip-src",
+  };
+  invalidateRuntimeConfigCache();
+  const exportResponse = await adminActions.exportConfig(
+    {},
+    { env: sourceEnv, ctx: null, request: new Request("https://worker.test/admin") },
+  );
+  assert.equal(exportResponse.status, 200);
+  const backup = await exportResponse.json();
+  assert.ok(backup.adminIndexUpload?.html, "完整备份必须带上管理端 HTML");
+
+  // 全新部署：目标 KV 里没有任何上传记录，只能靠备份里的 HTML 重建。
+  const targetKv = createKv({});
+  const targetEnv = {
+    ENI_KV: targetKv.kv,
+    __CONFIG_CACHE_NAMESPACE: "config-kv-safety-roundtrip-dst",
+  };
+  invalidateRuntimeConfigCache();
+  try {
+    const importResponse = await adminActions.importFull(
+      { config: backup.config, nodes: backup.nodes, adminIndexUpload: backup.adminIndexUpload },
+      { env: targetEnv, ctx: null, kv: targetKv.kv },
+    );
+    assert.equal(importResponse.status, 200);
+    const payload = await importResponse.json();
+    assert.equal(payload.adminIndexUpload?.revision, indexRecord.revision);
+    const stored = await targetKv.kv.get(kernel.buildAdminIndexUploadKey(indexRecord.revision), {
+      type: "json",
+    });
+    assert.equal(stored?.revision, indexRecord.revision);
+    assert.equal(
+      (await targetKv.kv.get(kernel.CONFIG_KEY, { type: "json" })).indexUrl,
+      indexRecord.sourceUrl,
+    );
+  } finally {
+    invalidateRuntimeConfigCache();
+  }
+});
+
+test("full import without the referenced admin HTML fails closed", async () => {
+  const indexRecord = await buildAdminLocalIndexUploadRecord(
+    adminShellHtml("missing-shell"),
+    "index.html",
+  );
+  const { kv } = createKv({});
+  const env = {
+    ENI_KV: kv,
+    __CONFIG_CACHE_NAMESPACE: "config-kv-safety-full-import-index-missing",
+  };
+  invalidateRuntimeConfigCache();
+  try {
+    const response = await adminActions.importFull(
+      { config: { rateLimitRpm: 20, indexUrl: indexRecord.sourceUrl } },
+      { env, ctx: null, kv },
+    );
+    assert.equal(response.status, 400);
+    assert.equal((await response.json()).error.code, "ADMIN_INDEX_BACKUP_MISSING");
+    // fail closed：配置一个字都没写。
+    assert.equal(await kv.get(kernel.CONFIG_KEY, { type: "json" }), null);
+  } finally {
+    invalidateRuntimeConfigCache();
+  }
 });

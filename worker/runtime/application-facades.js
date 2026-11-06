@@ -312,6 +312,14 @@ function logRuntimeFailure(scope, error, context = null, level = "warn") {
     console[logLevel](`[${normalizedScope}] ${getErrorMessage(error)}`, meta);
   else console[logLevel](`[${normalizedScope}] ${getErrorMessage(error)}`);
 }
+// 非错误的结构化事件：写进 console 的同一套 [scope] 前缀，便于和 logRuntimeFailure 一起捞。
+function logAdminEvent(scope, context = null, level = "info") {
+  const normalizedScope = String(scope || "admin.event").trim() || "admin.event";
+  const meta = isPlainObject(context) ? { ...context } : {};
+  const logLevel = ["info", "warn", "error"].includes(level) ? level : "info";
+  if (Object.keys(meta).length > 0) console[logLevel](`[${normalizedScope}]`, meta);
+  else console[logLevel](`[${normalizedScope}]`);
+}
 async function withNonCriticalFallback(promise, scope, context = null, fallbackValue = null) {
   try {
     return await promise;
@@ -7716,6 +7724,53 @@ function assertExpectedRuntimeConfigRevision(expectedRevision = "", currentConfi
     },
   );
 }
+// 事故（2026-11-04）：管理端 bootstrap 还没结束时保存皮肤，payload 只带 adminUiSkin；
+// mergeMissingConfigFields 只回填密钥与皮肤，其余 80 余个字段被默认值补齐 —— 整份配置静默重置。
+// 下面按「当前非默认值 → 写入后默认值」统计这次写入会抹掉的字段，超过预算就拒绝，由调用方二次确认。
+var CONFIG_MASS_RESET_FIELD_BUDGET = 8;
+
+function collectConfigMassResetFields(currentConfig = {}, nextConfig = {}) {
+  const defaults = sanitizeRuntimeConfig({});
+  const current = sanitizeRuntimeConfig(currentConfig);
+  const resetFields = [];
+  for (const entry of getConfigDiffEntries(current, nextConfig)) {
+    const key = String(entry?.key || "");
+    if (!key) continue;
+    if (serializeConfigValue(entry.nextValue) !== serializeConfigValue(defaults[key])) continue;
+    if (serializeConfigValue(current[key]) === serializeConfigValue(defaults[key])) continue;
+    resetFields.push(key);
+  }
+  return resetFields.sort();
+}
+
+// 只返回字段名：重置清单会原样回给管理端让用户确认，不能带值（密钥就在同一份配置里）。
+function assertNoUnconfirmedConfigMassReset(payload = {}, currentConfig = {}, nextConfig = {}) {
+  const resetFields = collectConfigMassResetFields(currentConfig, nextConfig);
+  if (resetFields.length === 0) return resetFields;
+  if (payload?.confirmMassReset === true) return resetFields;
+  if (resetFields.length <= CONFIG_MASS_RESET_FIELD_BUDGET) return resetFields;
+  // 只记字段名与数量，值一个都不落——这几个字段里就有密钥。
+  logAdminEvent(
+    "config.write.rejected",
+    {
+      resetCount: resetFields.length,
+      budget: CONFIG_MASS_RESET_FIELD_BUDGET,
+      resetFields: resetFields.slice(0, 20),
+      mutationId: String(payload?.mutationId || ""),
+    },
+    "warn",
+  );
+  throw createStructuredConfigError(
+    "CONFIG_MASS_RESET_BLOCKED",
+    `本次保存会把 ${resetFields.length} 项设置恢复为默认值，已拦截：确认要重置请再次确认后提交`,
+    409,
+    {
+      resetCount: resetFields.length,
+      resetFields,
+      budget: CONFIG_MASS_RESET_FIELD_BUDGET,
+    },
+  );
+}
 function migrateLegacyRuntimeConfig(input = {}) {
   const migrationState = migrateRuntimeConfigLegacyAliases(input);
   return {
@@ -9137,6 +9192,8 @@ function extractCloudflareApiErrorMessage(payload = null, fallbackText = "") {
   if (!fallback) return "";
   return fallback.replace(/\s+/g, " ").slice(0, 300);
 }
+// 只给管理面的 Cloudflare 调用上超时；代理数据面（fetchRequest 的其它调用方）不能加，否则会切断视频流。
+var CLOUDFLARE_API_TIMEOUT_MS = 8000;
 async function fetchCloudflareApiJson(url, apiToken, init = {}) {
   /** @type {any} */
   const extraInit = init && typeof init === "object" ? init : {};
@@ -9149,6 +9206,8 @@ async function fetchCloudflareApiJson(url, apiToken, init = {}) {
   const isFormDataBody = typeof FormData !== "undefined" && extraInit?.body instanceof FormData;
   const res = await fetchRequest(url, {
     ...extraInit,
+    // 管理面调用必须有上限：2026-11-04 事故里这些裸 fetch 挂了 89–331 秒，把 bootstrap 一起拖死。
+    signal: extraInit?.signal || AbortSignal.timeout(CLOUDFLARE_API_TIMEOUT_MS),
     headers: {
       Authorization: `Bearer ${apiToken}`,
       ...(isFormDataBody ? {} : { "Content-Type": "application/json" }),
@@ -9191,6 +9250,7 @@ async function fetchCloudflareGraphQL(apiToken, query, variables) {
       : { query };
   const cfRes = await fetchRequest("https://api.cloudflare.com/client/v4/graphql", {
     method: "POST",
+    signal: AbortSignal.timeout(CLOUDFLARE_API_TIMEOUT_MS),
     headers: {
       Authorization: `Bearer ${apiToken}`,
       "Content-Type": "application/json",
@@ -10917,6 +10977,7 @@ function defineDashboardActions(dependencies = {}, actions = {}) {
       });
     },
     async getAdminBootstrap(data, { env, ctx, kv, db }) {
+      const startedAt = Date.now();
       try {
         const config = await getRuntimeConfigStrict(env);
         const initHealth = buildInitHealth(env);
@@ -10965,6 +11026,15 @@ function defineDashboardActions(dependencies = {}, actions = {}) {
           "管理台启动数据加载失败：KV 读取异常",
           "admin.read.bootstrap",
         );
+      } finally {
+        // 事故里 bootstrap 卡 89 / 166 / 331 秒却没有任何一条日志，只能靠客户端时间线反推。
+        const durationMs = Date.now() - startedAt;
+        if (durationMs >= 3000)
+          logAdminEvent(
+            "config.bootstrap.slow",
+            { durationMs, action: "getAdminBootstrap" },
+            "warn",
+          );
       }
     },
     async getSettingsBootstrap(data, { env, ctx, kv, db }) {
@@ -11682,19 +11752,20 @@ function defineConfigActions(dependencies = {}, actions = {}) {
     async saveConfig(data, { env, ctx, kv }) {
       if (!kv) return jsonError("KV_NOT_CONFIGURED", "请先绑定 ENI_KV / KV Namespace", 503);
       const currentConfig = await getRuntimeConfigStrict(env);
-      const savedConfig = data.config
-        ? await kernel.persistRuntimeConfig(
-            mergeAdminSettingsRuntimeConfig(data.config, currentConfig),
-            {
-              env,
-              kv,
-              ctx,
-              expectedConfigRevision: data?.expectedConfigRevision,
-              mutationId: data?.mutationId,
-              forceKvCommit: true,
-            },
-          )
-        : currentConfig;
+      let savedConfig = currentConfig;
+      if (data?.config) {
+        const mergedConfig = mergeAdminSettingsRuntimeConfig(data.config, currentConfig);
+        // 覆盖前先判定这次写入会抹掉多少非默认值；未确认的整份重置直接拒绝，KV 一次都不写。
+        assertNoUnconfirmedConfigMassReset(data, currentConfig, mergedConfig);
+        savedConfig = await kernel.persistRuntimeConfig(mergedConfig, {
+          env,
+          kv,
+          ctx,
+          expectedConfigRevision: data?.expectedConfigRevision,
+          mutationId: data?.mutationId,
+          forceKvCommit: true,
+        });
+      }
       // 保存路径只需要回显 revisions：getAdminRevisions 会顺带重建节点索引并查两次 ops status，
       // 稳定态要 8 次 KV。getAdminRevisionsForRead 读同一批 meta 得出完全相同的 configRevision
       // 与 nodesRevision（只差每次现算的 logs/dns 时间戳），稳定态 2 次 KV。
@@ -11805,6 +11876,12 @@ function defineConfigActions(dependencies = {}, actions = {}) {
             adminIndexBytes: Number(adminIndexUpload?.bytes) || 0,
           },
         );
+      logAdminEvent("backup.export.full", {
+        includeSecrets,
+        nodeCount: backupPayload.nodes.length,
+        bytes: importRequestBytes,
+        hasAdminIndex: Boolean(adminIndexUpload),
+      });
       return new Response(backupPayloadText, { headers: jsonHeaders() });
     },
     async exportSettings(data, { env, request }) {
@@ -11815,6 +11892,10 @@ function defineConfigActions(dependencies = {}, actions = {}) {
       )
         return jsonError("CONFIRMATION_REQUIRED", "导出完整密钥需要显式确认", 428);
       const config = await getRuntimeConfigStrict(env);
+      logAdminEvent("backup.export.settings", {
+        includeSecrets,
+        fieldCount: Object.keys(config).length,
+      });
       return jsonResponse({
         version: Config.Defaults.Version,
         type: "settings-only",
@@ -11848,11 +11929,54 @@ function defineConfigActions(dependencies = {}, actions = {}) {
         ctx,
         config: savedConfig,
       });
+      logAdminEvent("backup.import.settings", {
+        fieldCount: Object.keys(importedConfig).length,
+        source: String(data?.meta?.source || "").slice(0, 40),
+      });
       return jsonResponse({
         success: true,
         config: redactAdminRuntimeConfig(savedConfig),
         revisions,
         generatedAt: /* @__PURE__ */ new Date().toISOString(),
+      });
+    },
+    // 恢复上一次保存前的配置。恢复本身也会把「当前配置」写成新快照，所以连点两次能来回切。
+    async restorePreviousConfig(data, { env, ctx, kv }) {
+      if (!kv) return jsonError("KV_NOT_CONFIGURED", "请先绑定 ENI_KV / KV Namespace", 503);
+      let snapshot;
+      try {
+        snapshot = await kvGetStrict(kv, kernel.CONFIG_PREV_KEY, { type: "json" });
+      } catch (error) {
+        throw remapAdminReadKvError(
+          error,
+          "CONFIG_PREV_SNAPSHOT_READ_FAILED",
+          "读取上一次配置快照失败：KV 读取异常",
+          "admin.read.config_prev",
+        );
+      }
+      if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot))
+        return jsonError(
+          "CONFIG_PREV_SNAPSHOT_MISSING",
+          "没有可恢复的上一次配置快照（快照从本次升级后的第一次保存开始记录）",
+          404,
+        );
+      const savedConfig = await kernel.persistRuntimeConfig(snapshot, {
+        env,
+        kv,
+        ctx,
+        forceKvCommit: true,
+      });
+      logAdminEvent("config.write.restored", {
+        bytes: JSON.stringify(snapshot).length,
+        mutationId: String(data?.mutationId || ""),
+      });
+      return jsonResponse({
+        success: true,
+        config: redactAdminRuntimeConfig(savedConfig),
+        revisions: await kernel.getAdminRevisionsForRead(env, {
+          ctx,
+          config: savedConfig,
+        }),
       });
     },
     // 面板上的「测试」用未保存的输入值直连 TMDB：凭证填错时能立刻看到，而不是等到列表空。
@@ -11911,6 +12035,20 @@ function defineConfigActions(dependencies = {}, actions = {}) {
           return jsonError("CF_TOKEN_INACTIVE", `令牌状态为 ${status || "unknown"}，无法使用`, 400);
         return jsonResponse({ success: true, status });
       } catch (error) {
+        // fetchCloudflareApiJson 对非 2xx 会带上真实 HTTP 状态：令牌写错是 400/401，
+        // 不能再折叠成 502 NETWORK_ERROR，否则面板会让用户去查网络和部署。
+        const apiStatus = Number(error?.status);
+        if (apiStatus >= 400 && apiStatus < 500) {
+          const upstreamMessage = String(error?.message || "");
+          // 上游消息形如 "cf_api_http_400: 6003: Invalid request headers"，前缀和这句中文重复。
+          const detail = upstreamMessage.replace(/^cf_api_http_\d+:\s*/, "") || "令牌无效";
+          return jsonError(
+            "CF_TOKEN_REJECTED",
+            `Cloudflare 拒绝了这组令牌（HTTP ${apiStatus}）：${detail}`,
+            apiStatus,
+            { upstreamStatus: apiStatus, upstreamMessage },
+          );
+        }
         return jsonError(
           "NETWORK_ERROR",
           String(error?.message || error || "cf_token_probe_failed"),
@@ -12206,8 +12344,33 @@ function defineNodeActions(dependencies = {}, actions = {}) {
   const { kernel } = dependencies;
   const { CacheManager, buildAdminLocalIndexUploadRecord } = dependencies;
   return {
+    // 节点列表的「导出配置」只需要节点。走 exportConfig 会连管理端 HTML 一起算回导字节，
+    // 备份一旦超过 12 MiB 上限，连节点都导不出来，而报错偏偏建议"分别导出节点"——那条路原本不存在。
+    async exportNodes(data, { env, ctx, request }) {
+      // 节点实体带着 secret / headers，导出等于把上游凭据写到磁盘。用与 exportConfig 相同的
+      // 自定义头令牌挡住跨站表单提交（自定义头必须过 CORS 预检），而不是只靠同源 cookie。
+      if (String(request?.headers?.get("X-Admin-Confirm") || "").trim() !== "exportNodes")
+        return jsonError(
+          "CONFIRMATION_REQUIRED",
+          "Exporting node credentials requires explicit confirmation",
+          428,
+        );
+      const kv = kernel.getKV(env);
+      const nodes = kv
+        ? (await kernel.loadAllNodeEntitiesFromKvStrict(kv, { ctx })).filter(Boolean)
+        : [];
+      logAdminEvent("backup.export.nodes", { nodeCount: nodes.length });
+      return jsonResponse({
+        version: Config.Defaults.Version,
+        exportTime: /* @__PURE__ */ new Date().toISOString(),
+        nodes,
+      });
+    },
     async saveOrImport(data, { action, ctx, kv, env }) {
+      // 面板永远带数组；手写脚本漏掉 nodes 时，这里不能直接进 for...of（会抛 TypeError 变成 500）。
       const nodesToSave = action === "save" ? [data] : data.nodes;
+      if (!Array.isArray(nodesToSave))
+        return jsonError("INVALID_BACKUP_NODES", "备份中的 nodes 必须是数组，已拒绝导入", 400);
       const reservedNodeConflict = findReservedNodeNameConflict(nodesToSave, env);
       if (reservedNodeConflict)
         return jsonError(
@@ -12547,6 +12710,16 @@ function defineNodeActions(dependencies = {}, actions = {}) {
       });
     },
     async importFull(data, { env, ctx, kv }) {
+      // 形状先判：mergeMissingConfigFields 对非对象输入返回 {}，随后 sanitizeRuntimeConfig 会用
+      // 默认值补齐全部字段 —— 一个 {"config":[]} 的碎文件足以把整份全局设置刷回默认并回 200 "成功"。
+      if (data?.config !== void 0 && data?.config !== null && !isPlainObject(data.config))
+        return jsonError("INVALID_BACKUP_CONFIG", "备份中的 config 必须是对象，已拒绝导入", 400);
+      if (data?.nodes !== void 0 && data?.nodes !== null && !Array.isArray(data.nodes))
+        return jsonError("INVALID_BACKUP_NODES", "备份中的 nodes 必须是数组，已拒绝导入", 400);
+      // 空对象等同于"备份里没有配置"：mergeMissingConfigFields 只回填密钥与皮肤，其余字段会落默认值，
+      // 一个 {"config":{}} 就足以把整份设置刷回默认，而面板预览只会显示"0 个字段"。
+      const configPayload =
+        isPlainObject(data?.config) && Object.keys(data.config).length > 0 ? data.config : null;
       const reservedNodeConflict = findReservedNodeNameConflict(data?.nodes, env);
       if (reservedNodeConflict)
         return jsonError(
@@ -12607,11 +12780,11 @@ function defineNodeActions(dependencies = {}, actions = {}) {
       }
       return await runKvDataMutation(kv)(async () => {
         const currentConfig = await getRuntimeConfigStrict(env);
-        const configRollbackState = data.config
+        const configRollbackState = configPayload
           ? await kernel.captureRuntimeConfigRollbackState(env, kv)
           : null;
-        const importedConfig = data.config
-          ? mergeMissingConfigFields(data.config, currentConfig)
+        const importedConfig = configPayload
+          ? mergeMissingConfigFields(configPayload, currentConfig)
           : null;
         const nodeDnsConfig = importedConfig
           ? sanitizeRuntimeConfig(importedConfig)
@@ -12621,7 +12794,7 @@ function defineNodeActions(dependencies = {}, actions = {}) {
           ? kernel.buildAdminIndexUploadKey(importedIndexRecord.revision)
           : "";
         const previousImportedIndexValue = importedIndexKey ? await kv.get(importedIndexKey) : null;
-        const previousActiveIndexValue = data.config
+        const previousActiveIndexValue = configPayload
           ? await kv.get(kernel.ADMIN_ACTIVE_INDEX_KEY)
           : null;
         const importedActiveIndexRecord = importedIndexRevision
@@ -12629,16 +12802,36 @@ function defineNodeActions(dependencies = {}, actions = {}) {
             (await kernel.getAdminIndexUploadRecord(kv, importedIndexRevision))
           : null;
         const preparedMutations = [];
+        // 跳过的节点必须回报：静默丢弃非 http(s) 目标正是"导入成功但少了一个节点"的来源。
+        const skippedNodes = [];
         if (Array.isArray(data.nodes))
           for (const n of data.nodes) {
-            if (!n.name || (!n.target && !(Array.isArray(n.lines) && n.lines.length))) continue;
+            const rawName = String(n?.name || "")
+              .trim()
+              .slice(0, 64);
+            if (!n?.name || (!n.target && !(Array.isArray(n.lines) && n.lines.length))) {
+              skippedNodes.push({ name: rawName, reason: "invalid_target" });
+              continue;
+            }
             const name = String(n.name).toLowerCase();
             const existingNode = (await kv.get(`${kernel.PREFIX}${name}`, { type: "json" })) || {};
             const mutation = kernel.buildPreparedNodeMutation(n, existingNode, {
               previousName: name,
               nextName: name,
             });
-            if (!mutation) continue;
+            if (!mutation) {
+              skippedNodes.push({ name: rawName, reason: "invalid_target" });
+              continue;
+            }
+            // 与 saveOrImport 保持一致：超限节点在这里整批拒掉，不能先写进 KV 再变成"只能删不能改"的孤儿。
+            const resourceViolation = getNodeResourceLimitViolation(name, mutation.nextNode);
+            if (resourceViolation)
+              return jsonError(
+                "NODE_RESOURCE_LIMIT_EXCEEDED",
+                "节点配置超过 Worker 资源限制",
+                400,
+                resourceViolation,
+              );
             mutation.dnsPlan = kernel.buildHostPrefixDnsSyncPlan(
               mutation.previousName,
               mutation.previousNode,
@@ -12718,7 +12911,7 @@ function defineNodeActions(dependencies = {}, actions = {}) {
             } catch (restoreError) {
               adminIndexRollbackError = getErrorMessage(restoreError, "admin_index_restore_failed");
             }
-          if (data.config)
+          if (configPayload)
             try {
               if (previousActiveIndexValue === null) await kv.delete(kernel.ADMIN_ACTIVE_INDEX_KEY);
               else await kv.put(kernel.ADMIN_ACTIVE_INDEX_KEY, previousActiveIndexValue);
@@ -12746,10 +12939,20 @@ function defineNodeActions(dependencies = {}, actions = {}) {
         }
         const config = savedConfig || (await getRuntimeConfig(env));
         const nodes = await CacheManager.getNodesList(env, ctx);
+        logAdminEvent("backup.import.full", {
+          requestedNodeCount: Array.isArray(data.nodes) ? data.nodes.length : 0,
+          importedNodeCount: preparedMutations.length,
+          skippedNodeCount: skippedNodes.length,
+          hasConfig: !!importedConfig,
+          hasAdminIndex: Boolean(importedIndexRecord),
+        });
         return jsonResponse({
           success: true,
           config,
           nodes,
+          importedNodeCount: preparedMutations.length,
+          skippedNodeCount: skippedNodes.length,
+          skippedNodes: skippedNodes.slice(0, 20),
           adminIndexUpload: importedIndexRecord
             ? {
                 revision: importedIndexRecord.revision,
@@ -13006,7 +13209,14 @@ function defineMaintenanceActions(dependencies = {}, actions = {}) {
           { message },
           null,
         );
-        return jsonError("D1_TIDY_FAILED", message, 500);
+        // 和 tidyKvData 一致：计划令牌无效/过期是客户端可修正的前置条件（409），
+        // 不能一律报 500，否则面板会把「请重新预览」显示成服务端故障。
+        return jsonError(
+          String(error?.code || "D1_TIDY_FAILED"),
+          message,
+          normalizeErrorStatus(error?.status, 500),
+          isPlainObject(error?.details) ? error.details : null,
+        );
       }
     },
   };
@@ -19241,7 +19451,16 @@ function defineConfigPersistenceMethods(dependencies = {}, kernel = {}) {
       }
       const legacySnapshotRecords = Array.isArray(legacySnapshotRaw) ? legacySnapshotRaw : [];
       const configMeta = kernel.normalizeRevisionMeta(buildHashedMetaPayload(nextConfig));
+      const prevConfigJson = JSON.stringify(prevConfig);
+      // 覆盖前留一代快照：sys:theme 本身是单键覆盖，V19 又删掉了版本历史，
+      // 没有这一份就只剩「从导出文件恢复」一条退路。
+      logAdminEvent("config.write.snapshot", { bytes: prevConfigJson.length });
       const mutationPlan = [
+        {
+          type: "put",
+          key: kernel.CONFIG_PREV_KEY,
+          value: prevConfigJson,
+        },
         {
           type: "put",
           key: kernel.CONFIG_KEY,
@@ -35581,6 +35800,7 @@ var DATA_SERVICE_CONSTANTS = Object.freeze({
   WORKER_PLACEMENT_REGION_OVERRIDE_PREFIX: "sys:worker_placement_region:v1:",
   CONFIG_SNAPSHOTS_KEY: "sys:config_snapshots:v1",
   CONFIG_META_KEY: "sys:config_meta:v1",
+  CONFIG_PREV_KEY: "sys:config_theme_prev:v1",
   CONFIG_SNAPSHOTS_META_KEY: "sys:config_snapshots_meta:v1",
   NODES_INDEX_META_KEY: "sys:nodes_index_meta:v1",
   LEGACY_DNS_IP_POOL_SOURCES_KEY: "sys:dns_ip_pool_sources:v1",
@@ -37144,6 +37364,7 @@ function defineNodeKvTidyMethods(dependencies = {}, kernel = {}) {
         if (keyName.startsWith(kernel.ADMIN_INDEX_UPLOAD_PREFIX)) continue;
         if (
           keyName === kernel.CONFIG_KEY ||
+          keyName === kernel.CONFIG_PREV_KEY ||
           keyName === kernel.NODES_INDEX_KEY ||
           keyName === kernel.NODES_SUMMARY_INDEX_KEY ||
           keyName === kernel.CONFIG_SNAPSHOTS_KEY

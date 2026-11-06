@@ -20,6 +20,14 @@ import {
 } from "../frontend/scripts/admin-runtime-enhancements.mjs";
 import { destroyTrendChart, renderTrendChart } from "../frontend/src/lib/chart.js";
 
+// 面板水合后 runtimeConfig 有 70+ 个字段；写操作闸门按字段数判断「是否已拿到服务端配置」，
+// 所以这些假 app 也要给到量级的字段，否则等于在测「未水合」态。
+function hydratedConfig(overrides = {}) {
+  const config = { rateLimitRpm: 20, adminUiSkin: "classic" };
+  for (let index = 0; index < 24; index += 1) config["fillerField" + index] = index;
+  return { ...config, ...overrides };
+}
+
 function loadEnhancementTestHooks(documentOverrides = {}, windowOverrides = {}) {
   const inlineScript = ADMIN_RUNTIME_ENHANCEMENT_SCRIPT.replace(/^<script[^>]*>\n?/, "").replace(
     /<\/script>$/,
@@ -29,7 +37,7 @@ function loadEnhancementTestHooks(documentOverrides = {}, windowOverrides = {}) 
   assert.notEqual(closureEnd, -1, "enhancement script must use the expected closure");
   const instrumentedScript =
     inlineScript.slice(0, closureEnd) +
-    "window.__enhancementTestHooks = { formatD1SchemaStatus, formatD1InitializationResult, formatD1RepairPlan, formatD1RepairError, patchSafetyContractMethods, patchTmdbNodeMethods, getDashboardMonthPeriodKey, isDashboardMonthlyTrafficCacheFresh, toggleDashboardTrafficPeriod, dashboardTrafficState, normalizeHeadProbeResult, formatHeadProbeResult, formatHeadProbeTitle, normalizeHeadProbePath, normalizeHostPrefixDnsHostname, isHostPrefixNodeLinkActive, runWithConcurrency, NODE_GET_PROBE_CONCURRENCY, readStoredUiSkin, readBootstrapUiSkin, normalizeUiSkin, applyUiSkin, resolveInitialUiThemeMode, applyUiThemeMode, swapUiTheme, patchThemeTransitionMethods, patchDnsIpPoolDeleteMethods, resolveCurrentUiSkin, syncServerUiSkin, persistUiSkinPreference, syncDialogAccessibility, handleDialogEscapeKey, withUiRequestTimeout, installAdminBootstrapFetchDedupe, patchLogPageCache, dashboardLayerState, readFreshSettingsBootstrap, updateAdminBootstrapCache, buildCurrentLogPageSignature, fetch: window.fetch };\n" +
+    "window.__enhancementTestHooks = { formatD1SchemaStatus, formatD1InitializationResult, formatD1RepairPlan, formatD1RepairError, patchSafetyContractMethods, patchTmdbNodeMethods, getDashboardMonthPeriodKey, isDashboardMonthlyTrafficCacheFresh, toggleDashboardTrafficPeriod, dashboardTrafficState, normalizeHeadProbeResult, formatHeadProbeResult, formatHeadProbeTitle, normalizeHeadProbePath, normalizeHostPrefixDnsHostname, isHostPrefixNodeLinkActive, runWithConcurrency, NODE_GET_PROBE_CONCURRENCY, readStoredUiSkin, readBootstrapUiSkin, normalizeUiSkin, applyUiSkin, resolveInitialUiThemeMode, applyUiThemeMode, swapUiTheme, patchThemeTransitionMethods, patchDnsIpPoolDeleteMethods, resolveCurrentUiSkin, syncServerUiSkin, persistUiSkinPreference, syncDialogAccessibility, handleDialogEscapeKey, withUiRequestTimeout, installAdminBootstrapFetchDedupe, patchLogPageCache, dashboardLayerState, readFreshSettingsBootstrap, updateAdminBootstrapCache, buildCurrentLogPageSignature, installAdminDownloadSink, buildFullBackupImportMessage, buildFullBackupImportedMessage, fetch: window.fetch };\n" +
     inlineScript.slice(closureEnd);
   const window = {
     addEventListener() {},
@@ -95,7 +103,8 @@ function collectEnhancementSelectorAnchors(script = "") {
 function isEnhancementOwnedAnchor(script, anchor, kind) {
   return ["'", '"'].some((quote) =>
     kind === "id"
-      ? script.includes(`id=${quote}${anchor}${quote}`)
+      ? script.includes(`id=${quote}${anchor}${quote}`) ||
+        script.includes(`id = ${quote}${anchor}${quote}`)
       : script.includes(`setAttribute(${quote}${anchor}${quote}`) ||
         script.includes(`${anchor}=${quote}`),
   );
@@ -389,6 +398,175 @@ test("admin api calls reject instead of hanging forever", async () => {
   );
   assert.equal(await withUiRequestTimeout({}, "getLogs", Promise.resolve("ok"), 50), "ok");
   assert.equal(withUiRequestTimeout({}, "updateWorkerAndAdminIndex", pending, 5), pending);
+});
+
+test("a panel without a hydrated config cannot write settings", async () => {
+  // 2026-11-04：bootstrap 还没返回时点皮肤开关，runtimeConfig 还是空对象，
+  // 于是把「本机默认值」整份写回了 KV。水合闸在这里拦住第一个请求。
+  const { patchSafetyContractMethods } = loadEnhancementTestHooks();
+  const calls = [];
+  const app = {
+    runtimeConfig: {},
+    async apiCall(action) {
+      calls.push(action);
+      return { success: true };
+    },
+    showMessage() {},
+  };
+  patchSafetyContractMethods(app);
+
+  await assert.rejects(
+    app.apiCall("saveConfig", { config: { adminUiSkin: "claude" } }),
+    (error) => error?.code === "CONFIG_NOT_HYDRATED" && error?.status === 409,
+  );
+  await assert.rejects(
+    app.apiCall("importSettings", { config: {} }),
+    (error) => error?.code === "CONFIG_NOT_HYDRATED",
+  );
+  assert.deepEqual(calls, [], "被拦下的写操作不能真的发出去");
+
+  // 配置到手之后同样的调用必须放行，闸门不能变成常闭。
+  app.runtimeConfig = hydratedConfig();
+  await app.apiCall("saveConfig", { config: { adminUiSkin: "claude" } });
+  assert.deepEqual(calls, ["saveConfig"]);
+});
+
+test("restoring the previous config asks once and then reloads settings", async () => {
+  const { patchSafetyContractMethods } = loadEnhancementTestHooks();
+  const calls = [];
+  const messages = [];
+  const revisions = [];
+  let reloaded = 0;
+  const app = {
+    runtimeConfig: hydratedConfig(),
+    async apiCall(action) {
+      calls.push(action);
+      return { revisions: { configRevision: "restored" } };
+    },
+    applyAdminRevisions(next) {
+      revisions.push(next);
+    },
+    async loadSettings() {
+      reloaded += 1;
+    },
+    async askConfirm() {
+      return true;
+    },
+    showMessage(message, options) {
+      messages.push({ message, options });
+    },
+  };
+  patchSafetyContractMethods(app);
+
+  await app.restorePreviousConfig();
+
+  assert.deepEqual(calls, ["restorePreviousConfig"]);
+  assert.deepEqual(revisions, [{ configRevision: "restored" }]);
+  assert.equal(reloaded, 1);
+  assert.equal(messages[0]?.options?.tone, "success");
+});
+
+test("cancelling the previous-config restore touches nothing", async () => {
+  const { patchSafetyContractMethods } = loadEnhancementTestHooks();
+  const calls = [];
+  const app = {
+    runtimeConfig: hydratedConfig(),
+    async apiCall(action) {
+      calls.push(action);
+    },
+    async askConfirm() {
+      return false;
+    },
+    showMessage() {},
+  };
+  patchSafetyContractMethods(app);
+
+  await app.restorePreviousConfig();
+
+  assert.deepEqual(calls, []);
+});
+
+test("a skin save without a base config never sends a request", async () => {
+  const { persistUiSkinPreference } = loadEnhancementTestHooks();
+  const calls = [];
+  const app = {
+    runtimeConfig: {},
+    adminRevisions: {},
+    async apiCall(action, payload) {
+      calls.push({ action, payload });
+      return { config: {}, revisions: {} };
+    },
+    applyAdminRevisions() {},
+    showMessage() {},
+  };
+
+  await persistUiSkinPreference(app, "claude");
+
+  assert.deepEqual(calls, [], "没有完整配置基线时不能发 saveConfig");
+});
+
+test("a blocked mass reset asks once and retries with explicit confirmation", async () => {
+  const { patchSafetyContractMethods } = loadEnhancementTestHooks();
+  const confirmations = [];
+  const requests = [];
+  const app = {
+    runtimeConfig: hydratedConfig(),
+    async apiCall(action, payload) {
+      requests.push({ action, payload });
+      if (payload.confirmMassReset === true) return { config: payload.config, revisions: {} };
+      const error = new Error("本次保存会把 12 项设置恢复为默认值，已拦截");
+      error.code = "CONFIG_MASS_RESET_BLOCKED";
+      error.status = 409;
+      error.details = { resetCount: 12, resetFields: ["cfZoneId", "tgChatId"], budget: 8 };
+      throw error;
+    },
+    async askConfirm(message, options) {
+      confirmations.push({ message, options });
+      return true;
+    },
+    showMessage() {},
+  };
+  patchSafetyContractMethods(app);
+
+  await app.apiCall("saveConfig", { config: { adminUiSkin: "claude" } });
+
+  assert.equal(confirmations.length, 1);
+  assert.match(confirmations[0].message, /12 项设置/);
+  assert.match(confirmations[0].message, /cfZoneId/);
+  assert.equal(requests.length, 2);
+  assert.equal(requests[1].payload.confirmMassReset, true);
+  assert.equal(
+    requests[1].payload.mutationId,
+    requests[0].payload.mutationId,
+    "重试要沿用同一个幂等键",
+  );
+});
+
+test("cancelling the mass reset confirmation sends nothing further", async () => {
+  const { patchSafetyContractMethods } = loadEnhancementTestHooks();
+  const requests = [];
+  const app = {
+    runtimeConfig: hydratedConfig(),
+    async apiCall(action, payload) {
+      requests.push({ action, payload });
+      const error = new Error("blocked");
+      error.code = "CONFIG_MASS_RESET_BLOCKED";
+      error.status = 409;
+      error.details = { resetCount: 9, resetFields: ["cfZoneId"] };
+      throw error;
+    },
+    async askConfirm() {
+      return false;
+    },
+    showMessage() {},
+  };
+  patchSafetyContractMethods(app);
+
+  await assert.rejects(
+    app.apiCall("saveConfig", { config: { adminUiSkin: "claude" } }),
+    (error) => error?.code === "CONFIG_MASS_RESET_CANCELLED",
+  );
+  assert.equal(requests.length, 1, "取消之后不能再发一次带确认的请求");
 });
 
 test("dialog overlays gain native dialog semantics, focus and Escape close", () => {
@@ -720,7 +898,7 @@ test("ui skin honors the server bootstrap value and saves the choice back to con
 
   const requests = [];
   const app = {
-    runtimeConfig: { rateLimitRpm: 20, adminUiSkin: "classic" },
+    runtimeConfig: hydratedConfig(),
     adminRevisions: { configRevision: "2026-01-01T00:00:00.000Z.abc123" },
     async apiCall(action, payload) {
       requests.push({ action, payload });
@@ -747,7 +925,7 @@ test("ui skin save refreshes the config revision and retries once after a confli
   const calls = [];
   const messages = [];
   const app = {
-    runtimeConfig: { rateLimitRpm: 20, adminUiSkin: "classic" },
+    runtimeConfig: hydratedConfig(),
     adminRevisions: { configRevision: "2026-01-01T00:00:00.000Z.stale" },
     async apiCall(action, payload) {
       calls.push({ action, payload });
@@ -799,7 +977,7 @@ test("ui skin saves are serialized so a second click cannot collide with the fir
     releaseFirstSave = resolve;
   });
   const app = {
-    runtimeConfig: { adminUiSkin: "classic" },
+    runtimeConfig: hydratedConfig({ adminUiSkin: "classic" }),
     adminRevisions: { configRevision: "r1" },
     async apiCall(action, payload) {
       assert.equal(action, "saveConfig");
@@ -1026,12 +1204,13 @@ test("theme B migration backup import and export buttons share one solid red bea
     new URL("../frontend/admin-runtime.template.html", import.meta.url),
     "utf8",
   );
-  assert.equal(template.match(/settings-secondary-label inline-flex items-center/g)?.length, 3);
+  // 迁移与备份只剩「导入备份」与「导出完整备份」两个入口。
+  assert.equal(template.match(/settings-secondary-label inline-flex items-center/g)?.length, 1);
   assert.equal(
     template.match(
       /class:"px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-xl text-sm transition font-medium"/g,
     )?.length,
-    3,
+    1,
   );
   assert.match(
     ADMIN_RUNTIME_ENHANCEMENT_STYLE,
@@ -1508,17 +1687,18 @@ test("admin runtime keeps scoped migration, node-only, and release contracts", a
   );
   assert.match(template, /id:"admin-worker-html-update-root"/);
   assert.match(template, /id:"import-full-file"/);
-  assert.match(template, /id:"import-settings-secrets-file"/);
-  assert.match(template, /id:"import-settings-file"/);
   assert.match(template, /App\.importFull/);
   assert.match(template, /App\.exportFull/);
-  assert.match(template, /App\.exportSettingsWithSecrets/);
-  assert.match(template, /App\.exportSettings\(/);
+  // 迁移与备份只保留完整备份一组入口，另外两种范围的按钮与文件输入已经下线。
+  for (const source of [template, generatedIndex]) {
+    assert.doesNotMatch(source, /id:"import-settings-secrets-file"/);
+    assert.doesNotMatch(source, /id:"import-settings-file"/);
+  }
+  assert.doesNotMatch(template, /App\.exportSettingsWithSecrets/);
+  assert.doesNotMatch(template, /App\.exportSettings\(/);
   assert.match(template, /\\u8fc1\\u79fb\\u4e0e\\u5907\\u4efd/);
   assert.doesNotMatch(template, /Settings Only/);
   assert.match(generatedIndex, /id:"import-full-file"/);
-  assert.match(generatedIndex, /id:"import-settings-secrets-file"/);
-  assert.match(generatedIndex, /id:"import-settings-file"/);
   assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /app\.exportSettingsWithSecrets = async function/);
   assert.match(template, /\\u8282\\u70b9\\u5217\\u8868\\u64cd\\u4f5c/);
   assert.match(template, /id:"import-nodes-file"/);
@@ -2861,7 +3041,7 @@ test("dashboard reuses the cached snapshot and skips repeat requests within a mi
     dashboardD1WriteHotspot: {},
     dashboardView: { nodes: {} },
     dashboardRuntimeView: {},
-    runtimeConfig: {},
+    runtimeConfig: hydratedConfig(),
     isRouteLoadCurrent: () => true,
     async loadDashboard() {},
     applyDashboardStatsState() {},
@@ -2923,7 +3103,7 @@ test("forced dashboard refresh unlocks itself even when a later load supersedes 
     dashboardD1WriteHotspot: {},
     dashboardView: { nodes: {} },
     dashboardRuntimeView: {},
-    runtimeConfig: {},
+    runtimeConfig: hydratedConfig(),
     isRouteLoadCurrent: () => true,
     async loadDashboard() {},
     applyDashboardStatsState() {},
@@ -2956,4 +3136,258 @@ test("forced dashboard refresh unlocks itself even when a later load supersedes 
   calls.length = 0;
   await app.loadDashboard(null, { forceRefresh: true });
   assert.ok(calls.includes("getDashboardCoreStats"), "强制刷新不应被卡住的 pending 挡掉");
+});
+
+test("exports download from any view, not only after the nodes view mounted", async () => {
+  // 模板里唯一的自动下载锚点挂在懒挂载的 #view-nodes 上：没进过节点管理时，设置页与 DNS 页的
+  // 导出会拿到 200、Blob 也生成了，但没有元素可点 —— 用户看到的就是"导出没反应"。
+  const clicked = [];
+  const appended = [];
+  const fakeSink = {
+    id: "",
+    hidden: false,
+    attributes: {},
+    setAttribute(name, value) {
+      this.attributes[name] = String(value);
+    },
+    click() {
+      clicked.push(this.attributes.href);
+    },
+  };
+  const documentState = { sink: null, bodyAppended: 0 };
+  const { patchSafetyContractMethods } = loadEnhancementTestHooks({
+    getElementById(id) {
+      return id === "admin-download-sink" ? documentState.sink : null;
+    },
+    createElement() {
+      documentState.sink = fakeSink;
+      return fakeSink;
+    },
+    body: {
+      appendChild(node) {
+        documentState.bodyAppended += 1;
+        appended.push(node);
+      },
+    },
+  });
+  const app = {
+    runtimeConfig: hydratedConfig(),
+    async apiCall() {
+      return { nodes: [] };
+    },
+    triggerDownload(href, filename) {
+      throw new Error("模板实现应该被替换：" + href + filename);
+    },
+    downloadJson() {},
+    showMessage() {},
+  };
+  patchSafetyContractMethods(app);
+
+  const result = await app.triggerDownload("blob:https://worker.test/abc", "backup.json");
+  assert.deepEqual(clicked, ["blob:https://worker.test/abc"]);
+  assert.equal(fakeSink.attributes.download, "backup.json");
+  assert.equal(documentState.bodyAppended, 1, "sink 只挂一次");
+  assert.equal(result.filename, "backup.json");
+
+  // 第二次导出复用同一个 sink，不再往 body 里塞锚点。
+  await app.triggerDownload("blob:https://worker.test/def", "nodes.json");
+  assert.deepEqual(clicked, ["blob:https://worker.test/abc", "blob:https://worker.test/def"]);
+  assert.equal(documentState.bodyAppended, 1);
+});
+
+test("node export hits the nodes-only action with its confirm token", async () => {
+  const requests = [];
+  const { patchSafetyContractMethods } = loadEnhancementTestHooks(
+    {},
+    {
+      fetch: async (url, init) => {
+        requests.push({ url, init });
+        return {
+          ok: true,
+          status: 200,
+          async json() {
+            return { nodes: [{ name: "alpha" }] };
+          },
+        };
+      },
+    },
+  );
+  const downloads = [];
+  const app = {
+    runtimeConfig: hydratedConfig(),
+    async apiCall() {
+      throw new Error("节点导出不该再走完整备份 action");
+    },
+    downloadJson(payload, filename) {
+      downloads.push({ payload, filename });
+    },
+    showMessage() {},
+  };
+  patchSafetyContractMethods(app);
+
+  await app.exportNodes();
+  assert.equal(requests.length, 1);
+  // 节点实体带 secret / headers，Worker 要求自定义确认头，否则回 428。
+  assert.equal(requests[0].init.headers["X-Admin-Confirm"], "exportNodes");
+  assert.deepEqual(JSON.parse(requests[0].init.body), { action: "exportNodes" });
+  assert.deepEqual(downloads[0]?.payload, [{ name: "alpha" }]);
+  assert.match(downloads[0]?.filename || "", /^emby_nodes_\d+\.json$/);
+});
+
+test("full backup import forwards the uploaded admin HTML and asks first", async () => {
+  const { patchSafetyContractMethods, buildFullBackupImportMessage } = loadEnhancementTestHooks();
+  const calls = [];
+  const messages = [];
+  const confirmations = [];
+  const backup = {
+    version: "20.3",
+    config: { uiRadiusPx: 12 },
+    nodes: [{ name: "alpha", target: "https://origin.test" }],
+    adminIndexUpload: { html: "<!doctype html>", revision: "a".repeat(64), fileName: "index.html" },
+    containsSecrets: false,
+  };
+  const app = {
+    runtimeConfig: hydratedConfig(),
+    async readJsonFileFromInputEvent() {
+      return backup;
+    },
+    async askConfirm(message, options) {
+      confirmations.push({ message, options });
+      return true;
+    },
+    async apiCall(action, payload) {
+      calls.push({ action, payload });
+      return {
+        success: true,
+        importedNodeCount: 1,
+        skippedNodeCount: 0,
+        nodes: [],
+        adminIndexUpload: { revision: "a".repeat(64) },
+      };
+    },
+    applyAdminRevisions() {},
+    applyRuntimeConfig() {},
+    applyNodesState() {},
+    patchAdminBootstrapCache() {},
+    async loadSettings() {},
+    showMessage(message, options) {
+      messages.push({ message, options });
+    },
+  };
+  patchSafetyContractMethods(app);
+
+  await app.importFull({ target: { files: [{}] } });
+
+  assert.equal(confirmations.length, 1, "完整导入必须先确认");
+  assert.match(confirmations[0]?.message || "", /节点 1 个/);
+  assert.match(confirmations[0]?.message || "", /不会删除/);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].action, "importFull");
+  // 少了这一块，全新部署的 KV 里没有对应 revision，整次还原会被拒绝。
+  assert.equal(calls[0].payload.adminIndexUpload?.revision, "a".repeat(64));
+  assert.deepEqual(calls[0].payload.nodes, backup.nodes);
+  assert.deepEqual(calls[0].payload.config, backup.config);
+  assert.equal(messages[0]?.options?.tone, "success");
+  assert.match(messages[0]?.message || "", /节点：已导入 1 个/);
+
+  const preview = buildFullBackupImportMessage({
+    config: { uiRadiusPx: 12 },
+    nodes: [],
+    adminIndexUpload: null,
+    containsSecrets: true,
+  });
+  assert.match(preview, /节点：备份里没有/);
+  assert.match(preview, /明文密钥/);
+});
+
+test("cancelling a full backup import sends nothing", async () => {
+  const { patchSafetyContractMethods } = loadEnhancementTestHooks();
+  const calls = [];
+  const app = {
+    runtimeConfig: hydratedConfig(),
+    async readJsonFileFromInputEvent() {
+      return { config: { uiRadiusPx: 12 }, nodes: [] };
+    },
+    async askConfirm() {
+      return false;
+    },
+    async apiCall(action) {
+      calls.push(action);
+      return { success: true };
+    },
+    showMessage() {},
+  };
+  patchSafetyContractMethods(app);
+
+  await app.importFull({ target: { files: [{}] } });
+  assert.deepEqual(calls, []);
+});
+
+test("an empty or file-shaped full backup is rejected locally", async () => {
+  const { patchSafetyContractMethods } = loadEnhancementTestHooks();
+  const calls = [];
+  const messages = [];
+  let payload = { version: "20.3", nodes: [], config: "not-an-object" };
+  const app = {
+    runtimeConfig: hydratedConfig(),
+    async readJsonFileFromInputEvent() {
+      return payload;
+    },
+    async askConfirm() {
+      return true;
+    },
+    async apiCall(action) {
+      calls.push(action);
+      return { success: true };
+    },
+    showMessage(message, options) {
+      messages.push({ message, options });
+    },
+  };
+  patchSafetyContractMethods(app);
+
+  await app.importFull({ target: { files: [{}] } });
+  assert.deepEqual(calls, []);
+  assert.equal(messages[0]?.options?.tone, "warning");
+  assert.match(messages[0]?.message || "", /无效的备份文件/);
+
+  // 空对象不是"有配置"：Worker 侧同样当缺失处理，这里也不该发请求。
+  messages.length = 0;
+  payload = { version: "20.3", nodes: [], config: {} };
+  await app.importFull({ target: { files: [{}] } });
+  assert.deepEqual(calls, []);
+  assert.match(messages[0]?.message || "", /无效的备份文件/);
+});
+
+test("an oversized full backup is rejected before it is read or uploaded", async () => {
+  const { patchSafetyContractMethods } = loadEnhancementTestHooks();
+  const calls = [];
+  const messages = [];
+  let read = 0;
+  const app = {
+    runtimeConfig: hydratedConfig(),
+    async readJsonFileFromInputEvent() {
+      read += 1;
+      return { config: { uiRadiusPx: 12 } };
+    },
+    async askConfirm() {
+      return true;
+    },
+    async apiCall(action) {
+      calls.push(action);
+      return { success: true };
+    },
+    showMessage(message, options) {
+      messages.push({ message, options });
+    },
+  };
+  patchSafetyContractMethods(app);
+
+  const input = { files: [{ size: 13 * 1024 * 1024 }], value: "C:\fake\big.json" };
+  await app.importFull({ target: input });
+  assert.equal(read, 0, "超限文件不应该被读进内存");
+  assert.deepEqual(calls, []);
+  assert.equal(input.value, "", "清空 input 才能重选同一个文件");
+  assert.equal(messages[0]?.options?.tone, "error");
+  assert.match(messages[0]?.message || "", /超过导入上限（12 MiB）/);
 });
